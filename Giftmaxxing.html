@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Giftmaxxing — prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Hanken Grotesk", -apple-system, system-ui, sans-serif;
+    background:
+      radial-gradient(120% 90% at 15% 0%, #F6E9DC, transparent 55%),
+      radial-gradient(120% 90% at 90% 10%, #F3DFE6, transparent 50%),
+      #ECE4D9;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  * { scrollbar-width: none; }
+  button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
+  input { font-family: inherit; }
+  @keyframes gmFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes gmSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  @keyframes gmScreen { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  #root { width: 100%; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="22" fill="#FB6F52"/>
+    <rect x="30" y="44" width="40" height="34" rx="8" fill="#fff"/>
+    <rect x="46" y="44" width="8" height="34" fill="#FB6F52" opacity="0.5"/>
+    <ellipse cx="42" cy="38" rx="9" ry="7" fill="#fff"/>
+    <ellipse cx="58" cy="38" rx="9" ry="7" fill="#fff"/>
+    <circle cx="44" cy="60" r="3.4" fill="#2a1d18"/>
+    <circle cx="56" cy="60" r="3.4" fill="#2a1d18"/>
+  </svg>
+</template>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="app/theme.jsx"></script>
+<script type="text/babel" src="app/icons.jsx"></script>
+<script type="text/babel" src="app/data.jsx"></script>
+<script type="text/babel" src="app/components.jsx"></script>
+<script type="text/babel" src="app/screens-feed.jsx"></script>
+<script type="text/babel" src="app/screens-detail.jsx"></script>
+<script type="text/babel" src="app/screens-wishlist.jsx"></script>
+<script type="text/babel" src="app/screens-calendar.jsx"></script>
+<script type="text/babel" src="app/screens-companion.jsx"></script>
+<script type="text/babel" src="app/screens-profile.jsx"></script>
+<script type="text/babel" src="app/app.jsx"></script>
+<script type="text/babel">
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<window.GiftmaxxingApp />);
+</script>
+</body>
+</html>
