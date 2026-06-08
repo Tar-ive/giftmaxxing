@@ -51,11 +51,13 @@ export function GiftDetail({
   post,
   onBack,
   onAddToList,
+  onOpenGift,
 }: {
   productId: string
   post?: any
   onBack: () => void
   onAddToList: () => void
+  onOpenGift?: (id: string) => void
 }) {
   const p = P[productId]
   const [saved, setSaved] = useState(false)
