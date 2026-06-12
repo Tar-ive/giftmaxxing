@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Icons } from "@/components/icons"
-import { IconBtn, ScreenHeader } from "@/components/ui-atoms"
+import { ScreenHeader } from "@/components/ui-atoms"
 
 function SettingsRow({
   icon,
@@ -172,13 +173,7 @@ function SectionLabel({ children }: { children: string }) {
   )
 }
 
-export function Settings({
-  onBack,
-  onPrivacyPolicy,
-}: {
-  onBack: () => void
-  onPrivacyPolicy: () => void
-}) {
+export function Settings({ onBack }: { onBack: () => void }) {
   return (
     <div>
       <ScreenHeader title="Settings" onBack={onBack} />
@@ -256,12 +251,13 @@ export function Settings({
           icon={<Icons.group size={18} />}
           label="Show in friend suggestions"
         />
-        <SettingsRow
-          icon={<Icons.lock size={18} />}
-          label="Privacy Policy"
-          chevron
-          onClick={onPrivacyPolicy}
-        />
+        <Link href="/privacy-policy" target="_blank" style={{ textDecoration: "none" }}>
+          <SettingsRow
+            icon={<Icons.lock size={18} />}
+            label="Privacy Policy"
+            chevron
+          />
+        </Link>
         <SettingsRow
           icon={<Icons.check size={18} />}
           label="Terms of Service"
