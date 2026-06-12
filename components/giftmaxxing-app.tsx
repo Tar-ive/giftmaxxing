@@ -12,6 +12,8 @@ import { Wishlist } from "@/components/screens/wishlist"
 import { Profile } from "@/components/screens/profile"
 import { GiftDetail, GroupDetail } from "@/components/screens/detail"
 import { Companion } from "@/components/screens/companion"
+import { Settings } from "@/components/screens/settings"
+import { PrivacyPolicy } from "@/components/screens/privacy-policy"
 
 const NAV: { id: string; icon: string; label: string; center?: boolean }[] = [
   { id: "home", icon: "home", label: "Home" },
@@ -422,6 +424,8 @@ type Overlay =
   | { name: "maxi" }
   | { name: "discover" }
   | { name: "notif" }
+  | { name: "settings" }
+  | { name: "privacy" }
   | null
 
 export function GiftmaxxingApp() {
@@ -456,7 +460,14 @@ export function GiftmaxxingApp() {
       case "wishlist":
         return <Wishlist onOpenGift={openGift} onOpenGroup={openGroup} onOpenCollection={() => {}} />
       case "profile":
-        return <Profile onOpenMaxi={openMaxi} onOpenCollection={() => {}} onOpenGroup={openGroup} />
+        return (
+          <Profile
+            onOpenMaxi={openMaxi}
+            onOpenCollection={() => {}}
+            onOpenGroup={openGroup}
+            onSettings={() => setOverlay({ name: "settings" })}
+          />
+        )
       default:
         return null
     }
@@ -487,6 +498,14 @@ export function GiftmaxxingApp() {
       )
     if (overlay.name === "discover") return <Discover onBack={pop} onOpenGift={openGift} />
     if (overlay.name === "notif") return <Notifications onBack={pop} onOpenGroup={openGroup} onOpenGift={openGift} />
+    if (overlay.name === "settings")
+      return (
+        <Settings
+          onBack={pop}
+          onPrivacyPolicy={() => setOverlay({ name: "privacy" })}
+        />
+      )
+    if (overlay.name === "privacy") return <PrivacyPolicy onBack={() => setOverlay({ name: "settings" })} />
     return null
   }
 

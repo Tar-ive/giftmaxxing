@@ -115,10 +115,12 @@ export function Profile({
   onOpenMaxi,
   onOpenCollection,
   onOpenGroup,
+  onSettings,
 }: {
   onOpenMaxi: () => void
   onOpenCollection: (c: any) => void
   onOpenGroup: (id: string) => void
+  onSettings?: () => void
 }) {
   return (
     <div>
@@ -140,7 +142,7 @@ export function Profile({
         <span style={{ fontFamily: "var(--font-ui)", fontWeight: 800, fontSize: 16, color: "var(--text)" }}>@you</span>
         <div style={{ display: "flex", gap: 2 }}>
           <IconBtn icon={<Icons.share size={22} />} />
-          <IconBtn icon={<Icons.more size={22} />} />
+          <IconBtn icon={<Icons.more size={22} />} onClick={onSettings} aria-label="Settings" />
         </div>
       </div>
 

@@ -316,6 +316,7 @@ export function IconBtn({
   active = false,
   badge = false,
   style,
+  "aria-label": ariaLabel,
 }: {
   icon: ReactNode
   onClick?: () => void
@@ -323,10 +324,12 @@ export function IconBtn({
   active?: boolean
   badge?: boolean
   style?: CSSProperties
+  "aria-label"?: string
 }) {
   return (
     <button
       onClick={onClick}
+      aria-label={ariaLabel}
       style={{
         width: size,
         height: size,

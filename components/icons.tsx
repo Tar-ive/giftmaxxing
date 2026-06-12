@@ -192,6 +192,18 @@ export const Icons: Record<string, (p?: IconProps) => ReactNode> = {
       <circle cx="12" cy="10.5" r="2.5" />
     </GMIcon>
   ),
+  eye: (p) => (
+    <GMIcon {...p}>
+      <path d="M3.5 12S7 5.5 12 5.5 20.5 12 20.5 12 17 18.5 12 18.5 3.5 12 3.5 12z" />
+      <circle cx="12" cy="12" r="2.8" />
+    </GMIcon>
+  ),
+  lock: (p) => (
+    <GMIcon {...p}>
+      <rect x="5" y="11" width="14" height="10" rx="3" />
+      <path d="M8 11V7.5a4 4 0 0 1 8 0V11" />
+    </GMIcon>
+  ),
 }
 
 // ── Maxi — the Giftmaxxing companion (geometric gift-box character)
