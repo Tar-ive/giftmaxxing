@@ -1,5 +1,6 @@
-# Zip the handler source. AWS SDK v3 ships with nodejs20.x, so there are no
-# node_modules to bundle — the src/ dir is the whole deployment package.
+# Zip the handler source. DynamoDB clients come from the nodejs20.x runtime SDK;
+# @aws-sdk/client-s3vectors is NOT in the runtime, so it's npm-installed into
+# src/node_modules and bundled here (run `npm install` in src/ before apply).
 data "archive_file" "api" {
   type        = "zip"
   source_dir  = "${path.module}/src"
@@ -27,6 +28,8 @@ resource "aws_lambda_function" "api" {
       POSTS_TABLE        = aws_dynamodb_table.posts.name
       INTERACTIONS_TABLE = aws_dynamodb_table.interactions.name
       KNOWLEDGE_TABLE    = aws_dynamodb_table.knowledge.name
+      VECTOR_BUCKET      = "${local.prefix}-vectors"
+      VECTOR_INDEX       = "pins"
     }
   }
 

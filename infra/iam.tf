@@ -48,3 +48,32 @@ resource "aws_iam_role_policy" "ddb_access" {
   role   = aws_iam_role.api_lambda.id
   policy = data.aws_iam_policy_document.ddb_access.json
 }
+
+# S3 Vectors read access for the recommendation kNN query path. QueryVectors with
+# returnMetadata / a metadata filter also requires GetVectors (per the API).
+data "aws_caller_identity" "current" {}
+
+locals {
+  vectors_bucket_arn = "arn:aws:s3vectors:${var.region}:${data.aws_caller_identity.current.account_id}:bucket/${local.prefix}-vectors"
+}
+
+data "aws_iam_policy_document" "s3vectors_access" {
+  statement {
+    sid = "VectorRead"
+    actions = [
+      "s3vectors:QueryVectors",
+      "s3vectors:GetVectors",
+      "s3vectors:ListVectors",
+    ]
+    resources = [
+      local.vectors_bucket_arn,
+      "${local.vectors_bucket_arn}/index/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "s3vectors_access" {
+  name   = "${local.prefix}-s3vectors-access"
+  role   = aws_iam_role.api_lambda.id
+  policy = data.aws_iam_policy_document.s3vectors_access.json
+}

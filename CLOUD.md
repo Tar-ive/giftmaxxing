@@ -219,9 +219,9 @@ All us-east-1. Bedrock prices ✅ **verified via the AWS Price List API** (`Amaz
 ## 8. Roadmap (working backlog — agents: execute top-down)
 
 - [x] **P0 Pinterest image scrape (public RSS)** — `infra/ingest/pinterest-rss.mjs` → S3. **Done** (72 imgs → `giftmaxxing-dev-media`, see §1.5). ⏳ Official OAuth puller still pending (v5 app blocked: "consumer type not supported").
-- [ ] **P0 Embedder Lambda** — S3 ObjectCreated → Bedrock Titan MM → upsert vector to **S3 Vectors** + metadata row in DynamoDB. + backfill script (mirror `infra/ingest/`, use Bedrock **batch** for bulk = 50% off).
-- [ ] **P0 Terraform** — ✅ **S3 media bucket done** (`infra/s3.tf` → `giftmaxxing-dev-media`). Pending: **S3 Vectors** bucket/index, DynamoDB `metadata` table, embedder Lambda + IAM (`bedrock:InvokeModel` on Titan, `s3vectors:*` on the index, S3 read, DDB write). Bedrock access already ✅ granted.
-- [ ] **P1 Rec upgrade** — swap the `taste` term in `recommend.ts` / `handler.mjs` for cosine vs the embedding centroid; brute-force kNN in Lambda.
+- [x] **P0 Embedder (backfill)** — `infra/ingest/embed.mjs`: S3 image + title → Titan MM → `put-vectors` into S3 Vectors. **Done** (72 vectors in `giftmaxxing-dev-vectors/pins`, see §13). ⏳ S3-ObjectCreated Lambda trigger + Bedrock **batch** for bulk still pending.
+- [x] **P0 Infra** — ✅ S3 media bucket (`infra/s3.tf`), ✅ **S3 Vectors bucket+index** (`giftmaxxing-dev-vectors/pins`, script-managed via `infra/ingest/s3vectors-setup.mjs` — no TF resource yet), ✅ API Lambda **s3vectors read IAM** (`infra/iam.tf`) + `VECTOR_BUCKET`/`VECTOR_INDEX` env. ⏳ DynamoDB `pins` table + S3-event embedder Lambda still pending.
+- [x] **P1 Rec upgrade (server)** — ✅ `handler.mjs` `/recommendations` builds a taste centroid (`get-vectors`) → `query-vectors` (kNN) with optional `sourceUser` filter, falling back to facet `scorePost` when no vectors (`source:"vector"|"facet"` in the response). Live & tested (§13). ⏳ `web/lib/recommend.ts` client still facet-based; wire the feed UI to the vector results next.
 - [ ] **P1 Native ads** — `Post.sponsored`, `PostCard` label + CTA, interleave by cadence ranked by taste, frequency cap + hide.
 - [ ] **P2 Harden write path (optimized arch, §12.2)** — SQS + DLQ between ingest and embed, Step Functions orchestration, pHash dedup, EventBridge re-sync, Secrets Manager, observability. Add OpenSearch hot tier only if real-time ANN latency at scale demands it.
 - [ ] **P3 Visual search** — `POST /visual-search`, image→embed→kNN→**Amazon/Walmart affiliate** enrich. (See §6.)
@@ -235,6 +235,8 @@ PINTEREST_API_KEY=            # present, but v5 rejects it (consumer type) -> us
 PINTEREST_RSS_USERS=etsy,marthastewart,uncommongoods   # public-RSS scraper sources (infra/ingest/pinterest-rss.mjs)
 BEDROCK_EMBED_MODEL_ID=amazon.titan-embed-image-v1
 MEDIA_BUCKET=giftmaxxing-dev-media
+VECTOR_BUCKET=giftmaxxing-dev-vectors   # S3 Vectors bucket (recommendation kNN)
+VECTOR_INDEX=pins                        # S3 Vectors index (1024-d, cosine)
 # Future — visual search affiliate enrich:
 AMAZON_ASSOCIATES_ACCESS_KEY=
 AMAZON_ASSOCIATES_SECRET_KEY=
@@ -398,3 +400,29 @@ flowchart LR
 - **DAX cache** for hot recs; **CloudFront** for image delivery; consider **256/384-d** embeddings to cut vector storage/query cost.
 - **Observability**: CloudWatch alarms (esp. DLQ depth) + X-Ray + an **AWS Budgets** cost-guardrail alarm.
 - **Visual search reuses the same vector DB** (image query → same model → kNN → affiliate enrich).
+
+---
+
+## 13. Vector pipeline — IMPLEMENTED (Jun 2026)
+
+The image → embedding → vector → recommendation loop is **live** end-to-end on AWS (`us-east-1`).
+
+**Resources**
+- **S3 Vectors:** bucket `giftmaxxing-dev-vectors`, index `pins` (1024-d, cosine, float32; non-filterable metadata: title/pinUrl/imageUrl/s3Key). ARN `arn:aws:s3vectors:us-east-1:445056752928:bucket/giftmaxxing-dev-vectors/index/pins`. Script-managed (no Terraform resource yet — provider support TBD).
+- **72 vectors** loaded from the scraped pins.
+- **API Lambda** `giftmaxxing-dev-api`: bundles `@aws-sdk/client-s3vectors` (not in the nodejs20.x runtime SDK), env `VECTOR_BUCKET`/`VECTOR_INDEX`, IAM `s3vectors:QueryVectors|GetVectors|ListVectors` on the index.
+
+**Scripts** (`infra/ingest/`, run after `set -a; source ../../.env; set +a`)
+- `npm run vectors:setup` — create bucket + index (idempotent).
+- `npm run embed` — manifest → S3 image + title → Titan MM (`amazon.titan-embed-image-v1`) → `put-vectors`. Flags `--limit`, `--dry-run`.
+- `npm run vectors:query -- --text "cozy mug"` (text→image) or `-- --key pin-123` (image→image "more like this"); `--user etsy` filters by `sourceUser`.
+
+**Read path** (`infra/src/handler.mjs`, `GET /recommendations`)
+1. Seeds = `?seedKeys=pin-a,pin-b` or the user's interactions.
+2. `get-vectors(seeds)` → average → **taste centroid**.
+3. `query-vectors(centroid, topK, filter=sourceUser?)` → neighbors (metadata + distance) → post-shaped items, `source:"vector"`.
+4. No seeds / no vectors → DynamoDB scan + `scorePost`, `source:"facet"` (unchanged, backwards-compatible).
+
+**Verified live:** `GET /recommendations?seedKeys=pin-…` → `source:vector`, neighbors at ~0.70–0.84 cosine; `GET /recommendations` (no seeds) → `source:facet`.
+
+**Caveats / next:** stored vectors are image+title (titles are marketing copy → text→image matches are loose; image→image is tight). Pins aren't in the DynamoDB `posts` table yet, so the **feed UI** still renders Reddit posts — to show pins in the feed, ingest pins as posts (or render directly from vector metadata) and have the client call the vector path. Move bulk embeds to Bedrock **batch** (−50%) and add the S3-ObjectCreated trigger for incremental.

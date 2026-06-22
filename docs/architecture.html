@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Giftmaxxing — backend architecture</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #1d1d1f; background: #f5f5f7; }
+  header { padding: 28px 32px 8px; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  .sub { color: #6e6e73; font-size: 14px; }
+  .wrap { padding: 8px 32px 64px; }
+  section { background: #fff; border: 1px solid #e3e3e6; border-radius: 16px; padding: 20px 22px; margin: 18px 0; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+  h2 { margin: 0 0 2px; font-size: 19px; }
+  h2 .tag { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; vertical-align: middle; margin-left: 8px; }
+  .tag.now { background:#fce8e6; color:#c5221f; }
+  .tag.opt { background:#e6f4ea; color:#137333; }
+  .note { color:#6e6e73; font-size:13.5px; margin: 4px 0 12px; }
+  .diagram { overflow:auto; border:1px dashed #e3e3e6; border-radius:12px; padding:12px; background:#fafafa; }
+  .facts { display:grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+  .fact { border:1px solid #e3e3e6; border-radius:12px; padding:12px 14px; background:#fff; }
+  .fact b { display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:#6e6e73; margin-bottom:4px; }
+  .ok { color:#137333; font-weight:600; }
+  table { border-collapse: collapse; width:100%; font-size:13.5px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid #eee; }
+  th { color:#6e6e73; font-weight:600; }
+  code { background:#f0f0f2; padding:1px 5px; border-radius:5px; font-size:12.5px; }
+  ul { margin: 6px 0 0; padding-left: 20px; } li { margin: 5px 0; font-size: 14px; }
+  .err { color:#c5221f; white-space:pre-wrap; font-family:monospace; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Giftmaxxing — backend architecture (image → vector → feed)</h1>
+  <div class="sub">Verified against AWS account 445056752928 · us-east-1 · <span id="ts"></span></div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2>Verified facts</h2>
+    <div class="facts" style="margin-top:12px">
+      <div class="fact"><b>Bedrock access</b><span class="ok">✓ Titan Multimodal invokes → 1024-d</span></div>
+      <div class="fact"><b>AWS vector DB</b><span class="ok">✓ Amazon S3 Vectors available</span></div>
+      <div class="fact"><b>Embed price (on-demand)</b>$0.00006 / image · $0.0008 / 1K text tokens</div>
+      <div class="fact"><b>Embed price (batch −50%)</b>$0.00003 / image · $0.0004 / 1K tokens</div>
+    </div>
+    <p class="note" style="margin-top:14px">Verified pricing pulled live from the AWS Price List API (<code>AmazonBedrock</code>, us-east-1):</p>
+    <table>
+      <tr><th>Model / mode</th><th>Per image</th><th>Per 1K input tokens</th><th>Notes</th></tr>
+      <tr><td>Titan Multimodal Embeddings G1 (on-demand)</td><td>$0.00006</td><td>$0.0008</td><td>shared text+image space, 256/384/1024-d</td></tr>
+      <tr><td>Titan Multimodal Embeddings G1 (batch)</td><td>$0.00003</td><td>$0.0004</td><td>async backfills, 50% cheaper</td></tr>
+      <tr><td>Nova Multimodal Embeddings (on-demand)</td><td>$0.00006</td><td>$0.000135</td><td>also video $0.0007/s, audio $0.00014/s</td></tr>
+      <tr><td>Titan Text Embeddings V2</td><td>—</td><td>$0.00002</td><td>text-only, cheapest text</td></tr>
+      <tr><td>Provisioned Throughput (Titan MM image)</td><td colspan="2">~$9.38 / hour (no-commit)</td><td>avoid — only for very high constant load</td></tr>
+    </table>
+    <p class="note" style="margin-top:12px"><b>Cost takeaway:</b> embedding a 10,000-image catalog ≈ <b>$0.60 one-time</b> (on-demand) or <b>$0.30</b> (batch). Storage + Phase-1 vectors are pennies/month. Whole pipeline ≈ <b>a few $/month</b> at dev scale.</p>
+  </section>
+
+  <section>
+    <h2>1 · Current plan<span class="tag now">AS DESIGNED</span></h2>
+    <p class="note">The straightforward pipeline from <code>CLOUD.md</code> v1: ingest → S3 → embedder Lambda → Bedrock → DynamoDB, with a brute-force cosine ranker in the API Lambda. Simple, ~$0 extra, good to ~10k–100k vectors. Review this first.</p>
+    <div class="diagram" id="d1"></div>
+  </section>
+
+  <section>
+    <h2>2 · Optimized<span class="tag opt">WELL-ARCHITECTED</span></h2>
+    <p class="note">Hardens the write path and swaps the DIY index for the real AWS vector DB. Changes from #1 are listed below the diagram.</p>
+    <div class="diagram" id="d2"></div>
+    <p class="note" style="margin-top:14px"><b>What changed &amp; why (sanity checks + optimizations):</b></p>
+    <ul>
+      <li><b>Real vector DB → Amazon S3 Vectors</b> replaces brute-force-in-Lambda as the canonical index (confirmed available, lowest cost, scales past 100k). OpenSearch Serverless added only as an <i>optional</i> low-latency hot tier (it has a monthly OCU minimum — keep it out of the critical path until scale demands it).</li>
+      <li><b>Decouple ingest from embed with SQS + DLQ.</b> Pinterest Trial caps at <b>1,000 req/day</b> — a queue smooths bursts, enables retries/backoff, and isolates failures (DLQ + alarm).</li>
+      <li><b>Step Functions orchestration</b> instead of Lambda-chaining the multi-step ingest→dedup→embed→upsert flow (visibility, retries, idempotency).</li>
+      <li><b>Perceptual-hash dedup before embedding</b> — skip near-duplicate pins to cut cost + feed noise.</li>
+      <li><b>Bedrock BATCH for backfills</b> (50% cheaper) vs on-demand for incremental real-time embeds.</li>
+      <li><b>EventBridge Scheduler</b> for periodic re-sync of connected boards (events trigger work, not cron-in-Lambda).</li>
+      <li><b>Secrets Manager</b> for Pinterest/affiliate keys (not <code>.env</code> in prod).</li>
+      <li><b>Idempotency by content hash</b> so re-runs never re-embed the same image; <b>cache</b> (DAX) hot recommendations; <b>CloudFront</b> for image delivery.</li>
+      <li><b>Observability</b>: CloudWatch metrics/alarms (esp. DLQ depth) + X-Ray traces + an AWS Budgets alarm as a cost guardrail.</li>
+      <li><b>Visual search reuses the same vector DB</b> — image query → same Titan model → kNN → affiliate enrich.</li>
+      <li><b>Consider 256/384-d embeddings</b> (Titan supports it) to cut vector storage/query cost if recall stays acceptable.</li>
+    </ul>
+  </section>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: false, theme: 'default', flowchart: { htmlLabels: true, curve: 'basis' } });
+  document.getElementById('ts').textContent = new Date().toLocaleString();
+
+  const current = `flowchart LR
+  WEB["Web app<br/>Next.js · Vercel"]:::client
+
+  subgraph SRC["Sources"]
+    PIN["Pinterest API v5<br/>user pins / boards<br/>Trial 1000/day"]
+    CAT["Catalog ·<br/>Reddit gifts JSON"]
+  end
+
+  subgraph AWS["AWS · us-east-1"]
+    ING["Ingest worker<br/>infra/ingest"]
+    S3["S3 media bucket<br/>image + thumbnail"]
+    EMB["Embedder Lambda"]
+    BR["Bedrock<br/>Titan Multimodal<br/>embed-image-v1 · 1024-d"]
+    DDB[("DynamoDB<br/>users · posts · interactions<br/>+ embeddings vectors")]
+    APIGW["API Gateway<br/>HTTP API"]
+    REC["api / rec-svc Lambda<br/>brute-force cosine"]
+  end
+
+  PIN --> ING
+  CAT --> ING
+  ING --> S3
+  S3 -- ObjectCreated --> EMB
+  EMB -- image+text --> BR
+  BR -- vector --> EMB
+  EMB --> DDB
+  WEB -- NEXT_PUBLIC_API_URL --> APIGW
+  APIGW --> REC
+  REC -- read + score --> DDB
+  REC -- ranked feed --> WEB
+
+  classDef client fill:#e8f0fe,stroke:#4285f4,color:#1d1d1f;`;
+
+  const optimized = `flowchart LR
+  WEB["Web · Next.js / Vercel"]:::client
+
+  subgraph SRC["Sources"]
+    PIN["Pinterest API v5"]
+    CAT["Catalog / feeds"]
+    AFF["Affiliate feeds<br/>(future)"]
+  end
+
+  SM["Secrets Manager<br/>Pinterest · affiliate keys"]:::sec
+
+  subgraph WRITE["Write path · async &amp; decoupled"]
+    SCHED["EventBridge Scheduler<br/>periodic re-sync"]
+    ING["Ingest Lambda<br/>rate-limit aware"]
+    Q["SQS ingest queue"]
+    DLQ["SQS DLQ"]:::warn
+    SFN["Step Functions<br/>download → pHash dedup<br/>→ store → embed → upsert"]
+    BR["Bedrock Titan MM · 1024-d<br/>on-demand + BATCH backfill"]
+    S3["S3 media<br/>+ CloudFront"]
+  end
+
+  subgraph VEC["Vector database"]
+    S3V[("Amazon S3 Vectors<br/>canonical · lowest cost")]:::vec
+    OS[("OpenSearch Serverless<br/>optional hot ANN tier")]
+  end
+
+  DDB[("DynamoDB<br/>metadata · pHash · interactions")]
+
+  subgraph READ["Read path"]
+    APIGW["API Gateway · HTTP API"]
+    REC["rec-svc Lambda<br/>+ native-ad interleave"]
+    VS["visual-search Lambda"]
+    CACHE["cache · DAX"]
+  end
+
+  OBS["CloudWatch · X-Ray · Budgets"]:::obs
+
+  SCHED --> ING
+  PIN --> ING
+  CAT --> ING
+  AFF --> ING
+  SM -.-> ING
+  ING --> Q
+  Q --> SFN
+  Q -. failures .-> DLQ
+  SFN --> S3
+  SFN -- image+text --> BR
+  BR -- vector --> SFN
+  SFN -- upsert vector --> S3V
+  SFN -- metadata --> DDB
+  S3V <-->|tiering| OS
+
+  WEB -- API_URL --> APIGW
+  APIGW --> REC
+  APIGW --> VS
+  REC -- kNN --> S3V
+  REC -. hot ANN .-> OS
+  REC --> DDB
+  REC --> CACHE
+  VS -- embed query img --> BR
+  VS -- kNN --> S3V
+  VS -.-> SM
+  REC -- ranked feed --> WEB
+  VS -- similar + affiliate links --> WEB
+  OBS -.-> SFN
+  OBS -.-> REC
+  OBS -.-> DLQ
+
+  classDef client fill:#e8f0fe,stroke:#4285f4,color:#1d1d1f;
+  classDef vec fill:#e6f4ea,stroke:#34a853,color:#1d1d1f;
+  classDef warn fill:#fce8e6,stroke:#ea4335,color:#1d1d1f;
+  classDef sec fill:#fef7e0,stroke:#f9ab00,color:#1d1d1f;
+  classDef obs fill:#f3e8fd,stroke:#a142f4,color:#1d1d1f;`;
+
+  async function draw(id, def) {
+    try {
+      const { svg } = await mermaid.render(id + '-svg', def);
+      document.getElementById(id).innerHTML = svg;
+    } catch (e) {
+      document.getElementById(id).innerHTML = '<div class="err">Render error: ' + (e && e.message ? e.message : e) + '</div>';
+    }
+  }
+  await draw('d1', current);
+  await draw('d2', optimized);
+</script>
+</body>
+</html>

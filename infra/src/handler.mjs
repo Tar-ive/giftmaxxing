@@ -248,6 +248,22 @@ export const handler = async (event) => {
       }
 
       const limit = Math.min(Number(qs.limit) || 12, 50);
+
+      // Vector path: taste = centroid of the user's seed pins -> kNN in S3 Vectors.
+      // Seeds come from ?seedKeys=pin-a,pin-b or from the user's interactions.
+      const seedKeys = parseList(qs.seedKeys);
+      const seeds = seedKeys.length ? seedKeys : [...likedTargets];
+      if (s3v && seeds.length) {
+        try {
+          const vitems = await vectorRecommend(seeds, { limit, sourceUser: qs.sourceUser });
+          if (vitems && vitems.length) {
+            return json(200, { items: vitems, cursor: null, source: "vector" });
+          }
+        } catch (e) {
+          console.warn("vector recommend failed, falling back to facets:", e.message);
+        }
+      }
+
       const opts = {
         vibes: parseList(qs.vibes),
         recipient: qs.recipient,
@@ -266,7 +282,7 @@ export const handler = async (event) => {
         .sort((a, b) => b._score - a._score)
         .slice(0, limit);
 
-      return json(200, { items, cursor: encodeCursor(out.LastEvaluatedKey) });
+      return json(200, { items, cursor: encodeCursor(out.LastEvaluatedKey), source: "facet" });
     }
 
     // POST /seed  { users:[], posts:[] }  — dev convenience to load sample data
