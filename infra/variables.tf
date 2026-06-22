@@ -17,9 +17,9 @@ variable "project" {
 }
 
 variable "cors_allow_origins" {
-  description = "Allowed CORS origins for the HTTP API"
+  description = "Allowed CORS origins for the HTTP API. This is an unauthenticated public read API, so '*' lets the Vercel prod + preview domains call it from the browser. Restrict to specific origins (e.g. your Vercel domain + http://localhost:3000) to lock down browser callers."
   type        = list(string)
-  default     = ["http://localhost:3000"]
+  default     = ["*"]
 }
 
 locals {
