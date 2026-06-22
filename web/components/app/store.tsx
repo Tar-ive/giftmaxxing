@@ -114,6 +114,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!apiModeRef.current || startedRef.current) return;
     startedRef.current = true;
+    loadingRef.current = true;
     let cancelled = false;
     (async () => {
       try {
@@ -127,6 +128,8 @@ export function AppStore({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
         apiModeRef.current = false;
         setPosts(POSTS.map((p) => ({ ...p })));
+      } finally {
+        loadingRef.current = false;
       }
     })();
     return () => {

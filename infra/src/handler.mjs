@@ -160,9 +160,12 @@ export const handler = async (event) => {
         );
         return json(200, { items: out.Items ?? [], cursor: encodeCursor(out.LastEvaluatedKey) });
       }
+      // Over-sample so the ranker sees items from multiple sources (Reddit +
+      // Pinterest) even though DynamoDB Scan returns items in partition-key order.
+      const scanLimit = Math.max(limit * 4, 80);
       const scan = {
         TableName: POSTS,
-        Limit: limit,
+        Limit: scanLimit,
         ExclusiveStartKey: start,
       };
       const out = await ddb.send(new ScanCommand(scan));
@@ -174,7 +177,8 @@ export const handler = async (event) => {
       };
       const items = (out.Items ?? [])
         .map((p) => ({ ...p, _score: scorePost(p, opts) }))
-        .sort((a, b) => b._score - a._score);
+        .sort((a, b) => b._score - a._score)
+        .slice(0, limit);
       return json(200, { items, cursor: encodeCursor(out.LastEvaluatedKey) });
     }
 
