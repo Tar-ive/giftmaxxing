@@ -1,5 +1,3 @@
-"use client";
-
 import { IdeasExplorer } from "@/components/app/ideas-explorer";
 
 // Drops surface = the Reddit-mined gift-knowledge explorer (recipient picker ->

@@ -14,7 +14,7 @@ export default function FeedPage() {
   // next ranked page from the recommendation engine.
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el || !hasMore) return;
+    if (!el || !hasMore || loadingMore || posts.length === 0) return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting) loadMore();
@@ -23,7 +23,7 @@ export default function FeedPage() {
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [loadMore, hasMore]);
+  }, [loadMore, hasMore, loadingMore, posts.length]);
 
   return (
     <div className="mx-auto flex max-w-5xl justify-center gap-12 px-3 py-6 sm:px-5">
