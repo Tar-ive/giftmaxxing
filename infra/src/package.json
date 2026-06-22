@@ -1,0 +1,10 @@
+{
+  "name": "giftmaxxing-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Giftmaxxing API Lambda. DynamoDB + lib-dynamodb come from the nodejs20.x runtime; only @aws-sdk/client-s3vectors is bundled (not in the runtime SDK).",
+  "dependencies": {
+    "@aws-sdk/client-s3vectors": "^3.700.0"
+  }
+}

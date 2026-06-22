@@ -36,7 +36,10 @@ export type Post = {
   liked: boolean;
   saved: boolean;
   comments: Comment[];
+  commentCount?: number; // server-provided count when comments aren't hydrated
   source?: string;
+  url?: string; // permalink to the original post (Reddit-sourced)
+  productUrl?: string | null; // off-site product link
   rec?: boolean; // surfaced by the recommendation engine
   reason?: string; // human-readable "why you're seeing this"
 };
@@ -149,6 +152,25 @@ export const SUGGESTIONS: Suggestion[] = [
   { user: "noor", reason: "New to Giftmaxxing" },
   { user: "sam", reason: "Followed by jules" },
 ];
+
+// Resolve a display user for a post. Static demo users live in USERS; Reddit-
+// sourced posts (author = "reddit_<sub>") synthesize one from the post source.
+export function resolveUser(post: Post): User {
+  const known = USERS[post.user];
+  if (known) return known;
+  const handle = (post.source ?? post.user ?? "reddit").replace(/^r\//, "");
+  return {
+    id: post.user,
+    name: post.source ?? "Reddit",
+    handle,
+    grad: post.product.grad,
+  };
+}
+
+// Number of comments to display for a post (handles server count or hydrated list).
+export function commentCountOf(post: Post): number {
+  return post.commentCount ?? post.comments.length;
+}
 
 // Products shown on a profile grid (their posted finds + curated)
 export function profilePosts(userId: string): Post[] {

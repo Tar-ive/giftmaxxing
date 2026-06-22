@@ -24,12 +24,21 @@ const USER_AGENT =
 const SUBREDDITS = [
   "giftideas",
   "gifts",
+  "GiftIdeas",
   "DidntKnowIWantedThat",
   "BuyItForLife",
   "shutupandtakemymoney",
+  "INEEEEDIT",
+  "somethingimade",
+  "coolgadgets",
+  "gadgets",
+  "functionalprint",
+  "gifts_for_men",
+  "gift_ideas",
 ];
 
-const LIMIT = 100;
+const LIMIT = 100; // posts per PullPush request (max 100)
+const PAGES = 3; // pages per subreddit (paginated by created_utc cursor)
 
 const GRADS = ["peach", "rose", "butter", "lilac", "sky", "sage", "coral"];
 
@@ -84,11 +93,24 @@ function bestImage(data) {
   return null;
 }
 
-async function fetchSubreddit(sub) {
-  // PullPush returns submissions directly in `data` (no Reddit listing wrapper).
-  const url =
+// The submission's off-reddit link (a product/article URL), if it's a link post.
+// Self/text posts and image hosts (i.redd.it etc.) are not product links.
+function externalLink(data) {
+  const u = data?.url_overridden_by_dest || data?.url;
+  if (!u || typeof u !== "string" || !u.startsWith("http")) return null;
+  if (/(^|\.)redd\.it|reddit\.com|redditmedia\.com|imgur\.com|gfycat\.com|v\.redd/i.test(u)) {
+    return null;
+  }
+  return u;
+}
+
+// One page of submissions from PullPush. `before` is an epoch-seconds cursor
+// used to page backwards through a subreddit's history.
+async function fetchPage(sub, before) {
+  let url =
     `https://api.pullpush.io/reddit/search/submission/` +
-    `?subreddit=${sub}&size=${LIMIT}&sort=desc&sort_type=score`;
+    `?subreddit=${sub}&size=${LIMIT}&sort=desc&sort_type=created_utc`;
+  if (before) url += `&before=${before}`;
   const res = await fetch(url, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
   });
@@ -97,6 +119,21 @@ async function fetchSubreddit(sub) {
   }
   const json = await res.json();
   return json?.data ?? [];
+}
+
+// Pull several pages for a subreddit, paging by the oldest created_utc seen.
+async function fetchSubreddit(sub) {
+  const all = [];
+  let before;
+  for (let page = 0; page < PAGES; page++) {
+    const items = await fetchPage(sub, before);
+    if (items.length === 0) break;
+    all.push(...items);
+    before = items[items.length - 1]?.created_utc;
+    if (!before) break;
+    await new Promise((r) => setTimeout(r, 800)); // be polite between pages
+  }
+  return all;
 }
 
 function toProduct(d, idx) {
@@ -108,11 +145,17 @@ function toProduct(d, idx) {
     price: parsePrice(title) ?? 0,
     grad: GRADS[idx % GRADS.length],
     emoji: pickEmoji(title),
-    // extra metadata (not in the base Product type, but handy downstream)
+    // extra metadata (not in the base Product type, but used by the ingestion pipeline)
     image: bestImage(d),
-    url: `https://www.reddit.com${d.permalink}`,
-    score: d.score,
-    nsfw: d.over_18,
+    url: d.permalink ? `https://www.reddit.com${d.permalink}` : d.url,
+    link: externalLink(d), // off-reddit product/article URL, if any
+    selftext: (d.selftext ?? "").slice(0, 600), // body text for semantic enrichment
+    score: d.score ?? 0,
+    comments: d.num_comments ?? 0,
+    subreddit: d.subreddit,
+    redditAuthor: d.author ?? "unknown",
+    createdUtc: d.created_utc ?? null, // epoch seconds
+    nsfw: d.over_18 ?? false,
   };
 }
 

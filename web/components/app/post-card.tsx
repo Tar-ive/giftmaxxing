@@ -3,13 +3,14 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { GRADIENTS } from "@/lib/data";
-import { USERS, type Post } from "@/lib/social";
+import { USERS, resolveUser, commentCountOf, type Post } from "@/lib/social";
 import { Avatar, Icons } from "@/components/ui";
 import { useStore } from "@/components/app/store";
 
 export function PostCard({ post }: { post: Post }) {
   const { toggleLike, toggleSave, addComment, toggleFollow, isFollowing, openPost } = useStore();
-  const u = USERS[post.user];
+  const u = resolveUser(post);
+  const commentTotal = commentCountOf(post);
   const [draft, setDraft] = useState("");
   const [burst, setBurst] = useState(false);
   const lastTap = useRef(0);
@@ -76,6 +77,18 @@ export function PostCard({ post }: { post: Post }) {
         onClick={onMediaClick}
       >
         <span className="text-[96px]">{post.product.emoji}</span>
+        {post.product.image && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={post.product.image}
+            alt={post.product.name}
+            loading="lazy"
+            className="absolute inset-0 h-full w-full object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        )}
 
         {/* product tag chip */}
         <button
@@ -124,12 +137,12 @@ export function PostCard({ post }: { post: Post }) {
           </p>
         )}
 
-        {post.comments.length > 0 && (
+        {commentTotal > 0 && (
           <button
             onClick={() => openPost(post.id)}
             className="mt-1.5 block text-sm text-ink-faint"
           >
-            View all {post.comments.length} comments
+            View all {commentTotal.toLocaleString()} comments
           </button>
         )}
         {post.comments.slice(-2).map((c) => (

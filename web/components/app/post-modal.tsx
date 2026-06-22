@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { GRADIENTS } from "@/lib/data";
-import { USERS } from "@/lib/social";
+import { USERS, resolveUser, commentCountOf } from "@/lib/social";
 import { Avatar, Icons } from "@/components/ui";
 import { useStore } from "@/components/app/store";
 
@@ -11,7 +11,8 @@ export function PostModal() {
   const [draft, setDraft] = useState("");
   const post = posts.find((p) => p.id === openPostId);
   if (!post) return null;
-  const u = USERS[post.user];
+  const u = resolveUser(post);
+  const commentTotal = commentCountOf(post);
 
   return (
     <div
@@ -36,6 +37,17 @@ export function PostModal() {
           style={{ background: GRADIENTS[post.product.grad] }}
         >
           <span className="text-[120px]">{post.product.emoji}</span>
+          {post.product.image && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={post.product.image}
+              alt={post.product.name}
+              className="absolute inset-0 h-full w-full object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          )}
           <div className="absolute bottom-4 left-4 rounded-xl bg-black/55 px-4 py-2.5 text-white backdrop-blur">
             <p className="text-sm font-bold">{post.product.name}</p>
             <p className="text-xs text-white/80">
@@ -78,11 +90,21 @@ export function PostModal() {
                 </div>
               );
             })}
-            {post.comments.length === 0 && (
-              <p className="pt-6 text-center text-sm text-ink-faint">
-                No comments yet. Start the conversation.
-              </p>
-            )}
+            {post.comments.length === 0 &&
+              (commentTotal > 0 && post.url ? (
+                <a
+                  href={post.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block pt-6 text-center text-sm font-semibold text-coral"
+                >
+                  View all {commentTotal.toLocaleString()} comments on Reddit
+                </a>
+              ) : (
+                <p className="pt-6 text-center text-sm text-ink-faint">
+                  No comments yet. Start the conversation.
+                </p>
+              ))}
           </div>
 
           {/* actions */}

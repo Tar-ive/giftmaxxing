@@ -46,6 +46,24 @@ resource "aws_dynamodb_table" "posts" {
   }
 }
 
+# ── Knowledge ────────────────────────────────────────────────────────────────
+# Gift-knowledge base mined from Reddit discussions. PK: recipient (mom, couple,
+# coworker, ...). Each item holds ranked gift ideas + co-occurrence bundles.
+resource "aws_dynamodb_table" "knowledge" {
+  name         = "${local.prefix}-knowledge"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "recipient"
+
+  attribute {
+    name = "recipient"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
 # ── Interactions ─────────────────────────────────────────────────────────────
 # PK: userId, SK: targetId (e.g. "post#p1"). One row per (user, target) so
 # likes/saves are naturally idempotent. `type` holds like|save|comment.

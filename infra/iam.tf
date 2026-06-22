@@ -38,6 +38,7 @@ data "aws_iam_policy_document" "ddb_access" {
       aws_dynamodb_table.posts.arn,
       "${aws_dynamodb_table.posts.arn}/index/*",
       aws_dynamodb_table.interactions.arn,
+      aws_dynamodb_table.knowledge.arn,
     ]
   }
 }

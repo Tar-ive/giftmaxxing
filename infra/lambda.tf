@@ -26,6 +26,7 @@ resource "aws_lambda_function" "api" {
       USERS_TABLE        = aws_dynamodb_table.users.name
       POSTS_TABLE        = aws_dynamodb_table.posts.name
       INTERACTIONS_TABLE = aws_dynamodb_table.interactions.name
+      KNOWLEDGE_TABLE    = aws_dynamodb_table.knowledge.name
     }
   }
 

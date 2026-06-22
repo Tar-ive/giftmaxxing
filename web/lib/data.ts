@@ -28,6 +28,7 @@ export type Product = {
   was?: number;
   grad: Grad;
   emoji: string;
+  image?: string | null; // real product/preview image (Reddit-sourced posts)
 };
 
 export const PRODUCTS: Product[] = [
