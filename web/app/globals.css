@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Brand fonts (wired up in layout.tsx) */
+  --font-sans: var(--font-hanken), -apple-system, system-ui, sans-serif;
+  --font-serif: var(--font-instrument), Georgia, serif;
+  --font-display: var(--font-bricolage), system-ui, sans-serif;
+
+  /* Editorial palette — warm ivory + charcoal ink */
+  --color-cream: #f7f2eb;
+  --color-cream-2: #fbf7f1;
+  --color-surface: #ffffff;
+  --color-ink: #211a14;
+  --color-ink-soft: #6c6157;
+  --color-ink-faint: #9c9389;
+  --color-line: #e8e0d5;
+
+  /* Accent — coral */
+  --color-coral: #fb6f52;
+  --color-coral-ink: #3a1206;
+  --color-coral-soft: #fde7e0;
+
+  /* Product gradient stops (echoing the prototype) */
+  --color-peach-1: #ffd3a5;
+  --color-peach-2: #ff9a76;
+  --color-rose-1: #ffc2d1;
+  --color-rose-2: #ff8fa3;
+  --color-butter-1: #ffe7a0;
+  --color-butter-2: #ffc24b;
+  --color-lilac-1: #d9c2ff;
+  --color-lilac-2: #a98bff;
+  --color-sky-1: #bfe3ff;
+  --color-sky-2: #7fb8ff;
+  --color-sage-1: #cde6c5;
+  --color-sage-2: #8fc79a;
+
+  --radius-card: 1.5rem;
+}
+
+:root {
+  --background: #f7f2eb;
+  --foreground: #211a14;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(120% 80% at 12% 0%, rgba(255, 180, 150, 0.28), transparent 55%),
+    radial-gradient(110% 70% at 92% 6%, rgba(255, 150, 190, 0.22), transparent 50%),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-coral);
+  color: #fff;
+}
+
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-rise {
+  animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.animate-float {
+  animation: float-soft 6s ease-in-out infinite;
+}

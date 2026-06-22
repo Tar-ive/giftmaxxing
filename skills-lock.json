@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "aws-agentic-ai": {
+      "source": "zxkane/aws-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/aws-agentic-ai/skills/aws-agentic-ai/SKILL.md",
+      "computedHash": "676db19b502609c08aac0685f5429b49b329311abbc8627f3c0aa738920c363f"
+    },
+    "aws-cdk-development": {
+      "source": "zxkane/aws-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/aws-cdk/skills/aws-cdk-development/SKILL.md",
+      "computedHash": "bdb896d637c43cd0065b7eadbce835e07273dee9f5fde2bf9b9f34526f2e284f"
+    },
+    "aws-serverless-eda": {
+      "source": "zxkane/aws-skills",
+      "sourceType": "github",
+      "skillPath": "plugins/serverless-eda/skills/aws-serverless-eda/SKILL.md",
+      "computedHash": "e7784abe477ca933771a77ca51122b83a88670838fb02cc6fb53f03f4687fde3"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+# ── Users ────────────────────────────────────────────────────────────────────
+resource "aws_dynamodb_table" "users" {
+  name         = "${local.prefix}-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+# ── Posts ────────────────────────────────────────────────────────────────────
+# PK: postId. GSI byAuthor lets us list a user's finds for the profile grid.
+resource "aws_dynamodb_table" "posts" {
+  name         = "${local.prefix}-posts"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "postId"
+
+  attribute {
+    name = "postId"
+    type = "S"
+  }
+  attribute {
+    name = "author"
+    type = "S"
+  }
+  attribute {
+    name = "createdAt"
+    type = "N"
+  }
+
+  global_secondary_index {
+    name            = "byAuthor"
+    hash_key        = "author"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+# ── Interactions ─────────────────────────────────────────────────────────────
+# PK: userId, SK: targetId (e.g. "post#p1"). One row per (user, target) so
+# likes/saves are naturally idempotent. `type` holds like|save|comment.
+resource "aws_dynamodb_table" "interactions" {
+  name         = "${local.prefix}-interactions"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
+  range_key    = "targetId"
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+  attribute {
+    name = "targetId"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}

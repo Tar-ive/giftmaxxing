@@ -1,0 +1,17 @@
+# Secrets / credentials — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# AWS
+.aws-sam/
+cdk.out/
+cdk.context.json
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
