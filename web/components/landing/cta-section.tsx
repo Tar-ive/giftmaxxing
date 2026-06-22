@@ -35,7 +35,7 @@ export function CtaSection() {
     <section id="waitlist" ref={sectionRef} className="relative py-24 lg:py-32 overflow-hidden">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         <div
-          className={`relative border border-foreground transition-all duration-1000 ${
+          className={`relative border border-foreground/15 rounded-[2rem] overflow-hidden bg-card/50 transition-all duration-1000 ${
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
           }`}
           onMouseMove={handleMouseMove}
@@ -87,7 +87,7 @@ export function CtaSection() {
                     <Button
                       type="submit"
                       size="lg"
-                      className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group shrink-0"
+                      className="bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-8 h-14 text-base rounded-full group shrink-0"
                     >
                       Get early access
                       <ArrowRight className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" />
@@ -114,9 +114,6 @@ export function CtaSection() {
             </div>
           </div>
 
-          {/* Decorative corner */}
-          <div className="absolute top-0 right-0 w-32 h-32 border-b border-l border-foreground/10" />
-          <div className="absolute bottom-0 left-0 w-32 h-32 border-t border-r border-foreground/10" />
         </div>
       </div>
     </section>

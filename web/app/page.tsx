@@ -8,7 +8,7 @@ import { FooterSection } from "@/components/landing/footer-section";
 
 export default function Home() {
   return (
-    <main className="landing-dark min-h-screen flex-1">
+    <main className="landing-light min-h-screen flex-1">
       <Navigation />
       <HeroSection />
       <FeaturesSection />

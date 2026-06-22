@@ -107,7 +107,7 @@ function ParticleVisualization() {
 
         ctx.beginPath();
         ctx.arc(x, y, p.radius + pulse * 0.8, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(251, 150, 118, ${alpha})`;
+        ctx.fillStyle = `rgba(251, 111, 82, ${alpha})`;
         ctx.fill();
       });
 
@@ -188,15 +188,15 @@ export function FeaturesSection() {
           {/* Large Maxi card */}
           <div
             id="maxi"
-            className={`lg:col-span-12 relative bg-black border border-foreground/10 min-h-[460px] overflow-hidden group transition-all duration-700 flex ${
+            className={`lg:col-span-12 relative bg-[#fbf7f1] border border-foreground/10 rounded-3xl min-h-[460px] overflow-hidden group transition-all duration-700 flex ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
             }`}
           >
-            <div className="relative flex-1 p-8 lg:p-12 bg-black">
+            <div className="relative flex-1 p-8 lg:p-12 bg-transparent">
               <ParticleVisualization />
               <div className="relative z-10 pointer-events-none">
                 <span className="font-mono text-sm text-muted-foreground">{features[0].number}</span>
-                <h3 className="text-3xl lg:text-4xl font-display mt-4 mb-6 text-white">{features[0].title}</h3>
+                <h3 className="text-3xl lg:text-4xl font-display mt-4 mb-6 text-foreground">{features[0].title}</h3>
                 <p className="text-lg text-muted-foreground leading-relaxed max-w-md mb-8">{features[0].description}</p>
                 <div>
                   <span className="text-5xl lg:text-6xl font-display word-gradient">{features[0].stats.value}</span>
@@ -214,7 +214,7 @@ export function FeaturesSection() {
                 }}
                 className="absolute inset-0 w-full h-full object-cover object-center"
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-black via-black/40 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#fbf7f1] via-[#fbf7f1]/40 to-transparent" />
             </div>
           </div>
 
@@ -222,7 +222,7 @@ export function FeaturesSection() {
           {features.slice(1).map((f, i) => (
             <div
               key={f.number}
-              className={`lg:col-span-4 relative bg-card border border-foreground/10 p-8 min-h-[280px] flex flex-col justify-between hover-lift transition-all duration-700 ${
+              className={`lg:col-span-4 relative bg-card border border-foreground/10 rounded-2xl p-8 min-h-[280px] flex flex-col justify-between hover-lift transition-all duration-700 ${
                 isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
               }`}
               style={{ transitionDelay: `${(i + 1) * 120}ms` }}

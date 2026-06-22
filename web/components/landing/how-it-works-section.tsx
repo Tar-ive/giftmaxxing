@@ -51,9 +51,9 @@ export function HowItWorksSection() {
     <section
       id="how-it-works"
       ref={sectionRef}
-      className="relative py-24 lg:py-32 bg-[#0c0a0b] text-white overflow-hidden"
+      className="relative py-24 lg:py-32 bg-[#fbf7f1] text-foreground overflow-hidden"
     >
-      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-[#fb6f52]/[0.06] blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full bg-[#fb6f52]/[0.10] blur-[120px] pointer-events-none" />
 
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12">
         {/* Header — titre + image cerisier */}
@@ -61,8 +61,8 @@ export function HowItWorksSection() {
           {/* Titre colonne gauche */}
           <div className="overflow-hidden pb-0 lg:pb-32">
             <div className={`transition-all duration-1000 ${isVisible ? "translate-x-0 opacity-100" : "-translate-x-12 opacity-0"}`}>
-              <span className="inline-flex items-center gap-3 text-sm font-mono text-white/40 mb-8">
-                <span className="w-12 h-px bg-white/20" />
+              <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-8">
+                <span className="w-12 h-px bg-foreground/20" />
                 How it works
               </span>
             </div>
@@ -71,8 +71,8 @@ export function HowItWorksSection() {
               isVisible ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
             }`}>
               <span className="block">Connect.</span>
-              <span className="block text-white/30">Discover.</span>
-              <span className="block text-white/10">Give.</span>
+              <span className="block text-foreground/30">Discover.</span>
+              <span className="block text-foreground/15">Give.</span>
             </h2>
           </div>
 
@@ -90,7 +90,7 @@ export function HowItWorksSection() {
               className="absolute bottom-0 left-0 w-full h-full object-cover object-center"
             />
             {/* Fade sur le bord gauche */}
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0c0a0b] via-transparent to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#fbf7f1] via-transparent to-transparent pointer-events-none" />
           </div>
         </div>
 
@@ -101,20 +101,20 @@ export function HowItWorksSection() {
               key={step.number}
               type="button"
               onClick={() => setActiveStep(index)}
-              className={`relative text-left p-8 lg:p-12 border transition-all duration-500 ${
+              className={`relative text-left p-8 lg:p-12 border rounded-2xl transition-all duration-500 ${
                 activeStep === index 
-                  ? "bg-[#000000] border-white/60" 
-                  : "bg-[#000000] border-white/25 hover:border-white/50"
+                  ? "bg-card border-foreground/25 shadow-lg shadow-black/5" 
+                  : "bg-card border-foreground/10 hover:border-foreground/30"
               }`}
             >
               {/* Step number with animated line */}
               <div className="flex items-center gap-4 mb-8">
                 <span className={`text-4xl font-display transition-colors duration-300 ${
-                  activeStep === index ? "text-[#fb6f52]" : "text-white/20"
+                  activeStep === index ? "text-[#fb6f52]" : "text-foreground/20"
                 }`}>
                   {step.number}
                 </span>
-                <div className="flex-1 h-px bg-white/10 overflow-hidden">
+                <div className="flex-1 h-px bg-foreground/10 overflow-hidden">
                   {activeStep === index && (
                     <div className="h-full bg-[#fb6f52]/50 animate-progress" />
                   )}
@@ -125,12 +125,12 @@ export function HowItWorksSection() {
               <h3 className="text-3xl lg:text-4xl font-display mb-2">
                 {step.title}
               </h3>
-              <span className="text-xl text-white/40 font-display block mb-6">
+              <span className="text-xl text-muted-foreground font-display block mb-6">
                 {step.subtitle}
               </span>
 
               {/* Description */}
-              <p className={`text-white/60 leading-relaxed transition-opacity duration-300 ${
+              <p className={`text-muted-foreground leading-relaxed transition-opacity duration-300 ${
                 activeStep === index ? "opacity-100" : "opacity-60"
               }`}>
                 {step.description}

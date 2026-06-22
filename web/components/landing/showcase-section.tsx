@@ -94,7 +94,7 @@ export function ShowcaseSection() {
             <div className="flex flex-col sm:flex-row gap-4">
               <Link
                 href="/feed"
-                className="inline-flex items-center justify-center gap-2 h-14 px-8 rounded-full bg-foreground text-background text-base font-medium hover:bg-foreground/90 transition-colors group"
+                className="inline-flex items-center justify-center gap-2 h-14 px-8 rounded-full bg-[#fb6f52] text-white text-base font-medium hover:bg-[#fb6f52]/90 transition-colors group"
               >
                 Open the live feed
                 <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
@@ -114,7 +114,7 @@ export function ShowcaseSection() {
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
             }`}
           >
-            <div className="rounded-2xl border border-foreground/15 bg-[#fbf7f1] text-[#211a14] overflow-hidden shadow-2xl shadow-black/40">
+            <div className="rounded-2xl border border-foreground/15 bg-[#fbf7f1] text-[#211a14] overflow-hidden shadow-xl shadow-black/10">
               {/* Browser chrome */}
               <div className="flex items-center gap-2 px-4 py-3 border-b border-[#e8e0d5] bg-[#f1e8dc]">
                 <span className="w-3 h-3 rounded-full bg-[#ff6159]" />

@@ -73,6 +73,24 @@
   color: var(--foreground);
 }
 
+/* Light, playful scope for the marketing landing page (default theme) */
+.landing-light {
+  --background: #f7f2eb;
+  --foreground: #211a14;
+  --muted: #efe7da;
+  --muted-foreground: #6c6157;
+  --card: #ffffff;
+  --border: #e8e0d5;
+  --primary: #211a14;
+  --primary-foreground: #f7f2eb;
+  color: var(--foreground);
+  background:
+    radial-gradient(55% 45% at 88% 0%, rgba(251, 111, 82, 0.12), transparent 60%),
+    radial-gradient(45% 38% at 2% 16%, rgba(255, 194, 75, 0.12), transparent 58%),
+    radial-gradient(50% 45% at 50% 100%, rgba(217, 194, 255, 0.10), transparent 62%),
+    var(--background);
+}
+
 * {
   box-sizing: border-box;
 }

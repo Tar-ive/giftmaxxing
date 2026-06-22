@@ -92,7 +92,7 @@ function BlurWord({ word, trigger }: { word: string; trigger: number }) {
               display: "inline-block",
               opacity: letterStates[i]?.opacity ?? 0,
               filter: `blur(${letterStates[i]?.blur ?? 20}px)`,
-              color: showGradient ? `rgb(${r},${g},${b})` : "white",
+              color: showGradient ? `rgb(${r},${g},${b})` : "#fb6f52",
               transition: "color 0.4s ease",
             }}
           >
@@ -120,27 +120,27 @@ export function HeroSection() {
   }, []);
 
   return (
-    <section className="relative min-h-screen flex flex-col justify-center items-start overflow-hidden bg-black">
+    <section className="relative min-h-screen flex flex-col justify-center items-start overflow-hidden bg-background">
       {/* Background image (Midjourney) with warm gradient fallback */}
       <div
         className="absolute inset-0 z-0"
         style={{
           background:
-            "radial-gradient(120% 120% at 78% 28%, rgba(251,111,82,0.38), transparent 55%), radial-gradient(90% 90% at 92% 8%, rgba(255,194,75,0.22), transparent 50%), #0c0a0b",
+            "radial-gradient(120% 120% at 80% 25%, rgba(251,111,82,0.16), transparent 55%), radial-gradient(90% 90% at 95% 8%, rgba(255,194,75,0.14), transparent 50%), #f7f2eb",
         }}
       >
         <img
-          src="https://cdn.midjourney.com/4262b272-bbea-46a1-b9fc-b436daa101fe/0_0.jpeg"
+          src="https://cdn.midjourney.com/b0e3eeff-f2f1-48a3-8d82-e530b3d96337/0_0.jpeg"
           alt=""
           aria-hidden="true"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.display = "none";
           }}
-          className="w-full h-full object-cover object-center opacity-70"
+          className="w-full h-full object-cover object-center opacity-90"
         />
-        {/* Subtle overlay to ensure text readability on the left */}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/60" />
+        {/* Cream overlays keep the left text crisp and blend the image edges */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#f7f2eb] via-[#f7f2eb]/75 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#f7f2eb]/50 via-transparent to-[#f7f2eb]/70" />
       </div>
 
       {/* Subtle grid lines */}
@@ -148,7 +148,7 @@ export function HeroSection() {
         {[...Array(8)].map((_, i) => (
           <div
             key={`h-${i}`}
-            className="absolute h-px bg-white/10"
+            className="absolute h-px bg-foreground/5"
             style={{
               top: `${12.5 * (i + 1)}%`,
               left: 0,
@@ -159,7 +159,7 @@ export function HeroSection() {
         {[...Array(12)].map((_, i) => (
           <div
             key={`v-${i}`}
-            className="absolute w-px bg-white/10"
+            className="absolute w-px bg-foreground/5"
             style={{
               left: `${8.33 * (i + 1)}%`,
               top: 0,
@@ -177,8 +177,8 @@ export function HeroSection() {
             isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
           }`}
         >
-          <span className="inline-flex items-center gap-3 text-sm font-mono text-white/60">
-            <span className="w-8 h-px bg-white/30" />
+          <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground">
+            <span className="w-8 h-px bg-foreground/30" />
             Social gifting, with an AI companion
           </span>
         </div>
@@ -186,7 +186,7 @@ export function HeroSection() {
         {/* Main headline */}
         <div className="mb-12">
           <h1 
-            className={`text-left text-[clamp(2rem,6vw,7rem)] font-display leading-[0.92] tracking-tight text-white transition-all duration-1000 ${
+            className={`text-left text-[clamp(2rem,6vw,7rem)] font-display leading-[0.92] tracking-tight text-foreground transition-all duration-1000 ${
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}
           >
@@ -214,8 +214,8 @@ export function HeroSection() {
             { value: "4.9\u2605", label: "gifts they actually loved" },
           ].map((stat) => (
             <div key={stat.label} className="flex flex-col gap-2">
-              <span className="text-3xl lg:text-4xl font-display text-white">{stat.value}</span>
-              <span className="text-xs text-white/50 leading-tight">
+              <span className="text-3xl lg:text-4xl font-display text-foreground">{stat.value}</span>
+              <span className="text-xs text-muted-foreground leading-tight">
                 {stat.label}
               </span>
             </div>
