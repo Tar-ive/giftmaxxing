@@ -19,6 +19,7 @@ const ITEMS: Item[] = [
   { label: "Explore", href: "/feed/explore", icon: "compass" },
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
   { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
+  { label: "Milestones", href: "/feed/milestones", icon: "trend" },
   { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
   { label: "Messages", href: "/feed/messages", icon: "message" },
