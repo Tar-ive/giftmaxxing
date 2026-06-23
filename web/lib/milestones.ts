@@ -98,6 +98,7 @@ export function saveMilestones(milestones: Milestone[]): boolean {
   if (typeof window === "undefined") return false;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(milestones));
+    window.dispatchEvent(new Event("giftmaxxing:milestones"));
     return true;
   } catch {
     return false;
@@ -160,8 +161,8 @@ export function totalRewardBudget(milestones: Milestone[]): number {
 // Is the milestone past its target date without completion?
 export function isOverdue(milestone: Milestone): boolean {
   if (!milestone.targetDate || milestone.status !== "active") return false;
-  const target = new Date(milestone.targetDate);
-  return target.getTime() < Date.now();
+  const days = daysRemaining(milestone);
+  return days !== null && days < 0;
 }
 
 // Days remaining until target date (null if no deadline)
