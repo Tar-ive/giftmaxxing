@@ -42,8 +42,9 @@ export default function InvitePage() {
     setPhase("birthday");
   }, []);
 
-  const handleFinish = useCallback(() => {
-    if (!guestName.trim()) return;
+  const handleFinish = useCallback((nameOverride?: string) => {
+    const finalName = (nameOverride ?? guestName).trim();
+    if (!finalName) return;
     setSaving(true);
 
     // Build a minimal onboarding profile from the swipe preferences so the
@@ -114,7 +115,7 @@ export default function InvitePage() {
     }
 
     const profile: UserProfile = {
-      name: guestName.trim(),
+      name: finalName,
       role: "both",
       difficulty: yesCount > 8 ? "easy" : "moderate",
       style: "mix",
@@ -267,7 +268,7 @@ export default function InvitePage() {
 
           <div className="mt-8 flex flex-col gap-3">
             <button
-              onClick={handleFinish}
+              onClick={() => handleFinish()}
               disabled={!guestName.trim() || saving}
               className="w-full rounded-full bg-coral px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90 disabled:opacity-40"
             >
@@ -275,10 +276,8 @@ export default function InvitePage() {
             </button>
             <button
               onClick={() => {
-                // Allow skipping birthday — just set a name placeholder.
-                if (!guestName.trim()) setGuestName("Friend");
                 setBirthday("");
-                handleFinish();
+                handleFinish(guestName.trim() || "Friend");
               }}
               className="text-sm font-semibold text-ink-faint transition-colors hover:text-ink"
             >

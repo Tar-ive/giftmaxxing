@@ -18,15 +18,19 @@ export type InvitePayload = {
 
 function toBase64Url(s: string): string {
   if (typeof btoa === "function") {
-    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const bytes = new TextEncoder().encode(s);
+    const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
-  return Buffer.from(s).toString("base64url");
+  return Buffer.from(s, "utf-8").toString("base64url");
 }
 
 function fromBase64Url(s: string): string {
   const padded = s.replace(/-/g, "+").replace(/_/g, "/");
   if (typeof atob === "function") {
-    return atob(padded);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
   }
   return Buffer.from(padded, "base64").toString("utf-8");
 }
