@@ -78,7 +78,13 @@ function vectorToResult(v: VectorItem): ResultItem {
   };
 }
 
-export function SwipeDeck({ compact = false }: { compact?: boolean }) {
+export function SwipeDeck({
+  compact = false,
+  onMatchesReady,
+}: {
+  compact?: boolean;
+  onMatchesReady?: () => void;
+}) {
   const [mounted, setMounted] = useState(false);
   const [deck, setDeck] = useState<Pin[]>([]);
   const [idx, setIdx] = useState(0);
@@ -169,6 +175,10 @@ export function SwipeDeck({ compact = false }: { compact?: boolean }) {
   };
 
   const loadResults = useCallback(async () => {
+    if (onMatchesReady) {
+      onMatchesReady();
+      return;
+    }
     setLoadingResults(true);
     setPhase("results");
     const seeds = seedKeysFromSwipes(8);
@@ -193,7 +203,7 @@ export function SwipeDeck({ compact = false }: { compact?: boolean }) {
     setResults(items);
     setResultSource(source);
     setLoadingResults(false);
-  }, []);
+  }, [onMatchesReady]);
 
   const startOver = useCallback(() => {
     clearSwipes();

@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { SwipeDeck } from "@/components/app/swipe-deck";
 import { Icons } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
+import { buildInviteUrl } from "@/lib/invite";
 
 export default function SwipePage() {
   const me = useCurrentUser();
@@ -11,8 +12,7 @@ export default function SwipePage() {
   const [copied, setCopied] = useState(false);
 
   const share = useCallback(async () => {
-    const url =
-      typeof window !== "undefined" ? `${window.location.origin}/feed/swipe` : "/feed/swipe";
+    const url = buildInviteUrl(me.name !== "You" ? me.name : "A friend");
     const text =
       "Would you want this gifted to you? 👀 Swipe to find your gift taste on Giftmaxxing";
     try {
@@ -30,7 +30,7 @@ export default function SwipePage() {
     } catch {
       // clipboard blocked — nothing else to do
     }
-  }, []);
+  }, [me.name]);
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
