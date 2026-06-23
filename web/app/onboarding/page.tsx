@@ -21,10 +21,23 @@ import {
   DEAL_TYPE_META,
   saveProfile,
 } from "@/lib/onboarding";
+import {
+  type RelationType,
+  type EventType,
+  type Recurrence,
+  type Recipient,
+  type ImportantEvent,
+  RELATION_META,
+  EVENT_TYPE_META,
+  RECURRENCE_META,
+  genId,
+  formatEventDate,
+  daysUntil,
+} from "@/lib/events";
 
 // ── Step definitions ────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 8; // welcome, role, difficulty, style, materialistic (conditional), interests, deals, pinterest
+const TOTAL_STEPS = 9; // welcome, role, difficulty, style, materialistic (conditional), interests, deals, events, pinterest
 
 type StepProps = {
   onNext: () => void;
@@ -50,6 +63,11 @@ export default function OnboardingPage() {
   const [budgetRange, setBudgetRange] = useState<BudgetRange | null>(null);
   const [dealTypes, setDealTypes] = useState<Set<DealType>>(new Set());
   const [priceAlerts, setPriceAlerts] = useState(false);
+
+  // Event logging (opt-in): recipients + their important dates.
+  const [eventLoggingEnabled, setEventLoggingEnabled] = useState(false);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [events, setEvents] = useState<ImportantEvent[]>([]);
 
   // Whether the materialistic sub-step should show
   const showMaterialistic = style === "materialistic" || style === "mix";
@@ -81,11 +99,16 @@ export default function OnboardingPage() {
         priceAlerts,
       },
       pinterestLinks,
+      eventLoggingEnabled,
+      recipients,
+      events,
       completedAt: Date.now(),
     };
     if (!saveProfile(profile)) return;
+    // Notify AccountSync (persist to DynamoDB) + identity (refresh current user).
+    window.dispatchEvent(new Event("giftmaxxing:profile"));
     router.push("/feed");
-  }, [name, role, difficulty, style, showMaterialistic, matCategories, interests, dealSensitivity, budgetRange, dealTypes, priceAlerts, pinterestLinks, router]);
+  }, [name, role, difficulty, style, showMaterialistic, matCategories, interests, dealSensitivity, budgetRange, dealTypes, priceAlerts, pinterestLinks, eventLoggingEnabled, recipients, events, router]);
 
   const addPinterestLink = useCallback(() => {
     const url = pinterestUrl.trim();
@@ -130,6 +153,52 @@ export default function OnboardingPage() {
       else next.add(dt);
       return next;
     });
+  }, []);
+
+  // Add an important date. Reuses an existing recipient (same name + relation)
+  // or creates one, then attaches the event to it.
+  const addEvent = useCallback(
+    (input: {
+      recipientName: string;
+      relation: RelationType;
+      type: EventType;
+      date: string;
+      recurrence: Recurrence;
+      reminderLeadDays: number;
+      budget?: number;
+    }) => {
+      const key = (n: string, rel: string) => `${n.trim().toLowerCase()}|${rel}`;
+      const existing = recipients.find(
+        (r) => key(r.name, r.relation) === key(input.recipientName, input.relation),
+      );
+      let recipientId: string;
+      if (existing) {
+        recipientId = existing.id;
+      } else {
+        const newR: Recipient = {
+          id: genId("rcp"),
+          name: input.recipientName.trim(),
+          relation: input.relation,
+        };
+        recipientId = newR.id;
+        setRecipients((prev) => [...prev, newR]);
+      }
+      const evt: ImportantEvent = {
+        id: genId("evt"),
+        recipientId,
+        type: input.type,
+        date: input.date,
+        recurrence: input.recurrence,
+        reminderLeadDays: input.reminderLeadDays,
+        budget: input.budget,
+      };
+      setEvents((prev) => [...prev, evt]);
+    },
+    [recipients],
+  );
+
+  const removeEvent = useCallback((id: string) => {
+    setEvents((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
   const progress = ((step + 1) / effectiveTotal) * 100;
@@ -198,6 +267,18 @@ export default function OnboardingPage() {
               />
             )}
             {logicalStep === 7 && (
+              <StepEvents
+                enabled={eventLoggingEnabled}
+                setEnabled={setEventLoggingEnabled}
+                recipients={recipients}
+                events={events}
+                onAdd={addEvent}
+                onRemove={removeEvent}
+                onNext={goNext}
+                onBack={goBack}
+              />
+            )}
+            {logicalStep === 8 && (
               <StepPinterest
                 url={pinterestUrl}
                 setUrl={setPinterestUrl}
@@ -753,7 +834,243 @@ function StepPinterest({
   );
 }
 
-// ── Shared UI pieces ────────────────────────────────────────────────────────
+function StepEvents({
+  enabled,
+  setEnabled,
+  recipients,
+  events,
+  onAdd,
+  onRemove,
+  onNext,
+  onBack,
+}: {
+  enabled: boolean;
+  setEnabled: (v: boolean) => void;
+  recipients: Recipient[];
+  events: ImportantEvent[];
+  onAdd: (input: {
+    recipientName: string;
+    relation: RelationType;
+    type: EventType;
+    date: string;
+    recurrence: Recurrence;
+    reminderLeadDays: number;
+    budget?: number;
+  }) => void;
+  onRemove: (id: string) => void;
+} & StepProps) {
+  const [rName, setRName] = useState("");
+  const [relation, setRelation] = useState<RelationType>("partner");
+  const [etype, setEtype] = useState<EventType>("birthday");
+  const [date, setDate] = useState("");
+  const [recurrence, setRecurrence] = useState<Recurrence>("annual");
+  const [budget, setBudget] = useState("");
+  const [lead, setLead] = useState(7);
+
+  const recById = useMemo(
+    () => Object.fromEntries(recipients.map((r) => [r.id, r])),
+    [recipients],
+  );
+
+  const canAdd = rName.trim().length > 0 && date.length > 0;
+  const submit = () => {
+    if (!canAdd) return;
+    onAdd({
+      recipientName: rName,
+      relation,
+      type: etype,
+      date,
+      recurrence,
+      reminderLeadDays: lead,
+      budget: budget ? Number(budget) : undefined,
+    });
+    setRName("");
+    setDate("");
+    setBudget("");
+  };
+
+  const fieldCls =
+    "w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm font-medium text-ink outline-none transition-shadow focus:border-coral focus:ring-2 focus:ring-coral/20";
+  const labelCls =
+    "mb-1.5 block text-left text-xs font-semibold uppercase tracking-widest text-ink-faint";
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <p className="text-xs font-semibold uppercase tracking-widest text-ink-faint">
+        Never miss a date
+      </p>
+      <h2 className="mt-2 font-display text-2xl font-extrabold text-ink sm:text-3xl">
+        Log important dates
+      </h2>
+      <p className="mx-auto mt-2 max-w-sm text-sm text-ink-soft">
+        Add birthdays, anniversaries, and more. Maxi reminds you early and starts
+        surfacing gifts they&apos;ll love as the day approaches.
+      </p>
+
+      {/* opt-in toggle */}
+      <button
+        onClick={() => setEnabled(!enabled)}
+        className={`mt-7 flex w-full items-center gap-4 rounded-2xl border-2 px-5 py-4 text-left transition-all ${
+          enabled ? "border-coral bg-coral-soft/50 shadow-sm" : "border-line bg-surface hover:border-ink/20"
+        }`}
+      >
+        <span className="text-2xl">📅</span>
+        <div>
+          <p className="font-bold text-ink">Enable event reminders</p>
+          <p className="text-xs text-ink-soft">Personalize my feed around upcoming occasions</p>
+        </div>
+        <div className={`ml-auto h-6 w-10 rounded-full transition-colors ${enabled ? "bg-coral" : "bg-line"}`}>
+          <div className={`h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${enabled ? "translate-x-4" : "translate-x-0"}`} />
+        </div>
+      </button>
+
+      {enabled && (
+        <div className="mt-5 w-full rounded-2xl border border-line bg-surface p-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={labelCls}>Who is it for?</label>
+              <input
+                type="text"
+                value={rName}
+                onChange={(e) => setRName(e.target.value)}
+                placeholder="e.g. Alex"
+                className={fieldCls}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Relationship</label>
+              <select
+                value={relation}
+                onChange={(e) => setRelation(e.target.value as RelationType)}
+                className={fieldCls}
+              >
+                {Object.entries(RELATION_META).map(([key, meta]) => (
+                  <option key={key} value={key}>
+                    {meta.emoji} {meta.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className={labelCls}>Occasion</label>
+              <select
+                value={etype}
+                onChange={(e) => setEtype(e.target.value as EventType)}
+                className={fieldCls}
+              >
+                {Object.entries(EVENT_TYPE_META).map(([key, meta]) => (
+                  <option key={key} value={key}>
+                    {meta.emoji} {meta.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className={fieldCls}
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label className={labelCls}>Repeats</label>
+              <select
+                value={recurrence}
+                onChange={(e) => setRecurrence(e.target.value as Recurrence)}
+                className={fieldCls}
+              >
+                {Object.entries(RECURRENCE_META).map(([key, meta]) => (
+                  <option key={key} value={key}>
+                    {meta.emoji} {meta.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Remind me</label>
+              <select
+                value={lead}
+                onChange={(e) => setLead(Number(e.target.value))}
+                className={fieldCls}
+              >
+                <option value={3}>3 days before</option>
+                <option value={7}>1 week before</option>
+                <option value={14}>2 weeks before</option>
+                <option value={30}>1 month before</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Budget ($)</label>
+              <input
+                type="number"
+                min={0}
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+                placeholder="optional"
+                className={fieldCls}
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={submit}
+            disabled={!canAdd}
+            className="mt-4 w-full rounded-xl bg-ink px-4 py-3 text-sm font-bold text-cream transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            Add date
+          </button>
+        </div>
+      )}
+
+      {enabled && events.length > 0 && (
+        <div className="mt-4 w-full space-y-2">
+          {events.map((ev) => {
+            const r = recById[ev.recipientId];
+            const days = daysUntil(ev);
+            return (
+              <div
+                key={ev.id}
+                className="flex items-center justify-between rounded-xl border border-line bg-surface px-4 py-3 text-left"
+              >
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <span className="text-xl">{EVENT_TYPE_META[ev.type].emoji}</span>
+                  <div className="overflow-hidden">
+                    <p className="truncate text-sm font-bold text-ink">
+                      {EVENT_TYPE_META[ev.type].label}
+                      {r ? ` · ${r.name}` : ""}
+                    </p>
+                    <p className="text-xs text-ink-soft">
+                      {formatEventDate(ev)}
+                      {days != null ? ` · in ${days} day${days === 1 ? "" : "s"}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => onRemove(ev.id)}
+                  className="ml-2 shrink-0 text-xs font-semibold text-ink-faint hover:text-coral"
+                >
+                  Remove
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <NavButtons onBack={onBack} onNext={onNext} nextDisabled={false} nextLabel="Continue" />
+    </div>
+  );
+}
+
+// ── Shared UI pieces ──────────────────────────────────────────────────
 
 function NavButtons({
   onBack,

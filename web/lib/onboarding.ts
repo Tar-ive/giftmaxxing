@@ -7,6 +7,8 @@
 // and hydrate on login instead of reading localStorage.
 // ────────────────────────────────────────────────────────────────────────────
 
+import type { ImportantEvent, Recipient } from "@/lib/events";
+
 export type GiftRole = "giver" | "taker" | "both";
 export type GiftDifficulty = "easy" | "moderate" | "hard";
 export type GiftStyle = "thoughtful" | "materialistic" | "mix";
@@ -82,6 +84,11 @@ export type UserProfile = {
   interests: InterestTag[];
   dealPreferences: DealPreferences;
   pinterestLinks: PinterestLink[];
+  // Event logging (opt-in): recipients the user gives to + their important dates.
+  // Drives reminders and biases the feed toward the next upcoming occasion.
+  eventLoggingEnabled?: boolean;
+  recipients?: Recipient[];
+  events?: ImportantEvent[];
   completedAt: number;
 };
 

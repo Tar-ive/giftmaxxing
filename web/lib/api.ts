@@ -91,6 +91,8 @@ type FeedOpts = {
   recipient?: string;
   occasion?: string;
   category?: string;
+  budget?: number;
+  eventBoost?: number;
 };
 
 async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
@@ -101,6 +103,8 @@ async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
   if (opts.recipient) q.set("recipient", opts.recipient);
   if (opts.occasion) q.set("occasion", opts.occasion);
   if (opts.category) q.set("category", opts.category);
+  if (opts.budget) q.set("budget", String(opts.budget));
+  if (opts.eventBoost) q.set("eventBoost", String(opts.eventBoost));
 
   const res = await fetch(`${API_BASE}${path}?${q.toString()}`, {
     headers: { accept: "application/json" },
@@ -198,4 +202,66 @@ export async function fetchVisualSearch(opts: {
   if (!res.ok) throw new Error(`/visual-search -> HTTP ${res.status}`);
   const data = (await res.json()) as { items?: VectorItem[]; source?: string };
   return { items: data.items ?? [], source: data.source ?? "visual" };
+}
+
+// ── User profile persistence (DynamoDB `users` table via /me) ─────────────────
+// The signed-in user's whole profile (incl. recipients + events) is stored as a
+// single item keyed by the Clerk userId, so it hydrates in one read on login.
+// Wired up by AccountSync (web/components/app/account-sync.tsx).
+export type UpcomingEvent = {
+  id: string;
+  recipientId: string;
+  type: string;
+  date: string;
+  recurrence: string;
+  reminderLeadDays: number;
+  budget?: number;
+  daysUntil: number;
+  recipient: { id: string; name: string; relation: string; sourceUser?: string } | null;
+};
+
+export async function fetchMe<T = Record<string, unknown>>(userId: string): Promise<T | null> {
+  if (!isApiConfigured() || !userId) return null;
+  try {
+    const res = await fetch(`${API_BASE}/me?userId=${encodeURIComponent(userId)}`, {
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { item?: T | null };
+    return data.item ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveMe(userId: string, profile: unknown): Promise<boolean> {
+  if (!isApiConfigured() || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/me`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, profile }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchUpcomingEvents(
+  userId: string,
+  withinDays = 90
+): Promise<UpcomingEvent[]> {
+  if (!isApiConfigured() || !userId) return [];
+  try {
+    const res = await fetch(
+      `${API_BASE}/events/upcoming?userId=${encodeURIComponent(userId)}&withinDays=${withinDays}`,
+      { headers: { accept: "application/json" } }
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items?: UpcomingEvent[] };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
 }

@@ -1,4 +1,6 @@
+import {ClerkProvider} from "@clerk/nextjs";
 import type { Metadata } from "next";
+import { AccountSync } from "@/components/app/account-sync";
 import { Hanken_Grotesk, Instrument_Serif, Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -49,7 +51,12 @@ export default function RootLayout({
       lang="en"
       className={`${hanken.variable} ${instrument.variable} ${bricolage.variable} ${jetbrains.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ClerkProvider>
+          <AccountSync />
+          {children}
+        </ClerkProvider>
+      </body>
     </html>
   );
 }

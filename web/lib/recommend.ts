@@ -103,7 +103,8 @@ export function scoreCandidate(
   user: string,
   product: Product,
   profile: TasteProfile,
-  follows: Set<string>
+  follows: Set<string>,
+  ctx?: { budget?: number; eventBoost?: number }
 ): Scored {
   const m = meta(product);
 
@@ -129,8 +130,14 @@ export function scoreCandidate(
   const follow = follows.has(user) ? 1 : 0;
 
   const jitter = Math.random() * 0.04; // light exploration so the feed isn't static
-  const score =
+  let score =
     W.taste * taste + W.price * price + W.social * social + W.follow * follow + jitter;
+
+  // Event budget fit: when shopping for an upcoming occasion, nudge in-budget
+  // items up and over-budget ones down (ctx supplied from the event context).
+  if (ctx?.budget) {
+    score += product.price <= ctx.budget ? 0.1 : -0.05;
+  }
 
   return {
     user,

@@ -76,7 +76,7 @@ const parseList = (s) => (s ? String(s).split(",").map((x) => x.trim()).filter(B
 // Content-based score over the enriched facets (mirrors web/lib/recommend.ts).
 // Surfaces real giftable products (find/made) over idea-requests, blends in
 // social proof, taste (vibes), explicit facet matches, and mild recency.
-function scorePost(p, { vibes = [], recipient, occasion, category, now = Date.now() } = {}) {
+function scorePost(p, { vibes = [], recipient, occasion, category, budget, eventBoost = 0, now = Date.now() } = {}) {
   let s = 0;
   s += Math.min(1, (p.likes ?? 0) / 500) * 0.35; // social proof
   s += p.status === "find" ? 0.15 : p.status === "made" ? 0.12 : 0; // gift type
@@ -84,9 +84,17 @@ function scorePost(p, { vibes = [], recipient, occasion, category, now = Date.no
     const hit = p.vibes.filter((v) => vibes.includes(v)).length;
     s += Math.min(1, hit / 2) * 0.25; // taste match
   }
-  if (recipient && recipient !== "anyone" && p.recipient === recipient) s += 0.2;
-  if (occasion && occasion !== "any" && p.occasion === occasion) s += 0.15;
+  // Recipient/occasion matches count for more as a logged event approaches
+  // (eventBoost ramps 0→1 over ~45 days; see web/lib/events.ts).
+  const occMult = 1 + Math.max(0, Math.min(1, eventBoost));
+  if (recipient && recipient !== "anyone" && p.recipient === recipient) s += 0.2 * occMult;
+  if (occasion && occasion !== "any" && p.occasion === occasion) s += 0.15 * occMult;
   if (category && p.category === category) s += 0.2;
+  // Budget fit: reward at/under the event's target, gently penalize over-budget.
+  const price = Number(p.price ?? p.product?.price);
+  if (budget && Number.isFinite(price) && price > 0) {
+    s += price <= budget ? 0.15 : Math.max(-0.1, 0.15 - ((price - budget) / budget) * 0.25);
+  }
   const ageDays = (now - (p.createdAt ?? now)) / 86400000;
   s += Math.max(0, 1 - ageDays / 365) * 0.1; // recency
   s += Math.random() * 0.08; // exploration
@@ -155,6 +163,31 @@ async function vectorRecommend(seedKeys, { limit, sourceUser }) {
     .map(vecToItem);
 }
 
+// Server-side mirror of web/lib/events.ts date math: whole days until an event's
+// next occurrence (annual rolls forward a year if it already passed; once is
+// absolute). Returns null on a malformed date.
+function eventDaysUntil(ev, now = new Date()) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ev?.date ?? "").trim());
+  if (!m) return null;
+  const y = Number(m[1]), mo = Number(m[2]), da = Number(m[3]);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let next;
+  if (ev.recurrence === "once") {
+    next = new Date(y, mo - 1, da);
+  } else {
+    next = new Date(today.getFullYear(), mo - 1, da);
+    if (next.getTime() < today.getTime()) next = new Date(today.getFullYear() + 1, mo - 1, da);
+  }
+  return Math.round((next.getTime() - today.getTime()) / 86400000);
+}
+
+function computeUpcoming(events, withinDays = 90, now = new Date()) {
+  return (events ?? [])
+    .map((ev) => ({ ...ev, daysUntil: eventDaysUntil(ev, now) }))
+    .filter((e) => e.daysUntil != null && e.daysUntil >= 0 && (withinDays <= 0 || e.daysUntil <= withinDays))
+    .sort((a, b) => a.daysUntil - b.daysUntil);
+}
+
 export const handler = async (event) => {
   const method = event.requestContext?.http?.method ?? "GET";
   const path = event.requestContext?.http?.path ?? "/";
@@ -206,6 +239,8 @@ export const handler = async (event) => {
         recipient: qs.recipient,
         occasion: qs.occasion,
         category: qs.category,
+        budget: Number(qs.budget) || undefined,
+        eventBoost: Number(qs.eventBoost) || 0,
       };
       const ranked = allItems
         .map((p) => ({ ...p, _score: scorePost(p, opts) }))
@@ -358,6 +393,8 @@ export const handler = async (event) => {
         recipient: qs.recipient,
         occasion: qs.occasion,
         category: qs.category,
+        budget: Number(qs.budget) || undefined,
+        eventBoost: Number(qs.eventBoost) || 0,
       };
       const scan = {
         TableName: POSTS,
@@ -395,6 +432,44 @@ export const handler = async (event) => {
         }
       }
       return json(200, { ok: true, users: (body.users ?? []).length, posts: (body.posts ?? []).length });
+    }
+
+    // GET /me?userId=  — fetch the signed-in user's stored profile. Recipients +
+    // events ride along on the same item, so the whole profile hydrates at once.
+    if (method === "GET" && path === "/me") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      const out = await ddb.send(new GetCommand({ TableName: USERS, Key: { userId } }));
+      return json(200, { item: out.Item ?? null });
+    }
+
+    // PUT /me  { userId, profile }  — upsert the profile keyed by the Clerk
+    // userId. Stored as one item (incl. recipients + events) for easy hydration.
+    if (method === "PUT" && path === "/me") {
+      const { userId, profile } = body;
+      if (!userId || !profile || typeof profile !== "object") {
+        return json(400, { error: "userId and profile required" });
+      }
+      const item = { ...profile, userId, updatedAt: Date.now() };
+      await ddb.send(new PutCommand({ TableName: USERS, Item: item }));
+      return json(200, { ok: true, item });
+    }
+
+    // GET /events/upcoming?userId=&withinDays=  — events due soon, soonest-first,
+    // each joined with its recipient. Powers reminders + feed event context.
+    if (method === "GET" && path === "/events/upcoming") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      const out = await ddb.send(new GetCommand({ TableName: USERS, Key: { userId } }));
+      const events = Array.isArray(out.Item?.events) ? out.Item.events : [];
+      const recipients = Array.isArray(out.Item?.recipients) ? out.Item.recipients : [];
+      const byId = Object.fromEntries(recipients.map((r) => [r.id, r]));
+      const withinDays = Number(qs.withinDays) || 90;
+      const items = computeUpcoming(events, withinDays).map((u) => ({
+        ...u,
+        recipient: byId[u.recipientId] ?? null,
+      }));
+      return json(200, { items });
     }
 
     return json(404, { error: `no route for ${method} ${path}` });

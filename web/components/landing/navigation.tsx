@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 
 const navLinks = [
   { name: "Features",      href: "#features"      },
@@ -69,13 +70,21 @@ export function Navigation() {
             <Link href="/feed" className={`transition-all duration-500 ${isScrolled ? "text-xs text-foreground/70 hover:text-foreground" : "text-sm text-foreground/70 hover:text-foreground"}`}>
               Open app
             </Link>
-            <Button
-              asChild
-              size="sm"
-              className={`rounded-full transition-all duration-500 ${isScrolled ? "bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-4 h-8 text-xs" : "bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-6"}`}
-            >
-              <a href="#waitlist">Get early access</a>
-            </Button>
+            <Show when="signed-out">
+              <SignInButton mode="modal">
+                <button className={`transition-all duration-500 ${isScrolled ? "text-xs text-foreground/70 hover:text-foreground" : "text-sm text-foreground/70 hover:text-foreground"}`}>
+                  Sign in
+                </button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className={`rounded-full font-semibold transition-all duration-500 ${isScrolled ? "bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-4 h-8 text-xs" : "bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-6 h-9 text-sm"}`}>
+                  Sign up
+                </button>
+              </SignUpButton>
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
           </div>
 
           {/* Mobile Menu Button */}
@@ -138,12 +147,21 @@ export function Navigation() {
             >
               <Link href="/feed" onClick={() => setIsMobileMenuOpen(false)}>Open app</Link>
             </Button>
-            <Button 
-              asChild
-              className="flex-1 bg-foreground text-background rounded-full h-14 text-base"
-            >
-              <a href="#waitlist" onClick={() => setIsMobileMenuOpen(false)}>Get early access</a>
-            </Button>
+            <Show when="signed-out">
+              <SignUpButton mode="modal">
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex-1 bg-foreground text-background rounded-full h-14 text-base font-bold"
+                >
+                  Sign up
+                </button>
+              </SignUpButton>
+            </Show>
+            <Show when="signed-in">
+              <div className="flex flex-1 items-center justify-center rounded-full h-14 border border-foreground/10">
+                <UserButton />
+              </div>
+            </Show>
           </div>
         </div>
       </div>

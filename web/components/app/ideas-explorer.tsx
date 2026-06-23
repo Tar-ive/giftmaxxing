@@ -16,7 +16,7 @@ import {
   type RecipientSummary,
 } from "@/lib/ideas";
 
-export function IdeasExplorer() {
+export function IdeasExplorer({ initialRecipient }: { initialRecipient?: string } = {}) {
   const [recipients, setRecipients] = useState<RecipientSummary[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [data, setData] = useState<RecipientKnowledge | null>(null);
@@ -35,7 +35,13 @@ export function IdeasExplorer() {
         const list = await fetchRecipients();
         if (cancelled) return;
         setRecipients(list);
-        if (list.length) setSelected(list[0].recipient);
+        // Prefer the recipient deep-linked from an event banner, if the
+        // knowledge base actually has it; otherwise the most-discussed one.
+        const want =
+          initialRecipient && list.some((r) => r.recipient === initialRecipient)
+            ? initialRecipient
+            : list[0]?.recipient;
+        if (want) setSelected(want);
       } catch {
         if (!cancelled) setError("Couldn't reach the gift-knowledge service.");
       }
@@ -43,7 +49,7 @@ export function IdeasExplorer() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialRecipient]);
 
   // Fetch ideas + bundles whenever the selected recipient changes.
   useEffect(() => {

@@ -18,6 +18,11 @@ output "media_bucket" {
   value       = aws_s3_bucket.media.bucket
 }
 
+output "reminders_topic_arn" {
+  description = "SNS topic for event reminders. Subscribe an endpoint: aws sns subscribe --topic-arn <this> --protocol email --notification-endpoint you@example.com"
+  value       = aws_sns_topic.reminders.arn
+}
+
 output "dashboard_url" {
   description = "CloudWatch dashboard monitoring all Giftmaxxing AWS resources"
   value       = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards:name=${aws_cloudwatch_dashboard.overview.dashboard_name}"

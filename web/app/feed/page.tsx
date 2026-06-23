@@ -5,6 +5,7 @@ import { StoriesTray } from "@/components/app/stories";
 import { PostCard } from "@/components/app/post-card";
 import { RightRail } from "@/components/app/right-rail";
 import { FeedPoolCard } from "@/components/app/feed-pool-card";
+import { EventBanner } from "@/components/app/event-banner";
 import { useStore } from "@/components/app/store";
 import { useCurrentUser } from "@/lib/identity";
 import { type Fundraiser, loadFundraisers, saveFundraisers, addContribution } from "@/lib/fundraisers";
@@ -46,6 +47,7 @@ export default function FeedPage() {
   return (
     <div className="mx-auto flex max-w-5xl justify-center gap-12 px-3 py-6 sm:px-5">
       <div className="w-full max-w-[470px] space-y-5">
+        <EventBanner />
         <StoriesTray />
 
         {posts.map((p, i) => (
