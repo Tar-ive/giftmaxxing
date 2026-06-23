@@ -222,9 +222,14 @@ All us-east-1. Bedrock prices ✅ **verified via the AWS Price List API** (`Amaz
 - [x] **P0 Embedder (backfill)** — `infra/ingest/embed.mjs`: S3 image + title → Titan MM → `put-vectors` into S3 Vectors. **Done** (72 vectors in `giftmaxxing-dev-vectors/pins`, see §13). ⏳ S3-ObjectCreated Lambda trigger + Bedrock **batch** for bulk still pending.
 - [x] **P0 Infra** — ✅ S3 media bucket (`infra/s3.tf`), ✅ **S3 Vectors bucket+index** (`giftmaxxing-dev-vectors/pins`, script-managed via `infra/ingest/s3vectors-setup.mjs` — no TF resource yet), ✅ API Lambda **s3vectors read IAM** (`infra/iam.tf`) + `VECTOR_BUCKET`/`VECTOR_INDEX` env. ⏳ DynamoDB `pins` table + S3-event embedder Lambda still pending.
 - [x] **P1 Rec upgrade (server)** — ✅ `handler.mjs` `/recommendations` builds a taste centroid (`get-vectors`) → `query-vectors` (kNN) with optional `sourceUser` filter, falling back to facet `scorePost` when no vectors (`source:"vector"|"facet"` in the response). Live & tested (§13). ✅ Pinterest pins ingested into `posts` table via `ingest-pins.mjs`; `/feed` handler over-samples for proper blending.
+- [x] **P1 Onboarding flow** — ✅ Pinterest-style multi-step wizard (`web/app/onboarding/page.tsx`): name, gift role (giver/taker/both), difficulty, gift style (thoughtful/materialistic/mix), materialistic subcategories (conditional), interest tags (16 vibes), Pinterest profile/board URL linking. Persisted to localStorage (`web/lib/onboarding.ts`). Feed gated behind `OnboardingGate` (`web/components/app/onboarding-gate.tsx`) — redirects to `/onboarding` if profile not found. ⏳ Migrate to DynamoDB `users` table when auth backend exists.
+- [x] **P1 Visual search + Pinterest rec scaffold** — ✅ `web/lib/visual-search.ts`: types + stub functions for `ingestPinterestProfile()`, `visualSearch()`, `buildTasteVector()`, `fetchEnhancedRecommendations()`. All have detailed TODO blocks for the next agent. Depends on: Pinterest OAuth approval, `/pinterest/ingest` + `/visual-search` + `/taste-vector` Lambda endpoints (not yet created), Amazon Associates + Walmart affiliate keys. See inline TODOs and §6.
+- [x] **P1 Deal preferences onboarding** — ✅ New onboarding step collects deal sensitivity (deal-hunter/value-conscious/quality-first/splurge), typical budget range, preferred deal types (clearance, flash sales, coupons, price drops, bundle deals, seasonal, refurbished, outlet), and price-drop alert opt-in. Stored as `dealPreferences` in `UserProfile`. Schema guard updated.
+- [x] **P1 Deal monitoring scaffold** — ✅ `web/lib/visual-search.ts`: types + stub functions for `addToWatchlist()`, `getWatchlist()`, `getDealAlerts()`, `fetchDealFeed()`, `getMaxiDealSuggestions()`. Types: `PricePoint`, `WatchlistItem`, `DealAlert`, `DealFeedItem`, `MaxiDealSuggestion`. Detailed TODO blocks for next agent covering: price tracking via affiliate APIs, EventBridge-scheduled deal discovery, push/email notifications, Maxi AI deal suggestions with natural-language explanations.
 - [ ] **P1 Native ads** — `Post.sponsored`, `PostCard` label + CTA, interleave by cadence ranked by taste, frequency cap + hide.
+- [ ] **P2 Deal monitoring backend** — EventBridge cron → deal-finder Lambda, price-tracker Lambda (Amazon PA-API 5.0 + Walmart API), DynamoDB price history + watchlist tables, SNS/SES notifications. Feed integration: deal cards ranked alongside organic content by taste vector + deal quality score. Maxi AI deal suggestions via Bedrock (Claude/Titan).
 - [ ] **P2 Harden write path (optimized arch, §12.2)** — SQS + DLQ between ingest and embed, Step Functions orchestration, pHash dedup, EventBridge re-sync, Secrets Manager, observability. Add OpenSearch hot tier only if real-time ANN latency at scale demands it.
-- [ ] **P3 Visual search** — `POST /visual-search`, image→embed→kNN→**Amazon/Walmart affiliate** enrich. (See §6.)
+- [ ] **P3 Visual search backend** — `POST /visual-search` Lambda endpoint, image→embed→kNN→**Amazon/Walmart affiliate** enrich. Frontend scaffold ready (`web/lib/visual-search.ts`). (See §6.)
 
 ## 9. Env vars / secrets (add to `.env`, never commit)
 ```
@@ -243,6 +248,11 @@ AMAZON_ASSOCIATES_SECRET_KEY=
 AMAZON_ASSOCIATES_PARTNER_TAG=
 WALMART_AFFILIATE_CONSUMER_ID=
 WALMART_AFFILIATE_PRIVATE_KEY=
+# Future — deal monitoring:
+# DEAL_FINDER_SCHEDULE=rate(6 hours)   # EventBridge cron for deal discovery
+# PRICE_TRACKER_SCHEDULE=rate(12 hours) # EventBridge cron for watchlist price checks
+# WEB_PUSH_VAPID_PUBLIC_KEY=           # VAPID keys for push notifications
+# WEB_PUSH_VAPID_PRIVATE_KEY=
 ```
 
 ## 10. Open questions / status
