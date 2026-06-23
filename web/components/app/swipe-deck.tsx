@@ -78,7 +78,7 @@ function vectorToResult(v: VectorItem): ResultItem {
   };
 }
 
-export function SwipeDeck() {
+export function SwipeDeck({ compact = false }: { compact?: boolean }) {
   const [mounted, setMounted] = useState(false);
   const [deck, setDeck] = useState<Pin[]>([]);
   const [idx, setIdx] = useState(0);
@@ -229,18 +229,20 @@ export function SwipeDeck() {
   return (
     <div className="mx-auto w-full max-w-sm">
       {/* progress */}
-      <div className="mb-4 flex items-center justify-between text-sm">
-        <span className="font-semibold text-ink">
-          <span className="text-coral">♥ {stats.yes}</span> want · {stats.no} pass
-        </span>
-        <button
-          onClick={undo}
-          disabled={idx === 0}
-          className="flex items-center gap-1 text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
-        >
-          <Icons.back size={15} /> Undo
-        </button>
-      </div>
+      {!compact && (
+        <div className="mb-4 flex items-center justify-between text-sm">
+          <span className="font-semibold text-ink">
+            <span className="text-coral">♥ {stats.yes}</span> want · {stats.no} pass
+          </span>
+          <button
+            onClick={undo}
+            disabled={idx === 0}
+            className="flex items-center gap-1 text-ink-faint transition-colors hover:text-ink disabled:opacity-40"
+          >
+            <Icons.back size={15} /> Undo
+          </button>
+        </div>
+      )}
 
       {/* card stack */}
       <div className="relative mx-auto h-[460px] w-full select-none">
@@ -350,20 +352,22 @@ export function SwipeDeck() {
       )}
 
       {/* unlock matches */}
-      <div className="mt-6 text-center">
-        {eligible ? (
-          <button
-            onClick={loadResults}
-            className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
-          >
-            <Icons.sparkle size={16} /> See your gift matches
-          </button>
-        ) : (
-          <p className="text-sm text-ink-soft">
-            Tap <span className="font-semibold text-coral">♥</span> on {GOAL - stats.yes} more to unlock your matches
-          </p>
-        )}
-      </div>
+      {!compact && (
+        <div className="mt-6 text-center">
+          {eligible ? (
+            <button
+              onClick={loadResults}
+              className="inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
+            >
+              <Icons.sparkle size={16} /> See your gift matches
+            </button>
+          ) : (
+            <p className="text-sm text-ink-soft">
+              Tap <span className="font-semibold text-coral">♥</span> on {GOAL - stats.yes} more to unlock your matches
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
