@@ -43,6 +43,27 @@ export type InterestTag =
   | "candles"
   | "coffee-tea";
 
+export type BudgetRange = "budget" | "mid" | "premium" | "no-limit";
+
+export type DealType =
+  | "clearance"
+  | "flash-sales"
+  | "coupons"
+  | "price-drops"
+  | "bundle-deals"
+  | "seasonal"
+  | "refurbished"
+  | "outlet";
+
+export type DealSensitivity = "deal-hunter" | "value-conscious" | "quality-first" | "splurge";
+
+export type DealPreferences = {
+  sensitivity: DealSensitivity;
+  budgetRange: BudgetRange;
+  dealTypes: DealType[];
+  priceAlerts: boolean;
+};
+
 export type PinterestLink = {
   profileUrl: string;
   linkedAt: number;
@@ -59,6 +80,7 @@ export type UserProfile = {
   style: GiftStyle;
   materialisticCategories: MaterialisticCategory[];
   interests: InterestTag[];
+  dealPreferences: DealPreferences;
   pinterestLinks: PinterestLink[];
   completedAt: number;
 };
@@ -77,7 +99,13 @@ function isUserProfile(value: unknown): value is UserProfile {
     Array.isArray(p.interests) &&
     p.interests.length >= 3 &&
     Array.isArray(p.pinterestLinks) &&
-    typeof p.completedAt === "number"
+    typeof p.completedAt === "number" &&
+    p.dealPreferences !== undefined &&
+    typeof p.dealPreferences === "object" &&
+    typeof (p.dealPreferences as DealPreferences).sensitivity === "string" &&
+    typeof (p.dealPreferences as DealPreferences).budgetRange === "string" &&
+    Array.isArray((p.dealPreferences as DealPreferences).dealTypes) &&
+    typeof (p.dealPreferences as DealPreferences).priceAlerts === "boolean"
   );
 }
 
@@ -133,6 +161,31 @@ export const INTEREST_META: Record<InterestTag, { label: string; emoji: string }
   stationery: { label: "Stationery", emoji: "✏️" },
   candles: { label: "Candles & scents", emoji: "🕯️" },
   "coffee-tea": { label: "Coffee & tea", emoji: "☕" },
+};
+
+export const DEAL_SENSITIVITY_META: Record<DealSensitivity, { label: string; desc: string; emoji: string }> = {
+  "deal-hunter": { label: "Deal hunter", desc: "I'll wait for the perfect price", emoji: "🏷️" },
+  "value-conscious": { label: "Value-conscious", desc: "I want good value, but don't obsess", emoji: "💡" },
+  "quality-first": { label: "Quality first", desc: "I'll pay more for the right gift", emoji: "⭐" },
+  splurge: { label: "Splurge", desc: "Price isn't a factor for me", emoji: "💳" },
+};
+
+export const BUDGET_RANGE_META: Record<BudgetRange, { label: string; emoji: string }> = {
+  budget: { label: "Under $25", emoji: "🪙" },
+  mid: { label: "$25 – $100", emoji: "💵" },
+  premium: { label: "$100 – $300", emoji: "💰" },
+  "no-limit": { label: "No limit", emoji: "💎" },
+};
+
+export const DEAL_TYPE_META: Record<DealType, { label: string; emoji: string }> = {
+  clearance: { label: "Clearance", emoji: "🔥" },
+  "flash-sales": { label: "Flash sales", emoji: "⚡" },
+  coupons: { label: "Coupons & codes", emoji: "🎟️" },
+  "price-drops": { label: "Price drops", emoji: "📉" },
+  "bundle-deals": { label: "Bundle deals", emoji: "📦" },
+  seasonal: { label: "Seasonal sales", emoji: "🎄" },
+  refurbished: { label: "Refurbished", emoji: "♻️" },
+  outlet: { label: "Outlet stores", emoji: "🏬" },
 };
 
 export const MATERIALISTIC_META: Record<MaterialisticCategory, { label: string; emoji: string }> = {

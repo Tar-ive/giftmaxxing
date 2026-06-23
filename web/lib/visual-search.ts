@@ -50,6 +50,9 @@ import type {
   GiftStyle,
   InterestTag,
   MaterialisticCategory,
+  DealPreferences,
+  DealType,
+  BudgetRange,
 } from "@/lib/onboarding";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -194,11 +197,190 @@ export type EnhancedRecParams = {
   style?: GiftStyle;
   role?: GiftRole;
   pinterestCentroid?: number[];
+  dealPreferences?: DealPreferences;
 };
 
 export async function fetchEnhancedRecommendations(
   _params: EnhancedRecParams
 ): Promise<VisualSearchResult[]> {
   // TODO(next-agent): wire to GET /recommendations with onboarding context
+  return [];
+}
+
+// ── Deal monitoring & price tracking scaffold ───────────────────────────────
+
+/**
+ * TODO(next-agent): Deal monitoring + price tracking system.
+ *
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ NEXT AGENT: implement the deal-monitoring pipeline.               │
+ * │                                                                   │
+ * │ 1. Price tracking:                                                │
+ * │    - User adds items to a watchlist from the feed or search       │
+ * │    - Lambda cron scrapes prices from affiliate APIs               │
+ * │      (Amazon PA-API 5.0, Walmart API) on a schedule              │
+ * │    - Store price history in DynamoDB (itemId, price, timestamp)   │
+ * │    - Detect price drops, clearance flags, and sale events         │
+ * │                                                                   │
+ * │ 2. Deal discovery:                                                │
+ * │    - EventBridge scheduled rule triggers deal-finder Lambda       │
+ * │    - Scrape deal feeds: Amazon deals API, Walmart rollbacks,     │
+ * │      RSS feeds from deal aggregators                              │
+ * │    - Match deals to user preferences (dealTypes, interests,      │
+ * │      materialisticCategories, budgetRange)                        │
+ * │    - Rank by taste vector similarity + deal quality score        │
+ * │                                                                   │
+ * │ 3. Notifications:                                                 │
+ * │    - Users with priceAlerts=true get notified on price drops     │
+ * │    - Push via web push notifications (Service Worker)            │
+ * │    - In-app notification bell in the feed header                 │
+ * │    - Email digest (optional, future)                              │
+ * │                                                                   │
+ * │ 4. Maxi AI integration:                                          │
+ * │    - Maxi suggests deals based on the user's taste vector        │
+ * │    - "I found this at 40% off — matches your friend's vibe!"    │
+ * │    - Deal cards in the feed ranked alongside organic content     │
+ * │    - Maxi can explain why a deal is good value                   │
+ * │                                                                   │
+ * │ AWS services needed:                                              │
+ * │   - EventBridge Scheduler (deal-finder cron)                     │
+ * │   - Lambda (deal-finder, price-tracker)                          │
+ * │   - DynamoDB (price history table, watchlist table)              │
+ * │   - SNS or SES (push/email notifications)                       │
+ * │   - Amazon Associates PA-API 5.0 keys (PENDING)                 │
+ * │   - Walmart Affiliate API keys (PENDING)                        │
+ * └─────────────────────────────────────────────────────────────────────┘
+ */
+
+export type PricePoint = {
+  price: number;
+  currency: string;
+  timestamp: number;
+  source: "amazon" | "walmart" | "other";
+};
+
+export type WatchlistItem = {
+  id: string;
+  productId: string;
+  title: string;
+  imageUrl?: string;
+  targetPrice?: number;
+  currentPrice?: number;
+  priceHistory: PricePoint[];
+  dealTypes: DealType[];
+  budgetRange: BudgetRange;
+  source: "amazon" | "walmart" | "other";
+  affiliateUrl?: string;
+  addedAt: number;
+  lastChecked?: number;
+};
+
+export type DealAlert = {
+  id: string;
+  watchlistItemId: string;
+  type: "price-drop" | "clearance" | "flash-sale" | "back-in-stock" | "coupon";
+  title: string;
+  description: string;
+  originalPrice: number;
+  dealPrice: number;
+  savingsPercent: number;
+  affiliateUrl: string;
+  expiresAt?: number;
+  createdAt: number;
+  read: boolean;
+};
+
+export type DealFeedItem = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  originalPrice: number;
+  dealPrice: number;
+  savingsPercent: number;
+  dealType: DealType;
+  source: "amazon" | "walmart" | "other";
+  affiliateUrl: string;
+  similarity: number;
+  expiresAt?: number;
+  brand?: string;
+};
+
+export type MaxiDealSuggestion = {
+  deal: DealFeedItem;
+  reason: string;
+  confidence: number;
+  matchedPreferences: string[];
+};
+
+/**
+ * TODO(next-agent): Add item to the user's price watchlist.
+ * Store in DynamoDB watchlist table; start tracking price via affiliate APIs.
+ */
+export async function addToWatchlist(
+  _item: Omit<WatchlistItem, "id" | "priceHistory" | "addedAt" | "lastChecked">
+): Promise<WatchlistItem | null> {
+  if (isApiConfigured()) {
+    // TODO(next-agent): POST /watchlist { item } → Lambda
+    void API_BASE;
+  }
+  return null;
+}
+
+/**
+ * TODO(next-agent): Fetch the user's watchlist with current prices.
+ */
+export async function getWatchlist(): Promise<WatchlistItem[]> {
+  if (isApiConfigured()) {
+    // TODO(next-agent): GET /watchlist → Lambda → DynamoDB
+    void API_BASE;
+  }
+  return [];
+}
+
+/**
+ * TODO(next-agent): Fetch unread deal alerts for the user.
+ * Alerts are generated by the deal-finder Lambda when prices drop
+ * or matching deals are found.
+ */
+export async function getDealAlerts(): Promise<DealAlert[]> {
+  if (isApiConfigured()) {
+    // TODO(next-agent): GET /alerts → Lambda → DynamoDB
+    void API_BASE;
+  }
+  return [];
+}
+
+/**
+ * TODO(next-agent): Fetch deals matched to the user's taste + deal preferences.
+ * Uses the same taste vector as recommendations, but filters/boosts by
+ * dealPreferences (budgetRange, dealTypes, priceAlerts).
+ */
+export async function fetchDealFeed(
+  _preferences: DealPreferences
+): Promise<DealFeedItem[]> {
+  if (isApiConfigured()) {
+    // TODO(next-agent): GET /deals?budget=mid&types=clearance,flash-sales → Lambda
+    void API_BASE;
+  }
+  return [];
+}
+
+/**
+ * TODO(next-agent): Get Maxi AI deal suggestions — personalized deal
+ * recommendations with natural-language explanations.
+ *
+ * Flow:
+ * 1. Fetch user's taste vector + deal preferences
+ * 2. Query deal catalog with taste-weighted kNN
+ * 3. Use Bedrock (Claude/Titan) to generate explanation for each match
+ * 4. Return ranked suggestions with reasons
+ */
+export async function getMaxiDealSuggestions(
+  _profile: UserProfile
+): Promise<MaxiDealSuggestion[]> {
+  if (isApiConfigured()) {
+    // TODO(next-agent): GET /maxi/deals { profile } → Lambda → Bedrock
+    void API_BASE;
+  }
   return [];
 }

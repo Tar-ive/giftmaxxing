@@ -11,14 +11,20 @@ import {
   type InterestTag,
   type PinterestLink,
   type UserProfile,
+  type DealSensitivity,
+  type DealType,
+  type BudgetRange,
   INTEREST_META,
   MATERIALISTIC_META,
+  DEAL_SENSITIVITY_META,
+  BUDGET_RANGE_META,
+  DEAL_TYPE_META,
   saveProfile,
 } from "@/lib/onboarding";
 
 // ── Step definitions ────────────────────────────────────────────────────────
 
-const TOTAL_STEPS = 7; // welcome, role, difficulty, style, materialistic (conditional), interests, pinterest
+const TOTAL_STEPS = 8; // welcome, role, difficulty, style, materialistic (conditional), interests, deals, pinterest
 
 type StepProps = {
   onNext: () => void;
@@ -40,6 +46,10 @@ export default function OnboardingPage() {
   const [interests, setInterests] = useState<Set<InterestTag>>(new Set());
   const [pinterestUrl, setPinterestUrl] = useState("");
   const [pinterestLinks, setPinterestLinks] = useState<PinterestLink[]>([]);
+  const [dealSensitivity, setDealSensitivity] = useState<DealSensitivity | null>(null);
+  const [budgetRange, setBudgetRange] = useState<BudgetRange | null>(null);
+  const [dealTypes, setDealTypes] = useState<Set<DealType>>(new Set());
+  const [priceAlerts, setPriceAlerts] = useState(false);
 
   // Whether the materialistic sub-step should show
   const showMaterialistic = style === "materialistic" || style === "mix";
@@ -64,12 +74,18 @@ export default function OnboardingPage() {
       style: style ?? "mix",
       materialisticCategories: showMaterialistic ? Array.from(matCategories) : [],
       interests: Array.from(interests),
+      dealPreferences: {
+        sensitivity: dealSensitivity ?? "value-conscious",
+        budgetRange: budgetRange ?? "mid",
+        dealTypes: Array.from(dealTypes),
+        priceAlerts,
+      },
       pinterestLinks,
       completedAt: Date.now(),
     };
     saveProfile(profile);
     router.push("/feed");
-  }, [name, role, difficulty, style, showMaterialistic, matCategories, interests, pinterestLinks, router]);
+  }, [name, role, difficulty, style, showMaterialistic, matCategories, interests, dealSensitivity, budgetRange, dealTypes, priceAlerts, pinterestLinks, router]);
 
   const addPinterestLink = useCallback(() => {
     const url = pinterestUrl.trim();
@@ -103,6 +119,15 @@ export default function OnboardingPage() {
       const next = new Set(prev);
       if (next.has(tag)) next.delete(tag);
       else next.add(tag);
+      return next;
+    });
+  }, []);
+
+  const toggleDealType = useCallback((dt: DealType) => {
+    setDealTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(dt)) next.delete(dt);
+      else next.add(dt);
       return next;
     });
   }, []);
@@ -159,6 +184,20 @@ export default function OnboardingPage() {
               />
             )}
             {logicalStep === 6 && (
+              <StepDeals
+                sensitivity={dealSensitivity}
+                setSensitivity={setDealSensitivity}
+                budgetRange={budgetRange}
+                setBudgetRange={setBudgetRange}
+                selectedDealTypes={dealTypes}
+                toggleDealType={toggleDealType}
+                priceAlerts={priceAlerts}
+                setPriceAlerts={setPriceAlerts}
+                onNext={goNext}
+                onBack={goBack}
+              />
+            )}
+            {logicalStep === 7 && (
               <StepPinterest
                 url={pinterestUrl}
                 setUrl={setPinterestUrl}
@@ -456,6 +495,141 @@ function StepInterests({
       </div>
 
       <NavButtons onBack={onBack} onNext={onNext} nextDisabled={selected.size < 3} nextLabel="Next" />
+    </div>
+  );
+}
+
+function StepDeals({
+  sensitivity,
+  setSensitivity,
+  budgetRange,
+  setBudgetRange,
+  selectedDealTypes,
+  toggleDealType,
+  priceAlerts,
+  setPriceAlerts,
+  onNext,
+  onBack,
+}: {
+  sensitivity: DealSensitivity | null;
+  setSensitivity: (v: DealSensitivity) => void;
+  budgetRange: BudgetRange | null;
+  setBudgetRange: (v: BudgetRange) => void;
+  selectedDealTypes: Set<DealType>;
+  toggleDealType: (dt: DealType) => void;
+  priceAlerts: boolean;
+  setPriceAlerts: (v: boolean) => void;
+} & StepProps) {
+  const sensitivities = Object.entries(DEAL_SENSITIVITY_META) as [DealSensitivity, { label: string; desc: string; emoji: string }][];
+  const budgets = Object.entries(BUDGET_RANGE_META) as [BudgetRange, { label: string; emoji: string }][];
+  const deals = Object.entries(DEAL_TYPE_META) as [DealType, { label: string; emoji: string }][];
+
+  return (
+    <div className="flex flex-col items-center text-center">
+      <p className="text-xs font-semibold uppercase tracking-widest text-ink-faint">Value & deals</p>
+      <h2 className="mt-2 font-display text-2xl font-extrabold text-ink sm:text-3xl">
+        How do you shop for gifts?
+      </h2>
+      <p className="mt-2 text-sm text-ink-soft">
+        Help Maxi find the best value for your gifts
+      </p>
+
+      {/* Deal sensitivity */}
+      <div className="mt-6 w-full">
+        <p className="mb-3 text-left text-xs font-semibold uppercase tracking-widest text-ink-faint">
+          Your shopping style
+        </p>
+        <div className="flex w-full flex-col gap-2">
+          {sensitivities.map(([key, meta]) => (
+            <button
+              key={key}
+              onClick={() => setSensitivity(key)}
+              className={`flex items-center gap-3 rounded-2xl border-2 px-4 py-3 text-left transition-all ${
+                sensitivity === key
+                  ? "border-coral bg-coral-soft/50 shadow-sm"
+                  : "border-line bg-surface hover:border-ink/20"
+              }`}
+            >
+              <span className="text-xl">{meta.emoji}</span>
+              <div>
+                <p className="text-sm font-bold text-ink">{meta.label}</p>
+                <p className="text-xs text-ink-soft">{meta.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Budget range */}
+      <div className="mt-6 w-full">
+        <p className="mb-3 text-left text-xs font-semibold uppercase tracking-widest text-ink-faint">
+          Typical gift budget
+        </p>
+        <div className="grid w-full grid-cols-2 gap-2">
+          {budgets.map(([key, meta]) => (
+            <button
+              key={key}
+              onClick={() => setBudgetRange(key)}
+              className={`flex items-center justify-center gap-2 rounded-2xl border-2 px-3 py-3 transition-all ${
+                budgetRange === key
+                  ? "border-coral bg-coral-soft/50 shadow-sm"
+                  : "border-line bg-surface hover:border-ink/20"
+              }`}
+            >
+              <span className="text-lg">{meta.emoji}</span>
+              <span className="text-sm font-bold text-ink">{meta.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Deal types */}
+      <div className="mt-6 w-full">
+        <p className="mb-3 text-left text-xs font-semibold uppercase tracking-widest text-ink-faint">
+          What deals interest you?
+        </p>
+        <div className="flex flex-wrap justify-center gap-2">
+          {deals.map(([key, meta]) => (
+            <button
+              key={key}
+              onClick={() => toggleDealType(key)}
+              className={`flex items-center gap-1.5 rounded-full border-2 px-3 py-1.5 text-sm font-semibold transition-all ${
+                selectedDealTypes.has(key)
+                  ? "border-coral bg-coral-soft/50 text-ink shadow-sm"
+                  : "border-line bg-surface text-ink-soft hover:border-ink/20 hover:text-ink"
+              }`}
+            >
+              <span>{meta.emoji}</span>
+              {meta.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Price alerts toggle */}
+      <div className="mt-6 w-full">
+        <button
+          onClick={() => setPriceAlerts(!priceAlerts)}
+          className={`flex w-full items-center gap-4 rounded-2xl border-2 px-5 py-4 text-left transition-all ${
+            priceAlerts
+              ? "border-coral bg-coral-soft/50 shadow-sm"
+              : "border-line bg-surface hover:border-ink/20"
+          }`}
+        >
+          <span className="text-2xl">{priceAlerts ? "\ud83d\udd14" : "\ud83d\udd15"}</span>
+          <div>
+            <p className="font-bold text-ink">Price drop alerts</p>
+            <p className="text-xs text-ink-soft">
+              Get notified when items on your watchlist go on sale
+            </p>
+          </div>
+          <div className={`ml-auto h-6 w-10 rounded-full transition-colors ${priceAlerts ? "bg-coral" : "bg-line"}`}>
+            <div className={`h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${priceAlerts ? "translate-x-4" : "translate-x-0"}`} />
+          </div>
+        </button>
+      </div>
+
+      <NavButtons onBack={onBack} onNext={onNext} nextDisabled={!sensitivity} />
     </div>
   );
 }
