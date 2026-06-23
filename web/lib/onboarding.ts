@@ -65,20 +65,42 @@ export type UserProfile = {
 
 const STORAGE_KEY = "giftmaxxing_onboarding";
 
+function isUserProfile(value: unknown): value is UserProfile {
+  if (!value || typeof value !== "object") return false;
+  const p = value as Partial<UserProfile>;
+  return (
+    typeof p.name === "string" &&
+    p.name.trim().length > 0 &&
+    (p.role === "giver" || p.role === "taker" || p.role === "both") &&
+    (p.difficulty === "easy" || p.difficulty === "moderate" || p.difficulty === "hard") &&
+    (p.style === "thoughtful" || p.style === "materialistic" || p.style === "mix") &&
+    Array.isArray(p.interests) &&
+    p.interests.length >= 3 &&
+    Array.isArray(p.pinterestLinks) &&
+    typeof p.completedAt === "number"
+  );
+}
+
 export function loadProfile(): UserProfile | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as UserProfile;
+    const parsed: unknown = JSON.parse(raw);
+    return isUserProfile(parsed) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-export function saveProfile(profile: UserProfile): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+export function saveProfile(profile: UserProfile): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearProfile(): void {

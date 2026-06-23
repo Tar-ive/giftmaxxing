@@ -62,18 +62,25 @@ export default function OnboardingPage() {
       role: role ?? "both",
       difficulty: difficulty ?? "moderate",
       style: style ?? "mix",
-      materialisticCategories: Array.from(matCategories),
+      materialisticCategories: showMaterialistic ? Array.from(matCategories) : [],
       interests: Array.from(interests),
       pinterestLinks,
       completedAt: Date.now(),
     };
     saveProfile(profile);
     router.push("/feed");
-  }, [name, role, difficulty, style, matCategories, interests, pinterestLinks, router]);
+  }, [name, role, difficulty, style, showMaterialistic, matCategories, interests, pinterestLinks, router]);
 
   const addPinterestLink = useCallback(() => {
     const url = pinterestUrl.trim();
     if (!url) return;
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+      if (host !== "pinterest.com" && host !== "pin.it") return;
+    } catch {
+      return;
+    }
     setPinterestLinks((prev) => [...prev, { profileUrl: url, linkedAt: Date.now() }]);
     setPinterestUrl("");
   }, [pinterestUrl]);

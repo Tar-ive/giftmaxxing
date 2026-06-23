@@ -43,7 +43,14 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import { API_BASE, isApiConfigured } from "@/lib/api";
-import type { UserProfile, PinterestLink } from "@/lib/onboarding";
+import type {
+  UserProfile,
+  PinterestLink,
+  GiftRole,
+  GiftStyle,
+  InterestTag,
+  MaterialisticCategory,
+} from "@/lib/onboarding";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -182,10 +189,10 @@ export async function buildTasteVector(
  */
 export type EnhancedRecParams = {
   seedKeys?: string[];
-  interests?: string[];
-  materialisticCategories?: string[];
-  style?: string;
-  role?: string;
+  interests?: InterestTag[];
+  materialisticCategories?: MaterialisticCategory[];
+  style?: GiftStyle;
+  role?: GiftRole;
   pinterestCentroid?: number[];
 };
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { isOnboardingComplete } from "@/lib/onboarding";
 
@@ -29,8 +29,11 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
     getServerSnapshot,
   );
 
+  useEffect(() => {
+    if (!complete) router.replace("/onboarding");
+  }, [complete, router]);
+
   if (!complete) {
-    router.replace("/onboarding");
     return (
       <div className="flex min-h-screen items-center justify-center bg-cream">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-coral" />
