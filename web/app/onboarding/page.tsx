@@ -83,7 +83,7 @@ export default function OnboardingPage() {
       pinterestLinks,
       completedAt: Date.now(),
     };
-    saveProfile(profile);
+    if (!saveProfile(profile)) return;
     router.push("/feed");
   }, [name, role, difficulty, style, showMaterialistic, matCategories, interests, dealSensitivity, budgetRange, dealTypes, priceAlerts, pinterestLinks, router]);
 

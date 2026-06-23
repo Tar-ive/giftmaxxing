@@ -100,11 +100,14 @@ function isUserProfile(value: unknown): value is UserProfile {
     p.interests.length >= 3 &&
     Array.isArray(p.pinterestLinks) &&
     typeof p.completedAt === "number" &&
-    p.dealPreferences !== undefined &&
+    !!p.dealPreferences &&
     typeof p.dealPreferences === "object" &&
-    typeof (p.dealPreferences as DealPreferences).sensitivity === "string" &&
-    typeof (p.dealPreferences as DealPreferences).budgetRange === "string" &&
+    ((p.dealPreferences as DealPreferences).sensitivity === "deal-hunter" || (p.dealPreferences as DealPreferences).sensitivity === "value-conscious" || (p.dealPreferences as DealPreferences).sensitivity === "quality-first" || (p.dealPreferences as DealPreferences).sensitivity === "splurge") &&
+    ((p.dealPreferences as DealPreferences).budgetRange === "budget" || (p.dealPreferences as DealPreferences).budgetRange === "mid" || (p.dealPreferences as DealPreferences).budgetRange === "premium" || (p.dealPreferences as DealPreferences).budgetRange === "no-limit") &&
     Array.isArray((p.dealPreferences as DealPreferences).dealTypes) &&
+    (p.dealPreferences as DealPreferences).dealTypes.every(
+      (t: string) => t === "clearance" || t === "flash-sales" || t === "coupons" || t === "price-drops" || t === "bundle-deals" || t === "seasonal" || t === "refurbished" || t === "outlet",
+    ) &&
     typeof (p.dealPreferences as DealPreferences).priceAlerts === "boolean"
   );
 }
