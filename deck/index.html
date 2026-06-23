@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Giftmaxxing — Pitch Deck</title>
+
+  <!-- reveal.js core (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css" />
+
+  <!-- Brand fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root{
+      --cream:#f7f2eb; --cream2:#fbf7f1; --surface:#ffffff;
+      --ink:#211a14; --ink-soft:#6c6157; --ink-faint:#9c9389; --line:#e8e0d5;
+      --coral:#fb6f52; --coral-ink:#3a1206; --coral-soft:#fde7e0;
+      --peach1:#ffd3a5; --peach2:#ff9a76; --rose1:#ffc2d1; --rose2:#ff8fa3;
+      --butter1:#ffe7a0; --butter2:#ffc24b; --lilac1:#d9c2ff; --lilac2:#a98bff;
+      --sky1:#bfe3ff; --sky2:#7fb8ff; --sage1:#cde6c5; --sage2:#8fc79a;
+      --shadow:0 14px 40px rgba(33,26,20,0.08);
+      --shadow-sm:0 8px 24px rgba(33,26,20,0.06);
+    }
+
+    html, body { background:var(--cream); }
+    .reveal-viewport{
+      background:
+        radial-gradient(55% 45% at 88% 0%, rgba(251,111,82,0.13), transparent 60%),
+        radial-gradient(45% 40% at 2% 14%, rgba(255,194,75,0.13), transparent 58%),
+        radial-gradient(52% 46% at 50% 102%, rgba(217,194,255,0.12), transparent 62%),
+        var(--cream);
+    }
+
+    /* ── base typography ─────────────────────────────────────────── */
+    .reveal{ font-family:'Hanken Grotesk', system-ui, sans-serif; color:var(--ink); font-weight:500; }
+    .reveal ::selection{ background:var(--coral); color:#fff; }
+    .reveal .slides{ text-align:left; }
+    .reveal .slides section{ height:100%; }
+    .reveal .slides section > .wrap{
+      height:100%; display:flex; flex-direction:column;
+      padding:60px 76px 56px; box-sizing:border-box;
+    }
+    .wrap.center{ justify-content:center; }
+
+    .reveal h1, .reveal h2, .reveal h3{
+      font-family:'Instrument Serif', Georgia, serif; font-weight:400;
+      color:var(--ink); margin:0; letter-spacing:-0.015em; text-transform:none;
+    }
+    .reveal p{ margin:0; }
+
+    /* ── reusable pieces ─────────────────────────────────────────── */
+    .eyebrow{
+      font-family:'JetBrains Mono', monospace; font-size:15px; font-weight:500;
+      letter-spacing:0.2em; text-transform:uppercase; color:var(--ink-faint);
+      display:flex; align-items:center; gap:12px;
+    }
+    .eyebrow::before{ content:""; width:30px; height:2px; background:var(--coral); display:inline-block; }
+
+    .display{ font-size:88px; line-height:1.0; }
+    .display-sm{ font-size:60px; line-height:1.02; }
+    h3.card-h{ font-size:30px; line-height:1.1; }
+
+    .lead{ font-size:25px; line-height:1.5; color:var(--ink-soft); max-width:62ch; }
+    .lead-sm{ font-size:20px; line-height:1.5; color:var(--ink-soft); }
+    .coral{ color:var(--coral); }
+    .italic{ font-style:italic; }
+    .muted{ color:var(--ink-faint); }
+    .strong{ color:var(--ink); font-weight:700; }
+
+    .grad{
+      background:linear-gradient(45deg,#fb6f52 0%,#ff9a76 22%,#ffc2d1 48%,#ffc24b 74%,#fb6f52 100%);
+      -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    }
+
+    .pill{
+      display:inline-flex; align-items:center; gap:8px; background:var(--coral-soft);
+      color:var(--coral-ink); border-radius:999px; padding:7px 16px; font-weight:700; font-size:15px;
+    }
+    .pill .dot{ width:8px; height:8px; border-radius:50%; background:var(--coral); }
+
+    .taglist{ display:flex; flex-wrap:wrap; gap:10px; }
+    .tag{
+      border:1px solid var(--line); background:var(--surface); color:var(--ink-soft);
+      border-radius:999px; padding:8px 16px; font-weight:600; font-size:16px;
+    }
+
+    .grid{ display:grid; gap:20px; }
+    .g2{ grid-template-columns:repeat(2,1fr); }
+    .g3{ grid-template-columns:repeat(3,1fr); }
+    .g4{ grid-template-columns:repeat(4,1fr); }
+    .split{ display:grid; grid-template-columns:1.04fr 0.96fr; gap:48px; align-items:center; flex:1; }
+
+    .card{
+      background:var(--surface); border:1px solid var(--line); border-radius:24px;
+      padding:26px 26px; box-shadow:var(--shadow-sm);
+    }
+    .card .ico{ font-size:30px; line-height:1; }
+    .card h3{ margin-top:14px; }
+    .card p{ margin-top:8px; color:var(--ink-soft); font-size:18px; line-height:1.45; }
+    .card.accent{ border-color:rgba(251,111,82,0.5); box-shadow:0 14px 40px rgba(251,111,82,0.14); }
+
+    .num{ font-family:'Instrument Serif', serif; font-size:40px; color:var(--coral); line-height:1; }
+    .stat{ font-family:'Instrument Serif', serif; font-size:62px; line-height:1; color:var(--ink); }
+    .stat .u{ font-size:24px; color:var(--ink-faint); margin-left:4px; }
+    .stat-l{ font-size:18px; color:var(--ink-soft); margin-top:10px; }
+
+    .fn{ font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--ink-faint); }
+
+    .check{ display:flex; gap:12px; align-items:flex-start; font-size:20px; color:var(--ink-soft); line-height:1.4; }
+    .check::before{ content:""; flex:none; width:22px; height:22px; margin-top:2px; border-radius:50%;
+      background:var(--coral-soft); position:relative; }
+    .check{ position:relative; }
+    .checklist{ display:flex; flex-direction:column; gap:16px; }
+
+    /* footer chrome */
+    .foot{
+      margin-top:auto; padding-top:18px; border-top:1px solid var(--line);
+      display:flex; align-items:center; gap:14px;
+      font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--ink-faint);
+    }
+    .wordmark{ font-family:'Hanken Grotesk', sans-serif; font-weight:800; font-size:16px; color:var(--ink); letter-spacing:-0.01em; }
+    .wordmark .x{ color:var(--coral); }
+    .foot .sep{ width:5px; height:5px; border-radius:50%; background:var(--line); }
+    .foot .right{ margin-left:auto; }
+
+    /* ── cover mock (friend's find + Maxi) ───────────────────────── */
+    .mock{ position:relative; padding:8px 18px; }
+    .findcard{
+      position:relative; z-index:2; background:var(--surface); border:1px solid var(--line);
+      border-radius:28px; padding:18px; box-shadow:var(--shadow); max-width:380px; margin-left:auto;
+    }
+    .fc-head{ display:flex; align-items:center; gap:12px; }
+    .av{ width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+      color:#fff; font-weight:800; font-size:16px; flex:none; }
+    .av.rose{ background:linear-gradient(135deg,var(--rose1),var(--rose2)); }
+    .av.lilac{ background:linear-gradient(135deg,var(--lilac1),var(--lilac2)); }
+    .fc-head .who b{ display:block; font-weight:700; font-size:16px; color:var(--ink); }
+    .fc-head .who span{ font-size:13px; color:var(--ink-faint); }
+    .fc-head .heart{ margin-left:auto; color:var(--coral); font-size:20px; }
+    .fc-cap{ margin-top:12px; font-size:15px; color:var(--ink-soft); line-height:1.4; }
+    .tile{ margin-top:12px; height:168px; border-radius:18px; display:flex; flex-direction:column;
+      justify-content:flex-end; padding:14px; color:#3a1206; position:relative; overflow:hidden;
+      background:linear-gradient(135deg,var(--peach1),var(--peach2)); }
+    .tile .emoji{ position:absolute; top:14px; right:16px; font-size:46px; }
+    .tile .t-name{ font-weight:700; font-size:16px; }
+    .tile .t-price{ font-weight:800; font-size:18px; }
+    .fc-foot{ margin-top:12px; display:flex; align-items:center; gap:14px; font-size:13px; font-weight:700; color:var(--ink-faint); }
+    .fc-foot .save{ margin-left:auto; background:var(--coral-soft); color:var(--coral-ink); border-radius:999px; padding:6px 12px; }
+    .maxibubble{
+      position:absolute; left:-6px; bottom:-22px; z-index:3; width:300px;
+      background:var(--surface); border:1px solid var(--line); border-radius:20px; padding:14px;
+      box-shadow:var(--shadow); display:flex; gap:12px; align-items:flex-start;
+    }
+    .maxi-orb{ width:38px; height:38px; border-radius:50%; flex:none;
+      background:radial-gradient(circle at 30% 30%, #ffd6c9, var(--coral)); box-shadow:0 0 0 4px rgba(251,111,82,0.12); }
+    .maxibubble p{ font-size:14px; color:var(--ink); line-height:1.4; }
+    .glow{ position:absolute; inset:auto; width:300px; height:300px; border-radius:50%;
+      background:rgba(251,111,82,0.18); filter:blur(60px); right:30px; top:40px; z-index:0; }
+
+    /* steps */
+    .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; flex:1; align-content:center; }
+    .step{ background:var(--surface); border:1px solid var(--line); border-radius:24px; padding:28px; box-shadow:var(--shadow-sm); display:flex; flex-direction:column; }
+    .step .num{ margin-bottom:16px; }
+    .step h3{ font-size:30px; }
+    .step .sub{ font-family:'Instrument Serif',serif; font-size:22px; color:var(--ink-faint); margin-bottom:14px; }
+    .step p{ color:var(--ink-soft); font-size:18px; line-height:1.45; }
+
+    /* generic helpers */
+    .stack{ display:flex; flex-direction:column; }
+    .gap-s{ gap:10px; } .gap-m{ gap:18px; } .gap-l{ gap:26px; }
+    .mt-s{ margin-top:14px; } .mt-m{ margin-top:24px; } .mt-l{ margin-top:36px; }
+    .row{ display:flex; align-items:center; }
+    .grow{ flex:1; }
+
+    /* reveal accents */
+    .reveal .progress{ color:var(--coral); height:4px; }
+    .reveal .controls{ color:var(--coral); }
+    .reveal .slide-number{ background:transparent; color:var(--ink-faint); font-family:'JetBrains Mono',monospace; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="reveal">
+    <div class="slides">
+
+      <!-- ════════════════ SLIDE 1 — COVER ════════════════ -->
+      <section data-slide="cover">
+        <div class="wrap center">
+          <div class="split">
+            <!-- left: copy -->
+            <div class="stack gap-m">
+              <div class="eyebrow">Pitch deck · 2026</div>
+              <h1 class="display">Gifting,<br/>made <span class="grad">effortless</span>.</h1>
+              <p class="lead mt-s">
+                Maxi is an AI gift companion and a taste-learning feed that turns
+                thoughtful gift-giving from a rare <span class="strong">skill</span>
+                into a <span class="strong">commodity</span> — for everyone.
+              </p>
+              <div class="taglist mt-s">
+                <span class="tag">AI companion</span>
+                <span class="tag">Taste feed</span>
+                <span class="tag">Group gifts</span>
+              </div>
+            </div>
+
+            <!-- right: product mock -->
+            <div class="mock">
+              <div class="glow"></div>
+              <div class="findcard">
+                <div class="fc-head">
+                  <div class="av rose">M</div>
+                  <div class="who"><b>Maya Reyes</b><span>posted a find · 12m</span></div>
+                  <div class="heart">♥</div>
+                </div>
+                <p class="fc-cap">genuinely the move for anyone turning 22. point-and-shoot szn is back 📸</p>
+                <div class="tile">
+                  <div class="emoji">📷</div>
+                  <div class="t-name">Kodak M35 Film Camera</div>
+                  <div class="t-price">$48</div>
+                </div>
+                <div class="fc-foot">
+                  <span>214 likes</span><span>31 saved</span>
+                  <span class="save">Save to a list</span>
+                </div>
+              </div>
+              <div class="maxibubble">
+                <div class="maxi-orb"></div>
+                <p>Maya's birthday is in <b>4 days</b> 🎈 I lined up <b>7 ideas</b> in your <b>$60</b> budget.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span>the social gifting app</span>
+            <span class="right">[ presenter · date ]</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 2 — PROBLEM ════════════════ -->
+      <section data-slide="problem">
+        <div class="wrap">
+          <div class="eyebrow">The problem</div>
+          <h1 class="display-sm mt-s">A good gift is real <span class="coral italic">work</span>.</h1>
+          <p class="lead mt-s">
+            A present that actually lands takes time, attention, and genuinely knowing
+            someone. Most people don't have all three — so gifting becomes a chore.
+          </p>
+
+          <div class="grid g3 mt-l">
+            <div class="card">
+              <div class="ico">⏳</div>
+              <h3 class="card-h">It takes time</h3>
+              <p>Dozens of tabs, endless scrolling, and second-guessing — for one halfway-decent idea.</p>
+            </div>
+            <div class="card">
+              <div class="ico">🧠</div>
+              <h3 class="card-h">It takes insight</h3>
+              <p>You have to read someone's <em>taste</em> — their vibe, not just the wishlist they never update.</p>
+            </div>
+            <div class="card">
+              <div class="ico">🤝</div>
+              <h3 class="card-h">It takes coordination</h3>
+              <p>Group gifts mean spreadsheets, chasing Venmo, and one person fronting the cost.</p>
+            </div>
+          </div>
+
+          <p class="lead-sm mt-l">
+            The result: forgettable gifts — or a last-minute <span class="strong">gift card</span>.
+          </p>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">Problem · 02</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 3 — INSIGHT ════════════════ -->
+      <section data-slide="insight">
+        <div class="wrap center">
+          <div class="stack gap-m" style="align-items:center; text-align:center; max-width:1000px; margin:0 auto;">
+            <div class="eyebrow" style="justify-content:center;">The insight</div>
+            <h1 class="display">Gift-giving is a <span class="coral italic">skill</span>.</h1>
+            <p class="lead" style="margin:0 auto;">
+              Some people just have it — they notice, they remember, they nail the thing
+              you didn't know you wanted. Most of us don't, or can't spare the hours.
+              So great gifting stays a privilege of the <span class="strong">thoughtful</span>
+              and the <span class="strong">time-rich</span>.
+            </p>
+            <p class="display-sm mt-m"><span class="grad">What if it could be a commodity?</span></p>
+          </div>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">Insight · 03</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 4 — SOLUTION ════════════════ -->
+      <section data-slide="solution">
+        <div class="wrap">
+          <div class="eyebrow">The solution</div>
+          <h1 class="display-sm mt-s">We make the skill a <span class="coral italic">commodity</span>.</h1>
+          <p class="lead mt-s">
+            Meet <span class="strong">Maxi</span> — an AI gift companion wrapped in a
+            taste-learning feed. Anyone can give like the most thoughtful person they know.
+          </p>
+
+          <div class="grid g3 mt-l">
+            <div class="card">
+              <div class="ico">👀</div>
+              <h3 class="card-h">Learns taste</h3>
+              <p>From swipes, a linked Pinterest, and the finds you save — Maxi learns the <em>vibe</em>, not just a wishlist.</p>
+            </div>
+            <div class="card accent">
+              <div class="ico">🎯</div>
+              <h3 class="card-h">Finds the gift</h3>
+              <p>Real, buyable products in your budget — each with a reason you can trust ("because they love film photography").</p>
+            </div>
+            <div class="card">
+              <div class="ico">✨</div>
+              <h3 class="card-h">Makes it effortless</h3>
+              <p>Save, claim, and group-gift in a tap. Reminders mean you never panic-buy again.</p>
+            </div>
+          </div>
+
+          <p class="lead-sm mt-l">
+            The thought, the taste, the timing — <span class="strong">handled</span>.
+          </p>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">Solution · 04</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 5 — HOW IT WORKS ════════════════ -->
+      <section data-slide="how">
+        <div class="wrap">
+          <div class="eyebrow">How it works</div>
+          <h1 class="display-sm mt-s">Connect. Discover. <span class="coral italic">Give.</span></h1>
+
+          <div class="steps mt-m">
+            <div class="step">
+              <div class="num">01</div>
+              <h3>Connect</h3>
+              <div class="sub">their taste</div>
+              <p>Link a friend's Pinterest, Spotify, or just their saved finds. Maxi quietly learns what they're actually into.</p>
+            </div>
+            <div class="step">
+              <div class="num">02</div>
+              <h3>Discover</h3>
+              <div class="sub">the gift</div>
+              <p>Browse the feed or ask Maxi. Get ideas matched to their taste and your budget — no more guessing.</p>
+            </div>
+            <div class="step">
+              <div class="num">03</div>
+              <h3>Give</h3>
+              <div class="sub">together</div>
+              <p>Buy it solo or pool money with the group. Track it, ship it, and watch them light up.</p>
+            </div>
+          </div>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">How it works · 05</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 6 — PRODUCT ════════════════ -->
+      <section data-slide="product">
+        <div class="wrap">
+          <div class="eyebrow">The product</div>
+          <h1 class="display-sm mt-s">A companion, not a <span class="coral italic">catalog</span>.</h1>
+
+          <div class="split mt-m">
+            <!-- left: capability list -->
+            <div class="stack" style="gap:18px;">
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-size:24px;">🛍️</span>
+                <div><b style="font-size:19px;color:var(--ink);">Taste feed</b>
+                  <div style="font-size:16px;color:var(--ink-soft);line-height:1.4;margin-top:2px;">An Instagram-style feed of gift-worthy finds, ranked to each person.</div></div>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-size:24px;">🤖</span>
+                <div><b style="font-size:19px;color:var(--ink);">Maxi, your AI companion</b>
+                  <div style="font-size:16px;color:var(--ink-soft);line-height:1.4;margin-top:2px;">Chat or talk: ask for ideas, add to cart, check out — in budget.</div></div>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-size:24px;">🔥</span>
+                <div><b style="font-size:19px;color:var(--ink);">Swipe to train</b>
+                  <div style="font-size:16px;color:var(--ink-soft);line-height:1.4;margin-top:2px;">"Would you want this gifted to you?" — every swipe sharpens the recs.</div></div>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-size:24px;">📸</span>
+                <div><b style="font-size:19px;color:var(--ink);">Visual search</b>
+                  <div style="font-size:16px;color:var(--ink-soft);line-height:1.4;margin-top:2px;">Snap a photo, get buyable lookalikes — "Google Lens for gifts."</div></div>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-size:24px;">👯</span>
+                <div><b style="font-size:19px;color:var(--ink);">Group gifts &amp; pools</b>
+                  <div style="font-size:16px;color:var(--ink-soft);line-height:1.4;margin-top:2px;">Chip in together with a live ledger and a deadline — no chasing Venmo.</div></div>
+              </div>
+              <div style="display:flex;gap:14px;align-items:flex-start;">
+                <span style="font-size:24px;">🎁</span>
+                <div><b style="font-size:19px;color:var(--ink);">Drops</b>
+                  <div style="font-size:16px;color:var(--ink-soft);line-height:1.4;margin-top:2px;">Curated, themed bundles built to hit a target budget.</div></div>
+              </div>
+            </div>
+
+            <!-- right: Maxi chat mock -->
+            <div class="card" style="max-width:430px;margin-left:auto;display:flex;flex-direction:column;gap:14px;">
+              <div style="align-self:flex-end;background:var(--coral);color:#fff;border-radius:18px 18px 4px 18px;padding:12px 16px;font-weight:600;font-size:15px;max-width:82%;line-height:1.35;">
+                Something for my sister — she's obsessed with matcha. Under $50?
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-start;">
+                <div class="maxi-orb"></div>
+                <div style="background:var(--cream2);border:1px solid var(--line);border-radius:18px 18px 18px 4px;padding:12px 16px;font-size:15px;color:var(--ink);max-width:86%;line-height:1.35;">
+                  Found 3 she'd love 🍵 Top pick, in budget:
+                </div>
+              </div>
+              <div class="tile" style="height:148px;background:linear-gradient(135deg,var(--sage1),var(--sage2));color:#173a1c;">
+                <div class="emoji">🍵</div>
+                <div class="t-name">Ceremonial Matcha Starter Kit</div>
+                <div class="t-price">$42</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">Product · 06</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 7 — WHY NOW ════════════════ -->
+      <section data-slide="whynow">
+        <div class="wrap">
+          <div class="eyebrow">Why now</div>
+          <h1 class="display-sm mt-s">Three tailwinds, all at <span class="coral italic">once</span>.</h1>
+
+          <div class="grid g3 mt-l">
+            <div class="card">
+              <div class="ico">🤖</div>
+              <h3 class="card-h">AI got cheap</h3>
+              <p>Embedding 10k gift ideas costs ≈ $0.60 on Amazon Bedrock — no idle servers, pay per call. Taste-matching is finally affordable at consumer scale.</p>
+            </div>
+            <div class="card">
+              <div class="ico">🛒</div>
+              <h3 class="card-h">Social shopping is proven</h3>
+              <p>Pinterest (shopping ads) and LTK (creator affiliate at scale) prove feed + affiliate + native ads works. The monetization playbook already exists.</p>
+            </div>
+            <div class="card">
+              <div class="ico">🎁</div>
+              <h3 class="card-h">Gifting is still a utility</h3>
+              <p>Most incumbents are static wishlists or one-off quizzes — none is a social, taste-learning feed. That's wide-open whitespace.</p>
+            </div>
+          </div>
+
+          <p class="lead-sm mt-l">
+            Cheap intelligence, a proven model, and a category no one has made social — <span class="strong">that's the window</span>.
+          </p>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">Why now · 07</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 8 — MARKET ════════════════ -->
+      <section data-slide="market">
+        <div class="wrap">
+          <div class="eyebrow">Market</div>
+          <h1 class="display-sm mt-s">Gifting is huge — and <span class="coral italic">high-intent</span>.</h1>
+
+          <div class="grid g3 mt-l">
+            <div class="card">
+              <div class="fn" style="font-size:14px;letter-spacing:0.12em;">TAM</div>
+              <div class="stat mt-s">$1T+</div>
+              <div class="stat-l">Global consumer gifting</div>
+              <p>Everyone buys for someone — every birthday, holiday, and milestone.</p>
+            </div>
+            <div class="card">
+              <div class="fn" style="font-size:14px;letter-spacing:0.12em;">SAM</div>
+              <div class="stat mt-s">$100B+</div>
+              <div class="stat-l">U.S. online gifting &amp; social shopping</div>
+              <p>The slice a taste-feed + AI companion can realistically win.</p>
+            </div>
+            <div class="card accent">
+              <div class="fn" style="font-size:14px;letter-spacing:0.12em;color:var(--coral);">SOM · BEACHHEAD</div>
+              <div class="stat mt-s">[ target ]</div>
+              <div class="stat-l">Gen-Z &amp; millennial gifters</div>
+              <p>Your 3-year obtainable share — fill from the bottoms-up model.</p>
+            </div>
+          </div>
+
+          <p class="lead-sm mt-l">
+            Gift shoppers arrive <span class="strong">ready to buy</span> — ideal economics for both affiliate commissions and native ads.
+          </p>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span>TAM/SAM illustrative — verify (e.g. NRF) before investor use</span>
+            <span class="right">Market · 08</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 9 — BUSINESS MODEL ════════════════ -->
+      <section data-slide="model">
+        <div class="wrap">
+          <div class="eyebrow">Business model</div>
+          <h1 class="display-sm mt-s">We earn when great gifts get <span class="coral italic">given</span>.</h1>
+
+          <div class="grid g2 mt-l">
+            <div class="card">
+              <div class="ico">🔗</div>
+              <h3 class="card-h">Affiliate · transactional</h3>
+              <p>A cut of every purchase made through an outbound link — taste-ranked, so people actually buy.</p>
+              <div class="taglist" style="margin-top:14px;">
+                <span class="tag">Sovrn / Skimlinks day-one</span>
+                <span class="tag">eBay · Best Buy · Etsy</span>
+                <span class="tag">Amazon / Walmart at scale</span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="ico">📣</div>
+              <h3 class="card-h">Native ads · brand-paid</h3>
+              <p>Pinterest-style placements — same card, ranked by the same taste vector, clearly labeled. Brands pay to <em>be</em> the gift.</p>
+              <div class="taglist" style="margin-top:14px;">
+                <span class="tag">Sponsored finds</span>
+                <span class="tag">Sponsored drops</span>
+                <span class="tag">Brand gift guides</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="lead-sm mt-l">
+            <span class="strong">Double-dip:</span> a brand can pay for placement <em>and</em> we earn on the resulting sale — high-margin commerce media on high-intent traffic.
+          </p>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span>commission rates vary by merchant — verify current terms</span>
+            <span class="right">Business model · 09</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 10 — COMPETITION ════════════════ -->
+      <section data-slide="competition">
+        <div class="wrap">
+          <div class="split">
+            <!-- left: takeaway -->
+            <div class="stack gap-m">
+              <div class="eyebrow">Competition</div>
+              <h1 class="display-sm">The corner nobody <span class="coral italic">owns</span>.</h1>
+              <p class="lead-sm" style="font-size:21px;">
+                Gifting apps are static lists. Social-shopping apps aren't built for giving.
+                We're the only <span class="strong">taste-feed + AI companion</span> made for gifts.
+              </p>
+              <div class="stack" style="gap:12px;margin-top:4px;">
+                <div style="display:flex;gap:12px;align-items:flex-start;font-size:18px;color:var(--ink-soft);"><span style="color:var(--coral);font-weight:800;">✓</span><span>List-first &rarr; we're <b style="color:var(--ink);">feed-first</b>.</span></div>
+                <div style="display:flex;gap:12px;align-items:flex-start;font-size:18px;color:var(--ink-soft);"><span style="color:var(--coral);font-weight:800;">✓</span><span>Generic shopping &rarr; we're <b style="color:var(--ink);">gifting-native</b>.</span></div>
+                <div style="display:flex;gap:12px;align-items:flex-start;font-size:18px;color:var(--ink-soft);"><span style="color:var(--coral);font-weight:800;">✓</span><span>Quiz &rarr; a <b style="color:var(--ink);">persistent taste profile</b>.</span></div>
+              </div>
+            </div>
+
+            <!-- right: 2x2 map -->
+            <div style="margin-left:auto; width:100%; max-width:540px;">
+              <div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:8px;">↑ AI · taste-aware</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px;height:340px;">
+                <!-- top-left -->
+                <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;box-shadow:var(--shadow-sm);">
+                  <b style="font-size:16px;color:var(--ink);">AI gift quizzes</b>
+                  <span style="font-size:13px;color:var(--ink-faint);margin-top:2px;">Gifts.com · Giftpack</span>
+                  <span style="font-size:13px;color:var(--ink-soft);font-style:italic;margin-top:6px;">smart, but one-off lists</span>
+                </div>
+                <!-- top-right (us) -->
+                <div style="background:var(--coral-soft);border:1.5px solid var(--coral);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;box-shadow:0 14px 40px rgba(251,111,82,0.18);">
+                  <b style="font-size:18px;color:var(--coral-ink);">★ Giftmaxxing</b>
+                  <span style="font-size:13px;color:var(--coral-ink);margin-top:6px;font-weight:600;">feed + AI taste, built for gifting</span>
+                </div>
+                <!-- bottom-left -->
+                <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;box-shadow:var(--shadow-sm);">
+                  <b style="font-size:16px;color:var(--ink);">Wishlists &amp; registries</b>
+                  <span style="font-size:13px;color:var(--ink-faint);margin-top:2px;">Elfster · Giftster · MyRegistry</span>
+                  <span style="font-size:13px;color:var(--ink-soft);font-style:italic;margin-top:6px;">static, holiday-only</span>
+                </div>
+                <!-- bottom-right -->
+                <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;flex-direction:column;justify-content:center;box-shadow:var(--shadow-sm);">
+                  <b style="font-size:16px;color:var(--ink);">Social shopping</b>
+                  <span style="font-size:13px;color:var(--ink-faint);margin-top:2px;">Pinterest · LTK · Flip</span>
+                  <span style="font-size:13px;color:var(--ink-soft);font-style:italic;margin-top:6px;">feeds, but not gifting</span>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-faint);margin-top:8px;">
+                <span>List · utility</span><span>Feed · discovery →</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span class="right">Competition · 10</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- SLIDES:END -->
+
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+  <script>
+    // Conditionally load the print stylesheet for ?print-pdf export
+    (function () {
+      var link = document.createElement('link');
+      link.rel = 'stylesheet'; link.type = 'text/css';
+      link.href = /print-pdf/gi.test(window.location.search)
+        ? 'https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/css/print/pdf.css'
+        : 'https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/css/print/paper.css';
+      document.head.appendChild(link);
+    })();
+
+    Reveal.initialize({
+      width: 1280,
+      height: 720,
+      margin: 0.04,
+      minScale: 0.2,
+      maxScale: 2.0,
+      center: false,
+      hash: true,
+      slideNumber: 'c/t',
+      transition: 'fade',
+      transitionSpeed: 'default',
+      controls: true,
+      progress: true,
+    });
+  </script>
+</body>
+</html>

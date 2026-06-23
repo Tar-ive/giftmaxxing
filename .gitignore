@@ -13,5 +13,11 @@ cdk.context.json
 # Node
 node_modules/
 
+# Media / recordings — host demos externally, keep the repo lean
+recordings/
+*.mp4
+*.webm
+*.mov
+
 # OS
 .DS_Store

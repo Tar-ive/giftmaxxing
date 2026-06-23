@@ -225,4 +225,16 @@ export const Icons = {
       <path d="M9 6l6 6-6 6" />
     </svg>
   ),
+  cards: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <rect x="7" y="4.5" width="12" height="15" rx="2.5" transform="rotate(8 13 12)" />
+      <rect x="5" y="4.5" width="12" height="15" rx="2.5" transform="rotate(-8 11 12)" />
+    </svg>
+  ),
+  camera: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M4 8.5h3l1.6-2.5h6.8L17 8.5h3a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z" />
+      <circle cx="12" cy="13" r="3.2" />
+    </svg>
+  ),
 };

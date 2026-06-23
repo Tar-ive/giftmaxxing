@@ -16,6 +16,7 @@ const ITEMS: Item[] = [
   { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
   { label: "Search", href: "/feed/search", icon: "search" },
   { label: "Explore", href: "/feed/explore", icon: "compass" },
+  { label: "Swipe", href: "/feed/swipe", icon: "cards" },
   { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
   { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },

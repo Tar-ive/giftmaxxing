@@ -42,7 +42,7 @@
 // └─────────────────────────────────────────────────────────────────────┘
 // ────────────────────────────────────────────────────────────────────────────
 
-import { API_BASE, isApiConfigured, fetchVectorRecommendations } from "@/lib/api";
+import { API_BASE, isApiConfigured, fetchVectorRecommendations, fetchVisualSearch } from "@/lib/api";
 import type {
   UserProfile,
   PinterestLink,
@@ -121,35 +121,63 @@ export async function ingestPinterestProfile(
 
 // ── Visual search ───────────────────────────────────────────────────────────
 
+// Downscale an uploaded image in the browser to a small JPEG and return its
+// base64 (no data-URL prefix). Keeps the POST body small (API Gateway caps at
+// ~10 MB) and the Titan embed fast, without losing the visual signal.
+async function fileToDownscaledBase64(file: File, maxDim = 512): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = () => reject(new Error("could not read image"));
+    fr.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("could not decode image"));
+    im.src = dataUrl;
+  });
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl.split(",")[1] ?? "";
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/jpeg", 0.85).split(",")[1] ?? "";
+}
+
 /**
- * TODO(next-agent): Implement visual search.
+ * Visual search: downscale the uploaded image, POST it to /visual-search, and
+ * return ranked matches. The Lambda embeds the image with Titan Multimodal and
+ * runs kNN against the S3 Vectors pin index (same shared space the pins were
+ * embedded into), so this is true image→image similarity.
  *
- * Flow:
- * 1. Client uploads image via POST /visual-search (multipart)
- * 2. Lambda embeds the image with Titan Multimodal → query vector
- * 3. kNN against S3 Vectors (pins index) → top-k neighbors
- * 4. Enrich with affiliate links (Amazon Associates / Walmart)
- * 5. Return ranked results
- *
- * See CLOUD.md §6 for full spec.
+ * Throws if the endpoint is unreachable (e.g. not deployed yet) so callers can
+ * fall back to a local taste match.
  */
 export async function visualSearch(
-  _imageFile: File
+  imageFile: File,
+  opts: { text?: string; limit?: number } = {}
 ): Promise<VisualSearchResult[]> {
-  if (isApiConfigured()) {
-    // TODO(next-agent): uncomment when /visual-search endpoint exists
-    // const form = new FormData();
-    // form.append("image", imageFile);
-    // const res = await fetch(`${API_BASE}/visual-search`, {
-    //   method: "POST",
-    //   body: form,
-    // });
-    // if (!res.ok) throw new Error(`Visual search failed: HTTP ${res.status}`);
-    // return (await res.json()).results;
-    void API_BASE;
-  }
-
-  return [];
+  if (!isApiConfigured()) return [];
+  void API_BASE;
+  const imageBase64 = await fileToDownscaledBase64(imageFile);
+  const { items } = await fetchVisualSearch({
+    imageBase64,
+    text: opts.text,
+    limit: opts.limit ?? 12,
+  });
+  return items.map((i) => ({
+    id: i.postId,
+    imageUrl: i.image ?? "",
+    title: i.name ?? "",
+    similarity: i._score ?? 0,
+    brand: i.author,
+    source: "s3vectors" as const,
+  }));
 }
 
 // ── Taste vector from onboarding profile ────────────────────────────────────

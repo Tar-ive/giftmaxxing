@@ -15,14 +15,14 @@ const PROMPTS = [
 ];
 
 const CAPS = [
-  { emoji: "🧠", title: "Visual search", body: "Matches a person's aesthetic with S3 Vectors similarity over real product photos." },
+  { emoji: "🧠", title: "Visual search", body: "Upload a photo — Titan Multimodal embeds it and S3 Vectors finds look-alike gifts." },
   { emoji: "🎙️", title: "Voice", body: "Tap the mic and just talk — Maxi listens, and can talk back." },
   { emoji: "🛒", title: "Agentic shopping", body: "Maxi finds the gift, adds it to your cart, and checks out for you." },
   { emoji: "🏷️", title: "Deal hunting", body: "Ask for discounts and Maxi surfaces the best value finds in budget." },
 ];
 
 export default function MaxiPage() {
-  const { ask, setOpen } = useMaxi();
+  const { ask, setOpen, searchByImage } = useMaxi();
   const me = useCurrentUser();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const firstName = me.name !== "You" ? me.name.split(" ")[0] : null;
@@ -64,8 +64,9 @@ export default function MaxiPage() {
           accept="image/*"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files?.[0]) ask("find gifts that match this aesthetic / my taste");
-            e.currentTarget.value = "";
+            const f = e.target.files?.[0];
+            if (f) searchByImage(f);
+            e.target.value = "";
           }}
         />
         <button

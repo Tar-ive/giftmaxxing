@@ -13,9 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { GRADIENTS } from "@/lib/data";
-import type { Pin } from "@/lib/pins";
+import { GRADIENTS, type Grad } from "@/lib/data";
+import { PINS, type Pin } from "@/lib/pins";
 import { loadProfile } from "@/lib/onboarding";
+import { visualSearch } from "@/lib/visual-search";
 import {
   type CartItem,
   loadCart,
@@ -45,6 +46,7 @@ type MaxiStore = {
   sending: boolean;
   send: (text: string) => void;
   ask: (text: string) => void; // open the panel + send (for @maxi mentions)
+  searchByImage: (file: File) => void; // visual search from an uploaded photo
   cart: CartItem[];
   cartCount: number;
   cartTotal: number;
@@ -72,6 +74,31 @@ function deriveVibes(): { vibes: string[]; name?: string } {
 
 let MID = 0;
 const mkId = () => `m${Date.now()}_${MID++}`;
+
+const GRAD_KEYS = Object.keys(GRADIENTS) as Grad[];
+function hashNum(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+// Render a visual-search hit that isn't in the bundled pin set as a Pin card
+// (the live index normally holds the same pins, so this is a rare fallback).
+function resultToPin(r: { id: string; imageUrl: string; title: string; brand?: string }): Pin {
+  const h = hashNum(r.id);
+  return {
+    id: r.id,
+    title: r.title || "Visual match",
+    image: r.imageUrl,
+    thumb: r.imageUrl,
+    source: r.brand || "pinterest",
+    brand: r.brand || "Pinterest",
+    url: "#",
+    price: 20 + (h % 180),
+    grad: GRAD_KEYS[h % GRAD_KEYS.length],
+    emoji: "\uD83C\uDF81",
+    category: "visual",
+  };
+}
 
 export function MaxiProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -154,6 +181,73 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
     [send]
   );
 
+  // Visual search: embed the uploaded photo (Titan Multimodal) -> S3 Vectors kNN.
+  // Falls back to a local taste match if the endpoint isn't reachable/deployed.
+  const searchByImage = useCallback(
+    (file: File) => {
+      if (!file || sending) return;
+      setOpen(true);
+      const label = file.name ? `Uploaded "${file.name.slice(0, 28)}"` : "Uploaded a photo";
+      setMessages((m) => [...m, { id: mkId(), from: "you", text: `\uD83D\uDCF7 ${label} — find similar gifts` }]);
+      setSending(true);
+      const who = profileRef.current.name ? `, ${profileRef.current.name}` : "";
+      (async () => {
+        let reply: Msg;
+        try {
+          const results = await visualSearch(file, { limit: 8 });
+          if (results.length) {
+            const byId = new Map(PINS.map((p) => [p.id, p]));
+            const pins = results.map((r) => byId.get(r.id) ?? resultToPin(r)).slice(0, 6);
+            lastShownRef.current = pins;
+            reply = {
+              id: mkId(),
+              from: "maxi",
+              text: `Found ${pins.length} visual matches to your photo${who} — ranked by similarity \u2728`,
+              pins,
+              source: "visual",
+              chips: ["Add the first", "Cheaper options", "Checkout"],
+            };
+          } else {
+            const r = await respond("like my taste", {
+              lastShown: lastShownRef.current,
+              vibes: profileRef.current.vibes,
+              cart,
+              name: profileRef.current.name,
+            });
+            if (r.pins?.length) lastShownRef.current = r.pins;
+            reply = {
+              id: mkId(),
+              from: "maxi",
+              text: `Visual search isn't live yet, so here are taste-based picks instead${who}. ${r.text}`,
+              pins: r.pins,
+              source: r.source ?? "local",
+              chips: r.chips,
+            };
+          }
+        } catch {
+          const r = await respond("like my taste", {
+            lastShown: lastShownRef.current,
+            vibes: profileRef.current.vibes,
+            cart,
+            name: profileRef.current.name,
+          });
+          if (r.pins?.length) lastShownRef.current = r.pins;
+          reply = {
+            id: mkId(),
+            from: "maxi",
+            text: `I couldn't reach visual search just now${who} — here are taste-based matches instead.`,
+            pins: r.pins,
+            source: r.source ?? "local",
+            chips: r.chips,
+          };
+        }
+        setMessages((m) => [...m, reply]);
+        setSending(false);
+      })();
+    },
+    [cart, sending]
+  );
+
   const value = useMemo<MaxiStore>(
     () => ({
       open,
@@ -163,6 +257,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       sending,
       send,
       ask,
+      searchByImage,
       cart,
       cartCount: calcCount(cart),
       cartTotal: calcTotal(cart),
@@ -170,7 +265,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       removeItem,
       clearCart,
     }),
-    [open, messages, sending, send, ask, cart, addPinToCart, removeItem, clearCart]
+    [open, messages, sending, send, ask, searchByImage, cart, addPinToCart, removeItem, clearCart]
   );
 
   return (
@@ -215,14 +310,25 @@ function MicIcon({ size = 22, className }: { size?: number; className?: string }
   );
 }
 
+function ImageIcon({ size = 22, className }: { size?: number; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="m21 15-5-5L5 21" />
+    </svg>
+  );
+}
+
 // ── Slide-over panel ─────────────────────────────────────────────────────────
 function MaxiPanel() {
-  const { open, setOpen, messages, sending, send, cart, cartCount, cartTotal, addPinToCart, removeItem } = useMaxi();
+  const { open, setOpen, messages, sending, send, searchByImage, cart, cartCount, cartTotal, addPinToCart, removeItem } = useMaxi();
   const [draft, setDraft] = useState("");
   const [view, setView] = useState<"chat" | "cart">("chat");
   const [listening, setListening] = useState(false);
   const [speak, setSpeak] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   const supportsVoice =
     typeof window !== "undefined" &&
@@ -331,6 +437,26 @@ function MaxiPanel() {
             className="border-t border-line bg-surface px-3 py-3"
           >
             <div className="flex items-center gap-2 rounded-full border border-line bg-cream px-3 py-2">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-ink/5"
+                title="Search by photo (visual search)"
+                aria-label="Visual search by photo"
+              >
+                <ImageIcon size={18} />
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) searchByImage(f);
+                  e.target.value = "";
+                }}
+              />
               {supportsVoice && (
                 <button
                   type="button"
