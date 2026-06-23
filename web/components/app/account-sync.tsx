@@ -14,6 +14,7 @@ import { fetchMe, saveMe } from "@/lib/api";
 // "giftmaxxing:profile" event), so newly-logged dates sync immediately.
 //
 // Mounted once in app/layout.tsx inside <ClerkProvider>. Renders nothing.
+// Only rendered when Clerk is enabled (layout.tsx guards this).
 export function AccountSync() {
   const { isLoaded, isSignedIn, user } = useUser();
 

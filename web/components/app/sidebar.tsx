@@ -6,6 +6,8 @@ import { Avatar, Icons, Maxi } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 
+const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 type Item = {
   label: string;
   href: string;
@@ -85,17 +87,19 @@ export function Sidebar() {
         <span className="hidden truncate xl:block">{me.name}</span>
       </Link>
 
-      <div className="mt-1 flex items-center gap-4 rounded-xl px-3 py-3">
-        <Show when="signed-in">
-          <UserButton />
-          <span className="hidden text-sm font-medium text-ink-soft xl:block">Account</span>
-        </Show>
-        <Show when="signed-out">
-          <SignInButton mode="modal">
-            <button className="text-sm font-semibold text-coral">Sign in</button>
-          </SignInButton>
-        </Show>
-      </div>
+      {clerkEnabled && (
+        <div className="mt-1 flex items-center gap-4 rounded-xl px-3 py-3">
+          <Show when="signed-in">
+            <UserButton />
+            <span className="hidden text-sm font-medium text-ink-soft xl:block">Account</span>
+          </Show>
+          <Show when="signed-out">
+            <SignInButton mode="modal">
+              <button className="text-sm font-semibold text-coral">Sign in</button>
+            </SignInButton>
+          </Show>
+        </div>
+      )}
 
       <Link
         href="/"
@@ -129,14 +133,18 @@ export function MobileBars() {
         <div className="flex items-center gap-4 text-ink">
           <Link href="/feed/activity"><Icons.heart size={24} /></Link>
           <Link href="/feed/messages"><Icons.message size={24} /></Link>
-          <Show when="signed-in">
-            <UserButton />
-          </Show>
-          <Show when="signed-out">
-            <SignInButton mode="modal">
-              <button className="text-sm font-bold text-coral">Sign in</button>
-            </SignInButton>
-          </Show>
+          {clerkEnabled && (
+            <>
+              <Show when="signed-in">
+                <UserButton />
+              </Show>
+              <Show when="signed-out">
+                <SignInButton mode="modal">
+                  <button className="text-sm font-bold text-coral">Sign in</button>
+                </SignInButton>
+              </Show>
+            </>
+          )}
         </div>
       </div>
 

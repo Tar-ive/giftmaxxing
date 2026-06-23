@@ -1,8 +1,10 @@
-import {ClerkProvider} from "@clerk/nextjs";
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { AccountSync } from "@/components/app/account-sync";
 import { Hanken_Grotesk, Instrument_Serif, Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+
+const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 const hanken = Hanken_Grotesk({
   variable: "--font-hanken",
@@ -52,10 +54,14 @@ export default function RootLayout({
       className={`${hanken.variable} ${instrument.variable} ${bricolage.variable} ${jetbrains.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ClerkProvider>
-          <AccountSync />
-          {children}
-        </ClerkProvider>
+        {clerkEnabled ? (
+          <ClerkProvider>
+            <AccountSync />
+            {children}
+          </ClerkProvider>
+        ) : (
+          children
+        )}
       </body>
     </html>
   );
