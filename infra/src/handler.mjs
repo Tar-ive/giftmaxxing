@@ -13,6 +13,7 @@ import {
   S3VectorsClient,
   QueryVectorsCommand,
   GetVectorsCommand,
+  ListVectorsCommand,
 } from "@aws-sdk/client-s3vectors";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
@@ -221,6 +222,24 @@ export const handler = async (event) => {
       const recipient = qs.recipient || "anyone";
       const out = await ddb.send(new GetCommand({ TableName: KNOWLEDGE, Key: { recipient } }));
       return out.Item ? json(200, out.Item) : json(404, { error: "unknown recipient" });
+    }
+
+    // GET /pins?limit= — list embedded Pinterest pins (key + metadata) straight
+    // from S3 Vectors. The browser uses these keys as seed vectors for the
+    // recommendation kNN (a pin's key == its postId in the posts table).
+    if (method === "GET" && path === "/pins") {
+      if (!s3v) return json(200, { items: [] });
+      const limit = Math.min(Number(qs.limit) || 60, 200);
+      const out = await s3v.send(
+        new ListVectorsCommand({
+          vectorBucketName: VECTOR_BUCKET,
+          indexName: VECTOR_INDEX,
+          maxResults: limit,
+          returnMetadata: true,
+        })
+      );
+      const items = (out.vectors ?? []).map(vecToItem);
+      return json(200, { items });
     }
 
     // POST /interactions  { userId, targetId, type }

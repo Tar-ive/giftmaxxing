@@ -15,7 +15,13 @@ import {
   synthesizePosts,
   type DemoProfile,
 } from "@/lib/demo-profiles";
-import { API_BASE, isApiConfigured, mapApiPost } from "@/lib/api";
+import {
+  fetchPins,
+  fetchVectorRecommendations,
+  isApiConfigured,
+  mapApiPost,
+} from "@/lib/api";
+import { pickSeedPins } from "@/lib/seed-pins";
 import { Icons } from "@/components/ui";
 import { GRADIENTS } from "@/lib/data";
 
@@ -47,8 +53,9 @@ function runFacetRanker(profile: DemoProfile) {
 
 type VectorResult = {
   postId: string;
-  name: string;
+  name?: string;
   image?: string;
+  author?: string;
   source?: string;
   reason?: string;
   _score?: number | null;
@@ -60,6 +67,8 @@ export default function RecommendationsPage() {
   const [vectorResults, setVectorResults] = useState<VectorResult[] | null>(null);
   const [vectorLoading, setVectorLoading] = useState(false);
   const [vectorError, setVectorError] = useState<string | null>(null);
+  const [vectorSource, setVectorSource] = useState<string | null>(null);
+  const [seedKeysUsed, setSeedKeysUsed] = useState<string[]>([]);
   const [showEngine, setShowEngine] = useState(false);
 
   const profile = DEMO_PROFILES.find((p) => p.id === selectedId)!;
@@ -73,18 +82,26 @@ export default function RecommendationsPage() {
     setVectorLoading(true);
     setVectorError(null);
     setVectorResults(null);
+    setVectorSource(null);
     try {
-      const q = new URLSearchParams({ limit: "12" });
-      // Use the profile's vibes as hints for the facet fallback
-      if (profile.expectedVibes.length) {
-        q.set("vibes", profile.expectedVibes.join(","));
-      }
-      const res = await fetch(`${API_BASE}/recommendations?${q.toString()}`, {
-        headers: { accept: "application/json" },
+      // Seed the kNN with real embedded pins picked to match this profile's
+      // vibes (a pin's key == its key in the S3 Vectors index). Passing
+      // seedKeys is what makes the request hit the vector path rather than
+      // the facet fallback. Vibes are also sent for the fallback's taste term.
+      const pins = await fetchPins(72);
+      const seeds = pickSeedPins(
+        pins.map((p) => ({ k: p.postId, t: p.name ?? "" })),
+        profile.expectedVibes,
+        4
+      );
+      setSeedKeysUsed(seeds);
+      const { items, source } = await fetchVectorRecommendations({
+        seedKeys: seeds,
+        vibes: profile.expectedVibes,
+        limit: 12,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setVectorResults(data.items ?? []);
+      setVectorResults(items);
+      setVectorSource(source);
     } catch (e: unknown) {
       setVectorError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -134,6 +151,8 @@ export default function RecommendationsPage() {
                 setSelectedId(p.id);
                 setVectorResults(null);
                 setVectorError(null);
+                setVectorSource(null);
+                setSeedKeysUsed([]);
               }}
               className={`rounded-2xl border p-3 text-left transition-all ${
                 selectedId === p.id
@@ -189,7 +208,32 @@ export default function RecommendationsPage() {
             against S3 Vectors. Falls back to DynamoDB scorePost() when no vectors.
           </p>
           {vectorResults ? (
-            <VectorResults results={vectorResults} />
+            <>
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+                <span
+                  className={`rounded-full px-2 py-0.5 font-bold ${
+                    vectorSource === "vector"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  source: {vectorSource ?? "?"}
+                </span>
+                <span className="text-ink-faint">
+                  {vectorSource === "vector"
+                    ? `kNN over ${seedKeysUsed.length} seed pin${seedKeysUsed.length === 1 ? "" : "s"}`
+                    : "facet fallback (no seed vectors matched)"}
+                </span>
+                <button
+                  onClick={fetchVectorRecs}
+                  disabled={vectorLoading}
+                  className="ml-auto rounded-lg border border-line px-2 py-0.5 font-semibold text-ink transition-colors hover:bg-ink/5 disabled:opacity-50"
+                >
+                  {vectorLoading ? "…" : "↻ refresh"}
+                </button>
+              </div>
+              <VectorResults results={vectorResults} />
+            </>
           ) : (
             <div className="text-center">
               <button

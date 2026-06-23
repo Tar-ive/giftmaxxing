@@ -2,6 +2,7 @@
 // feed + recommendations and maps DynamoDB post items into the UI's Post type.
 import type { Grad } from "@/lib/data";
 import type { Post } from "@/lib/social";
+import { SEED_PINS } from "@/lib/seed-pins";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const isApiConfigured = () => API_BASE.length > 0;
@@ -115,3 +116,61 @@ async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
 export const fetchFeed = (opts: FeedOpts = {}) => getPage("/feed", opts);
 export const fetchRecommendations = (opts: FeedOpts = {}) =>
   getPage("/recommendations", opts);
+
+// ── Vector recommendations (S3 Vectors) ──────────────────────────────────────
+// Raw item shape returned by GET /pins and the vector path of /recommendations.
+export type VectorItem = {
+  postId: string;
+  author?: string;
+  image?: string;
+  name?: string;
+  source?: string;
+  reason?: string;
+  _score?: number | null;
+  _distance?: number | null;
+};
+
+export type VectorResponse = { items: VectorItem[]; source: string | null };
+
+// List embedded pins (key + metadata) to use as seed vectors. Prefers the live
+// GET /pins endpoint; falls back to the bundled SEED_PINS list when /pins isn't
+// reachable (e.g. not deployed yet) so the UI keeps working offline of it.
+export async function fetchPins(limit = 60): Promise<VectorItem[]> {
+  if (isApiConfigured()) {
+    try {
+      const res = await fetch(`${API_BASE}/pins?limit=${limit}`, {
+        headers: { accept: "application/json" },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { items?: VectorItem[] };
+        if (data.items && data.items.length) return data.items;
+      }
+    } catch {
+      // fall through to the bundled list
+    }
+  }
+  return SEED_PINS.slice(0, limit).map((p) => ({
+    postId: p.k,
+    name: p.t,
+    author: `pinterest_${p.u}`,
+  }));
+}
+
+// Call the vector path of /recommendations: seedKeys -> taste centroid -> kNN.
+// Returns the raw items plus the `source` tag ("vector" | "facet").
+export async function fetchVectorRecommendations(
+  opts: { seedKeys?: string[]; vibes?: string[]; sourceUser?: string; limit?: number } = {}
+): Promise<VectorResponse> {
+  const q = new URLSearchParams();
+  if (opts.seedKeys?.length) q.set("seedKeys", opts.seedKeys.join(","));
+  if (opts.vibes?.length) q.set("vibes", opts.vibes.join(","));
+  if (opts.sourceUser) q.set("sourceUser", opts.sourceUser);
+  q.set("limit", String(opts.limit ?? 12));
+
+  const res = await fetch(`${API_BASE}/recommendations?${q.toString()}`, {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`/recommendations -> HTTP ${res.status}`);
+  const data = (await res.json()) as { items?: VectorItem[]; source?: string };
+  return { items: data.items ?? [], source: data.source ?? null };
+}

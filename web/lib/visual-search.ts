@@ -42,7 +42,7 @@
 // └─────────────────────────────────────────────────────────────────────┘
 // ────────────────────────────────────────────────────────────────────────────
 
-import { API_BASE, isApiConfigured } from "@/lib/api";
+import { API_BASE, isApiConfigured, fetchVectorRecommendations } from "@/lib/api";
 import type {
   UserProfile,
   PinterestLink,
@@ -201,10 +201,25 @@ export type EnhancedRecParams = {
 };
 
 export async function fetchEnhancedRecommendations(
-  _params: EnhancedRecParams
+  params: EnhancedRecParams
 ): Promise<VisualSearchResult[]> {
-  // TODO(next-agent): wire to GET /recommendations with onboarding context
-  return [];
+  if (!isApiConfigured()) return [];
+  // Wired: seed pins (liked/onboarding) -> taste centroid -> S3 Vectors kNN.
+  // Interests are passed as `vibes` so the server's facet fallback still has a
+  // taste signal when no seed vectors are available.
+  const { items } = await fetchVectorRecommendations({
+    seedKeys: params.seedKeys,
+    vibes: params.interests ? params.interests.map(String) : undefined,
+    limit: 12,
+  });
+  return items.map((i) => ({
+    id: i.postId,
+    imageUrl: i.image ?? "",
+    title: i.name ?? "",
+    similarity: i._score ?? 0,
+    brand: i.author,
+    source: "s3vectors" as const,
+  }));
 }
 
 // ── Deal monitoring & price tracking scaffold ───────────────────────────────

@@ -222,6 +222,7 @@ All us-east-1. Bedrock prices ✅ **verified via the AWS Price List API** (`Amaz
 - [x] **P0 Embedder (backfill)** — `infra/ingest/embed.mjs`: S3 image + title → Titan MM → `put-vectors` into S3 Vectors. **Done** (72 vectors in `giftmaxxing-dev-vectors/pins`, see §13). ⏳ S3-ObjectCreated Lambda trigger + Bedrock **batch** for bulk still pending.
 - [x] **P0 Infra** — ✅ S3 media bucket (`infra/s3.tf`), ✅ **S3 Vectors bucket+index** (`giftmaxxing-dev-vectors/pins`, script-managed via `infra/ingest/s3vectors-setup.mjs` — no TF resource yet), ✅ API Lambda **s3vectors read IAM** (`infra/iam.tf`) + `VECTOR_BUCKET`/`VECTOR_INDEX` env. ⏳ DynamoDB `pins` table + S3-event embedder Lambda still pending.
 - [x] **P1 Rec upgrade (server)** — ✅ `handler.mjs` `/recommendations` builds a taste centroid (`get-vectors`) → `query-vectors` (kNN) with optional `sourceUser` filter, falling back to facet `scorePost` when no vectors (`source:"vector"|"facet"` in the response). Live & tested (§13). ✅ Pinterest pins ingested into `posts` table via `ingest-pins.mjs`; `/feed` handler over-samples for proper blending.
+- [x] **P1 Rec upgrade (client)** — ✅ `web/lib/api.ts` `fetchVectorRecommendations`/`fetchPins`; `web/lib/seed-pins.ts` (bundled 72 pins + `pickSeedPins`); Recommendations Lab seeds the kNN with real pins → `source:vector` badge; `web/lib/visual-search.ts` `fetchEnhancedRecommendations` implemented. New `GET /pins` endpoint added (⏳ deploy pending AWS creds refresh; frontend falls back to bundled seeds meanwhile).
 - [x] **P1 Onboarding flow** — ✅ Pinterest-style multi-step wizard (`web/app/onboarding/page.tsx`): name, gift role (giver/taker/both), difficulty, gift style (thoughtful/materialistic/mix), materialistic subcategories (conditional), interest tags (16 vibes), Pinterest profile/board URL linking. Persisted to localStorage (`web/lib/onboarding.ts`). Feed gated behind `OnboardingGate` (`web/components/app/onboarding-gate.tsx`) — redirects to `/onboarding` if profile not found. ⏳ Migrate to DynamoDB `users` table when auth backend exists.
 - [x] **P1 Visual search + Pinterest rec scaffold** — ✅ `web/lib/visual-search.ts`: types + stub functions for `ingestPinterestProfile()`, `visualSearch()`, `buildTasteVector()`, `fetchEnhancedRecommendations()`. All have detailed TODO blocks for the next agent. Depends on: Pinterest OAuth approval, `/pinterest/ingest` + `/visual-search` + `/taste-vector` Lambda endpoints (not yet created), Amazon Associates + Walmart affiliate keys. See inline TODOs and §6.
 - [x] **P1 Deal preferences onboarding** — ✅ New onboarding step collects deal sensitivity (deal-hunter/value-conscious/quality-first/splurge), typical budget range, preferred deal types (clearance, flash sales, coupons, price drops, bundle deals, seasonal, refurbished, outlet), and price-drop alert opt-in. Stored as `dealPreferences` in `UserProfile`. Schema guard updated.
@@ -432,6 +433,15 @@ The image → embedding → vector → recommendation loop is **live** end-to-en
 2. `get-vectors(seeds)` → average → **taste centroid**.
 3. `query-vectors(centroid, topK, filter=sourceUser?)` → neighbors (metadata + distance) → post-shaped items, `source:"vector"`.
 4. No seeds / no vectors → DynamoDB scan + `scorePost`, `source:"facet"` (unchanged, backwards-compatible).
+
+**`GET /pins`** (`handler.mjs`) — `list-vectors` (returnMetadata) → all embedded pins (key + image + title); the browser uses these keys as seeds. ⏳ Not yet deployed (AWS creds expired at last apply); `web/lib/api.ts#fetchPins` falls back to the bundled `web/lib/seed-pins.ts` (72 pins) until a redeploy.
+
+**Client wiring** (`web/`)
+- `lib/api.ts`: `fetchPins()` (→ `/pins`, fallback bundled) + `fetchVectorRecommendations({seedKeys,vibes})` (→ vector path).
+- `lib/seed-pins.ts`: bundled 72 pins + `pickSeedPins(vibes)` (vibe→keyword match over titles → seed keys).
+- `app/feed/recommendations/page.tsx`: the Lab now picks per-profile seed pins → real S3 Vectors kNN, with a `source: vector|facet` badge.
+- `lib/visual-search.ts`: `fetchEnhancedRecommendations()` implemented (delegates to the vector path).
+- **Note:** ingested pins (`postId == pin.id == vector key`) rank low in `/feed` (random likes) so they're buried there; the Lab seeds from `/pins` (or the bundled list) rather than the feed.
 
 **Verified live:** `GET /recommendations?seedKeys=pin-…` → `source:vector`, neighbors at ~0.70–0.84 cosine; `GET /recommendations` (no seeds) → `source:facet`.
 
