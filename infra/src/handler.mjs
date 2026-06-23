@@ -15,6 +15,7 @@ import {
   GetVectorsCommand,
   ListVectorsCommand,
 } from "@aws-sdk/client-s3vectors";
+import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -29,6 +30,30 @@ const KNOWLEDGE = process.env.KNOWLEDGE_TABLE;
 const VECTOR_BUCKET = process.env.VECTOR_BUCKET;
 const VECTOR_INDEX = process.env.VECTOR_INDEX;
 const s3v = VECTOR_BUCKET ? new S3VectorsClient({}) : null;
+
+// Bedrock Titan Multimodal embeddings power visual search: an uploaded image is
+// embedded into the SAME shared space the pin index was built with (see
+// infra/ingest/embed.mjs), so image->image kNN works directly.
+const EMBED_MODEL = process.env.BEDROCK_EMBED_MODEL_ID || "amazon.titan-embed-image-v1";
+const VECTOR_DIM = Number(process.env.VECTOR_DIM || 1024);
+const bedrock = new BedrockRuntimeClient({});
+
+// Embed an uploaded image (base64, with or without a data-URL prefix) + optional
+// text into a single 1024-d query vector via Titan Multimodal.
+async function embedImage(imageB64, text) {
+  const inputImage = String(imageB64).replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "");
+  const reqBody = { inputImage, embeddingConfig: { outputEmbeddingLength: VECTOR_DIM } };
+  if (text) reqBody.inputText = String(text).slice(0, 200);
+  const out = await bedrock.send(
+    new InvokeModelCommand({
+      modelId: EMBED_MODEL,
+      contentType: "application/json",
+      accept: "application/json",
+      body: JSON.stringify(reqBody),
+    })
+  );
+  return JSON.parse(Buffer.from(out.body).toString("utf8")).embedding;
+}
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -240,6 +265,36 @@ export const handler = async (event) => {
       );
       const items = (out.vectors ?? []).map(vecToItem);
       return json(200, { items });
+    }
+
+    // POST /visual-search  { imageBase64, text?, limit?, sourceUser? }
+    // True "find gifts that look like this": embed the uploaded image with Titan
+    // Multimodal, then kNN against the pin index. Returns post-shaped items.
+    if (method === "POST" && path === "/visual-search") {
+      if (!s3v) return json(503, { error: "vector store not configured" });
+      const imageBase64 = body.imageBase64 || body.image;
+      if (!imageBase64) return json(400, { error: "imageBase64 required" });
+      const limit = Math.min(Number(body.limit) || 12, 50);
+      let queryVector;
+      try {
+        queryVector = await embedImage(imageBase64, body.text);
+      } catch (e) {
+        console.warn("titan image embed failed:", e.message);
+        return json(502, { error: "embedding failed" });
+      }
+      const out = await s3v.send(
+        new QueryVectorsCommand({
+          vectorBucketName: VECTOR_BUCKET,
+          indexName: VECTOR_INDEX,
+          topK: limit,
+          queryVector: { float32: queryVector },
+          returnMetadata: true,
+          returnDistance: true,
+          filter: body.sourceUser ? { sourceUser: { $eq: body.sourceUser } } : undefined,
+        })
+      );
+      const items = (out.vectors ?? []).map(vecToItem);
+      return json(200, { items, source: "visual" });
     }
 
     // POST /interactions  { userId, targetId, type }

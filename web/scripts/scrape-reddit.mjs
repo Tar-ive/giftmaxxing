@@ -147,8 +147,13 @@ function toProduct(d, idx) {
     emoji: pickEmoji(title),
     // extra metadata (not in the base Product type, but used by the ingestion pipeline)
     image: bestImage(d),
+    imageW: imageDims(d).w,
+    imageH: imageDims(d).h,
     url: d.permalink ? `https://www.reddit.com${d.permalink}` : d.url,
     link: externalLink(d), // off-reddit product/article URL, if any
+    domain: d.domain ?? null, // e.g. "amazon.com", "youtube.com", "self.giftideas"
+    isSelf: d.is_self ?? false, // text post (no real image)
+    postHint: d.post_hint ?? null, // "image" | "link" | "hosted:video" | ...
     selftext: (d.selftext ?? "").slice(0, 600), // body text for semantic enrichment
     score: d.score ?? 0,
     comments: d.num_comments ?? 0,

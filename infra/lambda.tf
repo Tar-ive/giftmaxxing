@@ -30,6 +30,9 @@ resource "aws_lambda_function" "api" {
       KNOWLEDGE_TABLE    = aws_dynamodb_table.knowledge.name
       VECTOR_BUCKET      = "${local.prefix}-vectors"
       VECTOR_INDEX       = "pins"
+      # Visual search: Titan Multimodal embedding model + vector dimensionality.
+      BEDROCK_EMBED_MODEL_ID = "amazon.titan-embed-image-v1"
+      VECTOR_DIM             = "1024"
     }
   }
 

@@ -77,3 +77,20 @@ resource "aws_iam_role_policy" "s3vectors_access" {
   role   = aws_iam_role.api_lambda.id
   policy = data.aws_iam_policy_document.s3vectors_access.json
 }
+
+# Bedrock: invoke the Titan Multimodal embedding model to turn an uploaded image
+# into a query vector for visual search (POST /visual-search). Foundation-model
+# ARNs have an empty account-id segment.
+data "aws_iam_policy_document" "bedrock_access" {
+  statement {
+    sid       = "InvokeTitanEmbed"
+    actions   = ["bedrock:InvokeModel"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/amazon.titan-embed-image-v1"]
+  }
+}
+
+resource "aws_iam_role_policy" "bedrock_access" {
+  name   = "${local.prefix}-bedrock-access"
+  role   = aws_iam_role.api_lambda.id
+  policy = data.aws_iam_policy_document.bedrock_access.json
+}

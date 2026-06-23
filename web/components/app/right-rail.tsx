@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { SUGGESTIONS, USERS } from "@/lib/social";
+import { useCurrentUser } from "@/lib/identity";
 import { Avatar } from "@/components/ui";
 import { useStore } from "@/components/app/store";
 
 export function RightRail() {
   const { toggleFollow, isFollowing } = useStore();
-  const me = USERS.you;
+  const me = useCurrentUser();
 
   return (
     <aside className="sticky top-6 hidden h-fit w-80 shrink-0 pt-2 lg:block">

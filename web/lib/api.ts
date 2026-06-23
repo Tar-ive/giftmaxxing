@@ -174,3 +174,28 @@ export async function fetchVectorRecommendations(
   const data = (await res.json()) as { items?: VectorItem[]; source?: string };
   return { items: data.items ?? [], source: data.source ?? null };
 }
+
+// Visual search: POST a base64 image -> Titan Multimodal embed -> S3 Vectors kNN
+// (see infra/src/handler.mjs POST /visual-search). Throws if the endpoint isn't
+// reachable so callers can fall back to a local taste match.
+export async function fetchVisualSearch(opts: {
+  imageBase64: string;
+  text?: string;
+  limit?: number;
+  sourceUser?: string;
+}): Promise<VectorResponse> {
+  if (!isApiConfigured()) throw new Error("API not configured");
+  const res = await fetch(`${API_BASE}/visual-search`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      imageBase64: opts.imageBase64,
+      text: opts.text,
+      limit: opts.limit ?? 12,
+      sourceUser: opts.sourceUser,
+    }),
+  });
+  if (!res.ok) throw new Error(`/visual-search -> HTTP ${res.status}`);
+  const data = (await res.json()) as { items?: VectorItem[]; source?: string };
+  return { items: data.items ?? [], source: data.source ?? "visual" };
+}

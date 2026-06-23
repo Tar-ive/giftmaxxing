@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, Icons, Maxi } from "@/components/ui";
+import { useCurrentUser } from "@/lib/identity";
 
 type Item = {
   label: string;
@@ -17,6 +18,7 @@ const ITEMS: Item[] = [
   { label: "Explore", href: "/feed/explore", icon: "compass" },
   { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
   { label: "Drops", href: "/feed/drops", icon: "film" },
+  { label: "Group Gifts", href: "/feed/pools", icon: "users" },
   { label: "Messages", href: "/feed/messages", icon: "message" },
   { label: "Notifications", href: "/feed/activity", icon: "heart" },
   { label: "Create", href: "/feed/create", icon: "plusSquare" },
@@ -24,6 +26,7 @@ const ITEMS: Item[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const me = useCurrentUser();
 
   return (
     <aside className="sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-cream/80 px-3 py-6 backdrop-blur-xl md:flex md:w-[76px] xl:w-64 xl:px-4">
@@ -76,8 +79,8 @@ export function Sidebar() {
           pathname === "/feed/you" ? "font-bold" : "font-medium"
         } text-ink`}
       >
-        <Avatar grad="coral" label="You" size={26} />
-        <span className="hidden xl:block">Profile</span>
+        <Avatar grad={me.grad} label={me.name} size={26} />
+        <span className="hidden truncate xl:block">{me.name}</span>
       </Link>
 
       <Link
@@ -94,6 +97,7 @@ export function Sidebar() {
 /* Mobile top + bottom bars (Instagram mobile web) */
 export function MobileBars() {
   const pathname = usePathname();
+  const me = useCurrentUser();
   const tabs: Item[] = [
     { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
     { label: "Explore", href: "/feed/explore", icon: "compass" },
@@ -121,7 +125,7 @@ export function MobileBars() {
           if (isProfile)
             return (
               <Link key={t.label} href={t.href}>
-                <Avatar grad="coral" label="You" size={26} />
+                <Avatar grad={me.grad} label={me.name} size={26} />
               </Link>
             );
           const Ico = Icons[active && t.activeIcon ? t.activeIcon : t.icon];

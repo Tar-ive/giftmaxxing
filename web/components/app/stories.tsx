@@ -3,16 +3,18 @@
 import { useEffect, useState } from "react";
 import { GRADIENTS } from "@/lib/data";
 import { STORIES, USERS } from "@/lib/social";
+import { useCurrentUser } from "@/lib/identity";
 import { Icons, Maxi } from "@/components/ui";
 import { useStore } from "@/components/app/store";
 
 export function StoriesTray() {
   const { openStory } = useStore();
+  const me = useCurrentUser();
   return (
     <div className="rounded-2xl border border-line bg-surface/70 p-4">
       <div className="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {STORIES.map((s, i) => {
-          const u = USERS[s.user];
+          const u = s.user === "you" ? me : USERS[s.user];
           return (
             <button
               key={s.id}

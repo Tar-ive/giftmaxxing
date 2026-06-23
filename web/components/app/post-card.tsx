@@ -3,13 +3,17 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { GRADIENTS } from "@/lib/data";
-import { USERS, resolveUser, commentCountOf, type Post } from "@/lib/social";
+import { resolveUser, commentCountOf, type Post } from "@/lib/social";
+import { useCurrentUser, displayUser } from "@/lib/identity";
 import { Avatar, Icons } from "@/components/ui";
 import { useStore } from "@/components/app/store";
+import { useMaxi } from "@/components/app/maxi-provider";
 
 export function PostCard({ post }: { post: Post }) {
   const { toggleLike, toggleSave, addComment, toggleFollow, isFollowing, openPost } = useStore();
-  const u = resolveUser(post);
+  const { ask } = useMaxi();
+  const me = useCurrentUser();
+  const u = post.user === "you" ? me : resolveUser(post);
   const commentTotal = commentCountOf(post);
   const [draft, setDraft] = useState("");
   const [burst, setBurst] = useState(false);
@@ -147,7 +151,7 @@ export function PostCard({ post }: { post: Post }) {
         )}
         {post.comments.slice(-2).map((c) => (
           <p key={c.id} className="mt-1 text-sm text-ink">
-            <span className="font-bold">{USERS[c.user]?.handle ?? c.user}</span> {c.text}
+            <span className="font-bold">{displayUser(c.user, me).handle}</span> {c.text}
           </p>
         ))}
 
@@ -155,7 +159,11 @@ export function PostCard({ post }: { post: Post }) {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            addComment(post.id, draft);
+            const text = draft.trim();
+            if (!text) return;
+            addComment(post.id, text);
+            if (/^@maxi\b/i.test(text))
+              ask(`${text.replace(/^@maxi\b/i, "").trim() || "any gift ideas like this?"} (like "${post.product.name}")`);
             setDraft("");
           }}
           className="mt-3 flex items-center gap-2 border-t border-line pt-3"
@@ -163,7 +171,7 @@ export function PostCard({ post }: { post: Post }) {
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a comment…"
+            placeholder="Add a comment…  (try @maxi)"
             className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-faint outline-none"
           />
           {draft.trim() && (

@@ -2,17 +2,35 @@
 
 import { useState } from "react";
 import { GRADIENTS } from "@/lib/data";
-import { USERS, resolveUser, commentCountOf } from "@/lib/social";
+import { resolveUser, commentCountOf } from "@/lib/social";
+import { useCurrentUser, displayUser } from "@/lib/identity";
+import type { Pin } from "@/lib/pins";
 import { Avatar, Icons } from "@/components/ui";
 import { useStore } from "@/components/app/store";
+import { useMaxi } from "@/components/app/maxi-provider";
 
 export function PostModal() {
   const { openPostId, openPost, posts, toggleLike, toggleSave, addComment } = useStore();
   const [draft, setDraft] = useState("");
+  const me = useCurrentUser();
+  const { ask, addPinToCart } = useMaxi();
   const post = posts.find((p) => p.id === openPostId);
   if (!post) return null;
-  const u = resolveUser(post);
+  const u = post.user === "you" ? me : resolveUser(post);
   const commentTotal = commentCountOf(post);
+  const asPin: Pin = {
+    id: post.product.id,
+    title: post.product.name,
+    image: post.product.image ?? "",
+    thumb: post.product.image ?? "",
+    source: post.product.brand,
+    brand: post.product.brand,
+    url: post.url ?? "",
+    price: post.product.price,
+    grad: post.product.grad,
+    emoji: post.product.emoji,
+    category: "gifts",
+  };
 
   return (
     <div
@@ -80,12 +98,12 @@ export function PostModal() {
               </div>
             )}
             {post.comments.map((c) => {
-              const cu = USERS[c.user];
+              const cu = displayUser(c.user, me);
               return (
                 <div key={c.id} className="flex gap-3">
-                  <Avatar grad={cu?.grad ?? "coral"} label={cu?.name ?? c.user} size={32} />
+                  <Avatar grad={cu.grad} label={cu.name} size={32} />
                   <p className="text-sm text-ink">
-                    <span className="font-bold">{cu?.handle ?? c.user}</span> {c.text}
+                    <span className="font-bold">{cu.handle}</span> {c.text}
                   </p>
                 </div>
               );
@@ -126,13 +144,23 @@ export function PostModal() {
               {post.likes.toLocaleString()} likes
             </p>
             <p className="text-xs text-ink-faint">{post.time} ago</p>
+            <button
+              onClick={() => addPinToCart(asPin)}
+              className="mt-3 w-full rounded-full bg-coral py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
+            >
+              Add to cart · ${post.product.price}
+            </button>
           </div>
 
           {/* add comment */}
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              addComment(post.id, draft);
+              const text = draft.trim();
+              if (!text) return;
+              addComment(post.id, text);
+              if (/^@maxi\b/i.test(text))
+                ask(text.replace(/^@maxi\b/i, "").trim() || `gift ideas like ${post.product.name}`);
               setDraft("");
             }}
             className="flex items-center gap-2 border-t border-line px-4 py-3"
@@ -140,7 +168,7 @@ export function PostModal() {
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Add a comment…"
+              placeholder="Add a comment…  (try @maxi)"
               className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-faint outline-none"
             />
             {draft.trim() && (

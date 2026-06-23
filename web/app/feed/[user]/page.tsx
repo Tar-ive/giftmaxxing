@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams, notFound } from "next/navigation";
 import { GRADIENTS } from "@/lib/data";
 import { USERS, profilePosts } from "@/lib/social";
+import { useCurrentUser } from "@/lib/identity";
 import { Icons } from "@/components/ui";
 import { useStore } from "@/components/app/store";
 
@@ -17,12 +18,13 @@ export default function ProfilePage() {
   const params = useParams<{ user: string }>();
   const userId = params.user;
   const { toggleFollow, isFollowing, openPost, posts } = useStore();
+  const me = useCurrentUser();
   const [tab, setTab] = useState("posts");
 
-  const u = USERS[userId];
-  if (!u) return notFound();
-
   const isMe = userId === "you";
+  const baseU = USERS[userId];
+  if (!baseU && !isMe) return notFound();
+  const u = isMe ? me : baseU;
   const grid = profilePosts(userId);
   const savedPosts = posts.filter((p) => p.saved);
 

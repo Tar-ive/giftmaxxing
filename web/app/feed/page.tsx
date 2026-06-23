@@ -1,14 +1,32 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { StoriesTray } from "@/components/app/stories";
 import { PostCard } from "@/components/app/post-card";
 import { RightRail } from "@/components/app/right-rail";
+import { FeedPoolCard } from "@/components/app/feed-pool-card";
 import { useStore } from "@/components/app/store";
+import { useCurrentUser } from "@/lib/identity";
+import { type Fundraiser, loadFundraisers, saveFundraisers, addContribution } from "@/lib/fundraisers";
 
 export default function FeedPage() {
   const { posts, loadMore, hasMore, loadingMore } = useStore();
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const me = useCurrentUser();
+  const myName = me.name !== "You" ? me.name.split(/\s+/)[0] : "you";
+  const [pools, setPools] = useState<Fundraiser[]>([]);
+  const feedPools = pools.slice(0, 3);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPools(loadFundraisers());
+  }, []);
+
+  const chip = (id: string, amount: number) => {
+    const next = addContribution(pools, id, myName, amount);
+    setPools(next);
+    saveFundraisers(next);
+  };
 
   // Infinite scroll: when the sentinel near the bottom enters view, fetch the
   // next ranked page from the recommendation engine.
@@ -30,8 +48,13 @@ export default function FeedPage() {
       <div className="w-full max-w-[470px] space-y-5">
         <StoriesTray />
 
-        {posts.map((p) => (
-          <PostCard key={p.id} post={p} />
+        {posts.map((p, i) => (
+          <Fragment key={p.id}>
+            <PostCard post={p} />
+            {feedPools.length > 0 && (i + 1) % 5 === 0 && (
+              <FeedPoolCard f={feedPools[Math.floor(i / 5) % feedPools.length]} onChip={chip} />
+            )}
+          </Fragment>
         ))}
 
         {loadingMore && (
