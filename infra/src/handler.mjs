@@ -160,26 +160,37 @@ export const handler = async (event) => {
         );
         return json(200, { items: out.Items ?? [], cursor: encodeCursor(out.LastEvaluatedKey) });
       }
-      // Over-sample so the ranker sees items from multiple sources (Reddit +
-      // Pinterest) even though DynamoDB Scan returns items in partition-key order.
-      const scanLimit = Math.max(limit * 4, 80);
-      const scan = {
-        TableName: POSTS,
-        Limit: scanLimit,
-        ExclusiveStartKey: start,
-      };
-      const out = await ddb.send(new ScanCommand(scan));
+      // Scan the full table (no Limit) so every item participates in ranking.
+      // DynamoDB Scan returns items in partition-key order, which clusters
+      // sources together; without a full scan the ranker only sees one source
+      // per page. The table is small (~300 items) so this is fine.
+      const allItems = [];
+      let scanKey = undefined;
+      // Paginate through the full table (1 MB pages) collecting all items.
+      do {
+        const out = await ddb.send(
+          new ScanCommand({ TableName: POSTS, ExclusiveStartKey: scanKey })
+        );
+        allItems.push(...(out.Items ?? []));
+        scanKey = out.LastEvaluatedKey;
+      } while (scanKey);
+
       const opts = {
         vibes: parseList(qs.vibes),
         recipient: qs.recipient,
         occasion: qs.occasion,
         category: qs.category,
       };
-      const items = (out.Items ?? [])
+      const ranked = allItems
         .map((p) => ({ ...p, _score: scorePost(p, opts) }))
-        .sort((a, b) => b._score - a._score)
-        .slice(0, limit);
-      return json(200, { items, cursor: encodeCursor(out.LastEvaluatedKey) });
+        .sort((a, b) => b._score - a._score);
+
+      // Client-side cursor = index into the ranked list.
+      const offset = start?._offset ?? 0;
+      const page = ranked.slice(offset, offset + limit);
+      const nextOffset = offset + limit;
+      const cursor = nextOffset < ranked.length ? encodeCursor({ _offset: nextOffset }) : null;
+      return json(200, { items: page, cursor });
     }
 
     // GET /posts/{id}
