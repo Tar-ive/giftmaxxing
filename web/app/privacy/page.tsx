@@ -21,27 +21,37 @@ export default function PrivacyPage() {
           your recommendations and reminders work across your devices.
         </p>
 
-        <h2 className="pt-4 font-display text-xl font-bold text-ink">
-          Soft profiles &amp; the swipe challenge
+        <h2 id="sender" className="scroll-mt-24 pt-4 font-display text-xl font-bold text-ink">
+          If you shared a challenge (sender)
         </h2>
         <p>
-          You can share a “swipe challenge” link with a friend. When they complete it,
-          they don&apos;t need to sign up. With their participation, we create a{" "}
-          <strong className="text-ink">soft profile</strong> on your account containing
-          the name and birthday they chose to share and the gift taste implied by their
-          swipes. It is a <em>soft</em> profile — a lightweight record to help you gift
-          them — not a full account, and it is visible only to you.
+          When you share a “swipe challenge” link and someone completes it, we create a{" "}
+          <strong className="text-ink">soft profile</strong> on{" "}
+          <strong className="text-ink">your</strong> account: the gift taste implied by
+          their swipes, plus the name and any occasion or date <em>you</em> set when you
+          shared the link. It is a <em>soft</em> profile — a lightweight record to help
+          you gift them, not a full account — and it is visible only to you.
         </p>
         <p>
-          Both people are assumed to consent: the sender chooses to share the link, and
-          the recipient chooses to complete the challenge. As the person who shared the
-          challenge, <strong className="text-ink">you take responsibility for the soft
-          profile you create</strong> and for using it respectfully.
+          By sharing the link you confirm the recipient is okay with it, and{" "}
+          <strong className="text-ink">you take responsibility for the soft profile you
+          create</strong> and for using it respectfully. You can delete it from your
+          connections at any time.
+        </p>
+
+        <h2 id="recipient" className="scroll-mt-24 pt-4 font-display text-xl font-bold text-ink">
+          If you received a challenge (recipient)
+        </h2>
+        <p>
+          You don&apos;t need an account, and we don&apos;t ask you for your name or
+          birthday. Swiping simply shares your{" "}
+          <strong className="text-ink">gift taste</strong> (and the occasion the sender
+          chose) with the person who invited you, so they can pick something you&apos;d
+          actually love. Those matches become your gift set.
         </p>
         <p>
-          A soft-profile person can ask to have their record removed at any time, and the
-          sender can delete it from their connections. We retain only what&apos;s needed
-          to provide the feature.
+          You can ask the person who invited you to remove your soft profile at any time.
+          We retain only what&apos;s needed to provide the feature.
         </p>
 
         <h2 className="pt-4 font-display text-xl font-bold text-ink">Your choices</h2>

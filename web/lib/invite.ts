@@ -3,8 +3,9 @@
 //
 // An invite code is a base64url-encoded JSON payload containing the inviter's
 // name (and, eventually, their userId / Pinterest handle once real auth exists).
-// The invited user never needs to sign up — they swipe, enter their birthday,
-// and the inviter is persisted as a friend + recipient on their local profile.
+// The invited user never needs to sign up and never fills in a form — they just
+// swipe. The sender can pre-set the recipient's name and the occasion/date, so
+// the guest goes straight from swiping to seeing their gift set.
 // ────────────────────────────────────────────────────────────────────────────
 
 export type InvitePayload = {
@@ -16,6 +17,12 @@ export type InvitePayload = {
    *  attach the resulting soft profile to their account. Absent when the sender
    *  is signed out (the link still works, it just can't report back). */
   senderId?: string;
+  /** Recipient's name, chosen by the sender — so the guest never types it. */
+  to?: string;
+  /** Occasion the sender wants to remember (an events EventType, e.g. "birthday"). */
+  occasion?: string;
+  /** Event date (YYYY-MM-DD) the sender set for the recipient. */
+  date?: string;
 };
 
 // ── Encoding / decoding ──────────────────────────────────────────────────────
@@ -64,11 +71,28 @@ export function decodeInvite(code: string): InvitePayload | null {
 
 export function buildInviteUrl(
   inviterName: string,
-  opts: { senderId?: string; origin?: string } = {}
+  opts: {
+    senderId?: string;
+    origin?: string;
+    to?: string;
+    occasion?: string;
+    date?: string;
+  } = {}
 ): string {
-  const base = opts.origin ?? (typeof window !== "undefined" ? window.location.origin : "");
+  // Prefer the canonical public site URL so a shared link never points at a
+  // Vercel *preview* deployment — those sit behind Vercel Authentication and
+  // would prompt the recipient to "log in to Vercel". Falls back to the current
+  // origin (fine for local dev / the production origin itself).
+  const envSite = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "");
+  const base =
+    opts.origin ||
+    envSite ||
+    (typeof window !== "undefined" ? window.location.origin : "");
   const payload: InvitePayload = { name: inviterName.trim() };
   if (opts.senderId) payload.senderId = opts.senderId;
+  if (opts.to?.trim()) payload.to = opts.to.trim();
+  if (opts.occasion?.trim()) payload.occasion = opts.occasion.trim();
+  if (opts.date?.trim()) payload.date = opts.date.trim();
   const code = encodeInvite(payload);
   return `${base}/invite/${code}`;
 }

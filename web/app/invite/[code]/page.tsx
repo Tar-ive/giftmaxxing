@@ -8,6 +8,8 @@ import { decodeInvite, saveInviteSession, clearInviteSession } from "@/lib/invit
 import { saveProfile, type UserProfile } from "@/lib/onboarding";
 import { createConnection } from "@/lib/api";
 import {
+  EVENT_TYPE_META,
+  type EventType,
   type Recipient,
   type ImportantEvent,
   genId,
@@ -15,7 +17,7 @@ import {
 import { swipeVibes, seedKeysFromSwipes, loadSwipes } from "@/lib/swipes";
 
 // ── Phases ──────────────────────────────────────────────────────────────────
-type Phase = "welcome" | "swipe" | "birthday" | "done";
+type Phase = "welcome" | "swipe" | "reveal";
 
 export default function InvitePage() {
   const params = useParams<{ code: string }>();
@@ -26,9 +28,12 @@ export default function InvitePage() {
   const inviterName = invite?.name ?? "Someone";
 
   const [phase, setPhase] = useState<Phase>("welcome");
-  const [guestName, setGuestName] = useState("");
-  const [birthday, setBirthday] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // The sender can pre-set who the gift set is for (and the event), so the guest
+  // never types a name or picks a birthday.
+  const guestName = invite?.to?.trim() || "Friend";
+  const guestFirst = guestName.split(/\s+/)[0];
 
   // Persist invite context on start so a page refresh doesn't lose the inviter.
   const startSwiping = useCallback(() => {
@@ -36,17 +41,15 @@ export default function InvitePage() {
     setPhase("swipe");
   }, [inviterName, code]);
 
-  // Called when the user finishes swiping (clicks "See your gift matches" or
-  // the deck runs out).  We intercept this to go to the birthday step instead
-  // of showing results directly.
+  // Called when the user finishes swiping (or the deck runs out). Go straight to
+  // the reveal — no name/birthday step; the sender already set those.
   const onSwipeDone = useCallback(() => {
-    setPhase("birthday");
+    setPhase("reveal");
   }, []);
 
-  const handleFinish = useCallback((nameOverride?: string) => {
-    const finalName = (nameOverride ?? guestName).trim();
-    if (!finalName) return;
+  const handleFinish = useCallback(() => {
     setSaving(true);
+    const finalName = guestName;
 
     // Build a minimal onboarding profile from the swipe preferences so the
     // user can browse the feed afterwards without hitting the OnboardingGate.
@@ -99,17 +102,21 @@ export default function InvitePage() {
       interests: vibes,
     };
 
-    // If a birthday was entered, create an event for the guest's birthday
-    // tied to the inviter as recipient (so the inviter gets reminded).
+    // The event is decided by the SENDER (carried in the invite link), so the
+    // guest never enters a birthday. Only log one if the sender set a date.
     const recipients: Recipient[] = [inviterRecipient];
     const events: ImportantEvent[] = [];
 
-    if (birthday) {
+    const occasion: EventType =
+      invite?.occasion && invite.occasion in EVENT_TYPE_META
+        ? (invite.occasion as EventType)
+        : "birthday";
+    if (invite?.date) {
       events.push({
         id: genId("evt"),
         recipientId: inviterRecipient.id,
-        type: "birthday",
-        date: birthday,
+        type: occasion,
+        date: invite.date,
         recurrence: "annual",
         reminderLeadDays: 7,
       });
@@ -145,7 +152,7 @@ export default function InvitePage() {
     if (invite?.senderId) {
       void createConnection(invite.senderId, {
         name: finalName,
-        birthday: birthday || undefined,
+        birthday: invite.date || undefined,
         vibes,
         seeds,
         interests: derivedInterests,
@@ -154,12 +161,9 @@ export default function InvitePage() {
       });
     }
 
-    setPhase("done");
-
-    // Small delay so the "done" screen flashes, then redirect to feed.
-    window.setTimeout(() => router.push("/feed"), 1200);
-    setSaving(false);
-  }, [guestName, birthday, inviterName, router, invite]);
+    // Reveal == "log me in": drop them straight into their gift set (the feed).
+    router.push("/feed");
+  }, [guestName, inviterName, router, invite]);
 
   // ── Invalid invite code ─────────────────────────────────────────────────
   if (!invite) {
@@ -192,7 +196,7 @@ export default function InvitePage() {
         </h1>
         <p className="mx-auto mt-3 max-w-md text-center text-ink-soft">
           Swipe on gift ideas so {inviterName} knows exactly what you&apos;d love.
-          No sign-up needed — just swipe!
+          No sign-up, no forms — just swipe!
         </p>
         <button
           onClick={startSwiping}
@@ -202,10 +206,10 @@ export default function InvitePage() {
         </button>
         <p className="mt-4 text-xs text-ink-faint">Takes less than a minute</p>
         <p className="mx-auto mt-3 max-w-xs text-center text-[11px] leading-relaxed text-ink-faint">
-          By continuing, you let {inviterName} save your gift preferences to help them
-          gift you.{" "}
-          <a href="/privacy" className="underline hover:text-ink">
-            Privacy
+          Swiping shares your gift taste with {inviterName} so they can gift you — no
+          account or personal details needed.{" "}
+          <a href="/privacy#recipient" className="underline hover:text-ink">
+            How we use this
           </a>
           .
         </p>
@@ -238,91 +242,24 @@ export default function InvitePage() {
     );
   }
 
-  // ── Birthday phase ────────────────────────────────────────────────────────
-  if (phase === "birthday") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-cream px-4">
-        <div className="w-full max-w-md">
-          <div className="text-center">
-            <span className="text-5xl">🎂</span>
-            <h2 className="mt-4 font-display text-2xl font-extrabold text-ink sm:text-3xl">
-              Almost done!
-            </h2>
-            <p className="mt-2 text-sm text-ink-soft">
-              Tell us a bit about yourself so {inviterName} can surprise you at just the right time.
-            </p>
-          </div>
-
-          <div className="mt-8 space-y-4">
-            <div>
-              <label className="mb-1.5 block text-left text-xs font-semibold uppercase tracking-widest text-ink-faint">
-                Your name
-              </label>
-              <input
-                type="text"
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                placeholder="What should we call you?"
-                autoFocus
-                className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-base font-medium text-ink outline-none transition-shadow focus:border-coral focus:ring-2 focus:ring-coral/20"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && guestName.trim()) {
-                    const dateInput = document.getElementById("invite-birthday");
-                    if (dateInput) dateInput.focus();
-                  }
-                }}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-left text-xs font-semibold uppercase tracking-widest text-ink-faint">
-                Your birthday
-              </label>
-              <input
-                id="invite-birthday"
-                type="date"
-                value={birthday}
-                onChange={(e) => setBirthday(e.target.value)}
-                className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-base font-medium text-ink outline-none transition-shadow focus:border-coral focus:ring-2 focus:ring-coral/20"
-              />
-              <p className="mt-1.5 text-xs text-ink-faint">
-                So {inviterName} never forgets your birthday again
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-8 flex flex-col gap-3">
-            <button
-              onClick={() => handleFinish()}
-              disabled={!guestName.trim() || saving}
-              className="w-full rounded-full bg-coral px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              Save & see my gift matches
-            </button>
-            <button
-              onClick={() => {
-                setBirthday("");
-                handleFinish(guestName.trim() || "Friend");
-              }}
-              className="text-sm font-semibold text-ink-faint transition-colors hover:text-ink"
-            >
-              Skip for now
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Done phase (brief flash before redirect) ──────────────────────────────
+  // ── Reveal phase — show the gift set + drop them into the app ──────────────
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-cream px-4">
-      <Maxi size={72} />
-      <h2 className="mt-6 font-display text-2xl font-extrabold text-ink">You&apos;re all set!</h2>
-      <p className="mt-2 text-sm text-ink-soft">
-        {inviterName} now knows your gift taste. Heading to your feed...
+      <span className="text-5xl">�</span>
+      <h2 className="mt-4 text-center font-display text-3xl font-extrabold leading-tight text-ink">
+        Your gift set is ready{guestFirst !== "Friend" ? `, ${guestFirst}` : ""}!
+      </h2>
+      <p className="mx-auto mt-2 max-w-sm text-center text-ink-soft">
+        Based on your swipes, we built a gift set {inviterName} can shop from. Tap below
+        to see it.
       </p>
-      <div className="mt-4 h-8 w-8 animate-spin rounded-full border-2 border-line border-t-coral" />
+      <button
+        onClick={handleFinish}
+        disabled={saving}
+        className="mt-8 inline-flex items-center gap-2 rounded-full bg-coral px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90 disabled:opacity-50"
+      >
+        <Icons.gift size={20} /> {saving ? "Loading\u2026" : "See your gift set"}
+      </button>
     </div>
   );
 }
