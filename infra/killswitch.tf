@@ -162,7 +162,7 @@ resource "aws_iam_role_policy" "api_config_read" {
 # Each alarm publishes to the kill-switch topic -> breaker engages.
 resource "aws_cloudwatch_metric_alarm" "bedrock_invocations" {
   alarm_name          = "${local.prefix}-bedrock-invocations-spike"
-  alarm_description   = "Bedrock (Titan) invocations spiked in 5 min — possible runaway AI cost. Trips the cost kill switch. NOTE: add a matching alarm on the Maxi/Haiku ModelId when that ships."
+  alarm_description   = "Bedrock (Titan) invocations spiked in 5 min — possible runaway AI cost. Trips the cost kill switch."
   namespace           = "AWS/Bedrock"
   metric_name         = "Invocations"
   dimensions          = { ModelId = local.bedrock_embed_model_id }
@@ -170,6 +170,41 @@ resource "aws_cloudwatch_metric_alarm" "bedrock_invocations" {
   period              = 300
   evaluation_periods  = 1
   threshold           = var.alarm_bedrock_invocations_5min
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.cost_killswitch.arn]
+}
+
+# ── Maxi model-router tripwires (POST /maxi) ──────────────────────────────────
+# Mirror the Titan alarm above for BOTH Maxi router models (Nova base + Haiku
+# shopping). CloudWatch's AWS/Bedrock "Invocations" metric is dimensioned by
+# ModelId; with a cross-region inference profile it's ambiguous whether AWS emits
+# the PROFILE id (us.amazon.nova-lite-v1:0) or the underlying FOUNDATION model id
+# (amazon.nova-lite-v1:0), and it can vary by account/region. So we create an
+# alarm for BOTH forms of each model — only the dimension AWS actually emits
+# carries data; the rest stay dormant (treat_missing_data = notBreaching).
+# Confirm the real dimension in the CloudWatch console after the first live Maxi
+# call, then prune the dormant ones if you like. All auto-tag + join the resource
+# group via provider default_tags (providers.tf / resource_group.tf).
+locals {
+  maxi_alarm_model_ids = toset(concat(
+    local.maxi_model_ids,
+    [for m in local.maxi_model_ids : replace(m, "us.", "")]
+  ))
+}
+
+resource "aws_cloudwatch_metric_alarm" "maxi_invocations" {
+  for_each = local.maxi_alarm_model_ids
+
+  alarm_name          = "${local.prefix}-maxi-invocations-spike-${replace(replace(each.value, ":", "-"), ".", "-")}"
+  alarm_description   = "Maxi (Bedrock Converse) invocations spiked in 5 min for ModelId '${each.value}' — possible runaway agent cost. Trips the cost kill switch. With cross-region inference, only the ModelId AWS actually emits carries data."
+  namespace           = "AWS/Bedrock"
+  metric_name         = "Invocations"
+  dimensions          = { ModelId = each.value }
+  statistic           = "Sum"
+  period              = 300
+  evaluation_periods  = 1
+  threshold           = var.alarm_maxi_invocations_5min
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.cost_killswitch.arn]

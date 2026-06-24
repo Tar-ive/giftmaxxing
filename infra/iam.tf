@@ -83,6 +83,12 @@ resource "aws_iam_role_policy" "s3vectors_access" {
   policy = data.aws_iam_policy_document.s3vectors_access.json
 }
 
+locals {
+  # Every model id Maxi might invoke via Converse (base + shopping tiers + the
+  # legacy alias), deduped — used to scope the Bedrock InvokeModel policy below.
+  maxi_model_ids = distinct([var.maxi_base_model_id, var.maxi_shopping_model_id, var.maxi_model_id])
+}
+
 # Bedrock: invoke the Titan Multimodal embedding model to turn an uploaded image
 # into a query vector for visual search (POST /visual-search). Foundation-model
 # ARNs have an empty account-id segment.
@@ -93,16 +99,17 @@ data "aws_iam_policy_document" "bedrock_access" {
     resources = ["arn:aws:bedrock:${var.region}::foundation-model/amazon.titan-embed-image-v1"]
   }
 
-  # Maxi (POST /maxi) invokes Claude Haiku 4.5 via Converse. A cross-region
-  # inference profile needs InvokeModel on BOTH the profile and the underlying
-  # foundation model (region wildcarded, since the profile routes across regions).
+  # Maxi (POST /maxi) invokes its router models via Converse — the cheap Amazon
+  # Nova base tier and the Claude Haiku shopping tier. A cross-region inference
+  # profile needs InvokeModel on BOTH the profile and the underlying foundation
+  # model (region wildcarded, since the profile routes across regions).
   statement {
-    sid     = "InvokeMaxiHaiku"
+    sid     = "InvokeMaxiModels"
     actions = ["bedrock:InvokeModel"]
-    resources = [
-      "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.maxi_model_id}",
-      "arn:aws:bedrock:*::foundation-model/${replace(var.maxi_model_id, "us.", "")}",
-    ]
+    resources = concat(
+      [for m in local.maxi_model_ids : "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/${m}"],
+      [for m in local.maxi_model_ids : "arn:aws:bedrock:*::foundation-model/${replace(m, "us.", "")}"]
+    )
   }
 }
 
