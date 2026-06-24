@@ -13,6 +13,7 @@ import { ADMIN_BYPASS, ADMIN_PROFILE } from "@/lib/admin";
 export type GiftRole = "giver" | "taker" | "both";
 export type GiftDifficulty = "easy" | "moderate" | "hard";
 export type GiftStyle = "thoughtful" | "materialistic" | "mix";
+export type ProfileVisibility = "public" | "private";
 
 export type MaterialisticCategory =
   | "tech"
@@ -90,6 +91,9 @@ export type UserProfile = {
   eventLoggingEnabled?: boolean;
   recipients?: Recipient[];
   events?: ImportantEvent[];
+  // Profile visibility (public/private). Absent on older saved profiles →
+  // treated as "public" by the UI.
+  visibility?: ProfileVisibility;
   completedAt: number;
 };
 
@@ -149,6 +153,18 @@ export function saveProfile(profile: UserProfile): boolean {
 export function clearProfile(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEY);
+}
+
+// Update just the profile's visibility (public/private) and notify listeners
+// (the identity hook + AccountSync) via the shared profile event.
+export function setProfileVisibility(visibility: ProfileVisibility): boolean {
+  const current = loadProfile();
+  if (!current) return false;
+  const ok = saveProfile({ ...current, visibility });
+  if (ok && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("giftmaxxing:profile"));
+  }
+  return ok;
 }
 
 export function isOnboardingComplete(): boolean {
