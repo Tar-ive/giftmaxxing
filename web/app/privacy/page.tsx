@@ -1,3 +1,7 @@
+// PRIVACY-GUARD-DO-NOT-DELETE — This page is a required, user-mandated data-protection
+// statement. Do NOT delete it, empty it, or remove this marker / the "How we protect
+// your data" section. Enforced by CI (.github/workflows/ci.yml); linked from the invite
+// flow (/privacy#sender, /privacy#recipient).
 import Link from "next/link";
 
 export const metadata = {
@@ -19,6 +23,32 @@ export default function PrivacyPage() {
           Giftmaxxing helps you find and time gifts for the people you care about. We
           store your profile, the people you shop for, and the dates you care about so
           your recommendations and reminders work across your devices.
+        </p>
+
+        <h2 className="pt-4 font-display text-xl font-bold text-ink">How we protect your data</h2>
+        <p>
+          We take very high precaution whenever we store your data. Everything is kept
+          inside our own AWS account, <strong className="text-ink">encrypted at rest</strong>,
+          behind least-privilege access controls. We never sell or rent your data.
+        </p>
+        <p>
+          <strong className="text-ink">Scrubbed before AI.</strong> Before any text is sent
+          to our AI provider (Amazon Bedrock, which powers Maxi and visual search), we
+          automatically redact sensitive personal identifiers — such as{" "}
+          <strong className="text-ink">email addresses, phone numbers, and payment or ID
+          numbers</strong> — so they never leave for the model.
+        </p>
+        <p>
+          <strong className="text-ink">No third party touches it.</strong> Amazon Bedrock
+          processes requests inside our AWS account. Per AWS, your prompts and responses are{" "}
+          <strong className="text-ink">not used to train any models</strong> and are{" "}
+          <strong className="text-ink">not shared with the model provider or any third
+          party</strong>.
+        </p>
+        <p>
+          <strong className="text-ink">You have full ownership of your data.</strong> You can
+          export or delete it at any time. Deleting your account removes your profile,
+          recipients, saved events, and Maxi&apos;s memory of you.
         </p>
 
         <h2 id="sender" className="scroll-mt-24 pt-4 font-display text-xl font-bold text-ink">

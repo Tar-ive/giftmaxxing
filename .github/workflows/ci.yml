@@ -17,6 +17,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Privacy statement guard (must exist — do not delete)
+        run: |
+          test -f app/privacy/page.tsx || { echo "::error::web/app/privacy/page.tsx is missing — the privacy statement must NOT be deleted."; exit 1; }
+          grep -q "PRIVACY-GUARD-DO-NOT-DELETE" app/privacy/page.tsx || { echo "::error::privacy page lost its PRIVACY-GUARD-DO-NOT-DELETE marker."; exit 1; }
+          grep -q "full ownership of your data" app/privacy/page.tsx || { echo "::error::privacy page lost its data-ownership statement."; exit 1; }
+
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22
