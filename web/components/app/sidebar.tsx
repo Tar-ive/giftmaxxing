@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, Icons, Maxi } from "@/components/ui";
@@ -112,19 +113,33 @@ export function Sidebar() {
   );
 }
 
+/* Items shown in the mobile "More" drawer (not in the bottom tab bar) */
+const DRAWER_ITEMS: Item[] = [
+  { label: "Swipe", href: "/feed/swipe", icon: "cards" },
+  { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
+  { label: "Events", href: "/feed/events", icon: "calendar" },
+  { label: "Drops", href: "/feed/drops", icon: "film" },
+  { label: "Group Gifts", href: "/feed/pools", icon: "users" },
+  { label: "Notifications", href: "/feed/activity", icon: "heart" },
+];
+
 /* Mobile top + bottom bars (Instagram mobile web) */
 export function MobileBars() {
   const pathname = usePathname();
   const me = useCurrentUser();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const tabs: Item[] = [
     { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
     { label: "Search", href: "/feed/search", icon: "search" },
     { label: "Create", href: "/feed/create", icon: "plusSquare" },
-    { label: "Activity", href: "/feed/activity", icon: "heart" },
+    { label: "Menu", href: "#menu", icon: "menu" },
     { label: "Profile", href: "/feed/you", icon: "home" },
   ];
+
   return (
     <>
+      {/* Top header */}
       <div className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-cream/85 px-4 py-3 backdrop-blur-xl md:hidden">
         <Link href="/feed" className="flex items-center gap-2">
           <Maxi size={28} />
@@ -148,16 +163,32 @@ export function MobileBars() {
         </div>
       </div>
 
+      {/* Bottom tab bar */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-line bg-cream/90 px-2 py-2.5 backdrop-blur-xl md:hidden">
         {tabs.map((t) => {
-          const active = pathname === t.href;
           const isProfile = t.label === "Profile";
+          const isMenu = t.label === "Menu";
+
           if (isProfile)
             return (
               <Link key={t.label} href={t.href}>
                 <Avatar grad={me.grad} label={me.name} size={26} />
               </Link>
             );
+
+          if (isMenu)
+            return (
+              <button
+                key={t.label}
+                aria-label="Open navigation menu"
+                className="text-ink"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <Icons.menu size={26} />
+              </button>
+            );
+
+          const active = pathname === t.href;
           const Ico = Icons[active && t.activeIcon ? t.activeIcon : t.icon];
           return (
             <Link key={t.label} href={t.href} className="text-ink">
@@ -166,6 +197,52 @@ export function MobileBars() {
           );
         })}
       </nav>
+
+      {/* Mobile navigation drawer (bottom sheet) */}
+      {drawerOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
+            onClick={() => setDrawerOpen(false)}
+          />
+          {/* Sheet */}
+          <div className="absolute bottom-0 left-0 right-0 animate-rise rounded-t-3xl border-t border-line bg-cream pb-8 pt-3 shadow-xl">
+            {/* Handle */}
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-ink/20" />
+            <nav className="grid grid-cols-3 gap-2 px-4">
+              {DRAWER_ITEMS.map((it) => {
+                const active = pathname === it.href;
+                const Ico = Icons[it.icon];
+                return (
+                  <Link
+                    key={it.label}
+                    href={it.href}
+                    onClick={() => setDrawerOpen(false)}
+                    className={`flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3 transition-colors ${
+                      active ? "bg-coral/10 font-bold text-coral" : "text-ink hover:bg-ink/5"
+                    }`}
+                  >
+                    <Ico size={24} />
+                    <span className="text-[11px] font-medium">{it.label}</span>
+                  </Link>
+                );
+              })}
+              {/* Ask Maxi */}
+              <Link
+                href="/feed/maxi"
+                onClick={() => setDrawerOpen(false)}
+                className={`flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3 transition-colors ${
+                  pathname === "/feed/maxi" ? "bg-coral/10 font-bold text-coral" : "text-ink hover:bg-ink/5"
+                }`}
+              >
+                <Maxi size={24} />
+                <span className="text-[11px] font-medium">Ask Maxi</span>
+              </Link>
+            </nav>
+          </div>
+        </div>
+      )}
     </>
   );
 }
