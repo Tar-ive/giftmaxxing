@@ -36,9 +36,14 @@ import {
   fetchConnections,
   getMyUserId,
   isApiConfigured,
+  migrateEvents,
+  saveEvent,
+  patchEvent,
+  deleteEvent,
 } from "@/lib/api";
 import { loadProfile } from "@/lib/onboarding";
 import { Maxi } from "@/components/ui";
+import Link from "next/link";
 
 type TopTab = "personal" | "shared";
 
@@ -57,6 +62,15 @@ export default function EventsPage() {
     const stored = loadMilestones();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMilestones(stored.length ? stored : DEMO_MILESTONES);
+
+    // Mirror real (non-demo) personal milestones into the events table + graph
+    // once signed in, so nothing collected is missed server-side.
+    if (stored.length) {
+      const uid = getMyUserId();
+      if (uid && isApiConfigured()) {
+        void migrateEvents(uid, stored as unknown as Record<string, unknown>[]);
+      }
+    }
 
     const profile = loadProfile();
     if (profile) {
@@ -87,18 +101,26 @@ export default function EventsPage() {
     persist([ms, ...milestones]);
     setCreating(false);
     setMilestoneTab("active");
+    const uid = getMyUserId();
+    if (uid) void saveEvent(uid, ms as unknown as Record<string, unknown>);
   };
 
   const handleComplete = (id: string) => {
     persist(milestones.map((m) => (m.id === id ? completeMilestone(m) : m)));
+    const uid = getMyUserId();
+    if (uid) void patchEvent(uid, id, { status: "completed", completedAt: Date.now() });
   };
 
   const handleClaim = (id: string) => {
     persist(milestones.map((m) => (m.id === id ? claimReward(m) : m)));
+    const uid = getMyUserId();
+    if (uid) void patchEvent(uid, id, { giftOrderedAt: Date.now() });
   };
 
   const handleDelete = (id: string) => {
     persist(milestones.filter((m) => m.id !== id));
+    const uid = getMyUserId();
+    if (uid) void deleteEvent(uid, id);
   };
 
   const active = activeMilestones(milestones);
@@ -106,16 +128,13 @@ export default function EventsPage() {
   const unclaimed = unclaimedRewards(milestones);
   const totalBudget = totalRewardBudget(milestones);
 
-  // Shared: combine profile events + connection birthdays
+  // Shared: profile occasions + EVERY soft profile collected from challenges
+  // (with or without a birthday). Birthdays first, then newest.
   const upcoming = upcomingEvents(profileEvents.events, 365);
-  const sharedBirthdays = connections
-    .filter((c) => c.birthday)
-    .map((c) => ({
-      id: c.connectionId,
-      name: c.guestName,
-      birthday: c.birthday!,
-      relation: "friend" as const,
-    }));
+  const softProfiles = [...connections].sort((a, b) => {
+    if (!!b.birthday !== !!a.birthday) return b.birthday ? 1 : -1;
+    return (b.createdAt ?? 0) - (a.createdAt ?? 0);
+  });
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -278,10 +297,11 @@ export default function EventsPage() {
             </section>
           )}
 
-          {/* Shared birthdays from connections (viral loop soft profiles) */}
+          {/* Soft profiles from challenges (the viral loop): their swiped taste
+              + a one-tap link to shop gifts personalized for them. */}
           <section>
             <p className="mb-3 text-sm font-bold text-ink-soft">
-              Friend birthdays (from challenges)
+              Friends from challenges
             </p>
             {loadingShared ? (
               <div className="space-y-2">
@@ -289,42 +309,67 @@ export default function EventsPage() {
                   <div key={i} className="h-16 animate-pulse rounded-2xl bg-line" />
                 ))}
               </div>
-            ) : sharedBirthdays.length > 0 ? (
+            ) : softProfiles.length > 0 ? (
               <div className="space-y-2">
-                {sharedBirthdays.map((b) => (
-                  <div
-                    key={b.id}
-                    className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-4"
-                  >
-                    <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-lilac/20 text-2xl">
-                      🎂
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-ink">{b.name}</p>
-                      <p className="text-xs text-ink-soft">
-                        Birthday: {b.birthday}
-                      </p>
+                {softProfiles.map((c) => {
+                  const chips = Array.from(
+                    new Set([...(c.interests ?? []), ...(c.vibes ?? [])])
+                  ).slice(0, 4);
+                  return (
+                    <div
+                      key={c.connectionId}
+                      className="rounded-2xl border border-line bg-surface p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-lilac/20 text-coral">
+                          <Icons.gift size={22} />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-ink">{c.guestName}</p>
+                          <p className="text-xs text-ink-soft">
+                            {c.birthday
+                              ? `Birthday ${c.birthday}`
+                              : "Taste saved from their swipe challenge"}
+                            {c.totalSwipes ? ` · liked ${c.yesCount ?? 0}/${c.totalSwipes}` : ""}
+                          </p>
+                        </div>
+                        <Link
+                          href={`/feed/ideas?cid=${encodeURIComponent(c.connectionId)}`}
+                          className="shrink-0 rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition-opacity hover:opacity-90"
+                        >
+                          Gift {c.guestName.split(/\s+/)[0]}
+                        </Link>
+                      </div>
+                      {chips.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {chips.map((t) => (
+                            <span
+                              key={t}
+                              className="rounded-full bg-ink/5 px-2.5 py-1 text-xs font-semibold text-ink-soft"
+                            >
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <span className="shrink-0 rounded-full bg-ink/5 px-3 py-1 text-xs font-bold text-ink-soft">
-                      {RELATION_META[b.relation].emoji} Friend
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <EmptyState
                 emoji="🤝"
                 text={
                   isApiConfigured()
-                    ? "No shared birthdays yet. Send swipe challenges to friends to collect their dates!"
-                    : "Shared birthdays appear here once the backend is deployed and friends complete challenges."
+                    ? "No soft profiles yet. Send swipe challenges to friends to collect their taste!"
+                    : "Soft profiles appear here once the backend is deployed and friends complete challenges."
                 }
               />
             )}
           </section>
 
           {/* If no profile events either */}
-          {upcoming.length === 0 && sharedBirthdays.length === 0 && !loadingShared && (
+          {upcoming.length === 0 && softProfiles.length === 0 && !loadingShared && (
             <EmptyState
               emoji="📅"
               text="No shared events yet. Add recipients in onboarding or send swipe challenges to friends!"

@@ -9,6 +9,7 @@ import {
   ScanCommand,
   BatchWriteCommand,
   UpdateCommand,
+  DeleteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
   S3VectorsClient,
@@ -27,6 +28,30 @@ const POSTS = process.env.POSTS_TABLE;
 const INTERACTIONS = process.env.INTERACTIONS_TABLE;
 const KNOWLEDGE = process.env.KNOWLEDGE_TABLE;
 const CONNECTIONS = process.env.CONNECTIONS_TABLE;
+const EVENTS = process.env.EVENTS_TABLE;
+const GRAPH = process.env.GRAPH_TABLE;
+const CONFIG = process.env.CONFIG_TABLE;
+
+// ── Cost kill-switch feature flag (DynamoDB config table) ────────────────────
+// The breaker Lambda sets { paused: true } when spend trips $1,000 or a real-time
+// alarm fires. Read here with a short in-memory cache and FAIL-OPEN: any error /
+// missing flag means NOT paused, so a config glitch never takes the app down.
+// When paused, the non-essential (cost-driving) routes short-circuit while auth,
+// feed/posts, and data collection keep serving.
+let _flagCache = { at: 0, paused: false };
+async function isPaused() {
+  if (!CONFIG) return false;
+  const now = Date.now();
+  if (now - _flagCache.at < 30000) return _flagCache.paused;
+  try {
+    const out = await ddb.send(new GetCommand({ TableName: CONFIG, Key: { key: "feature-flags" } }));
+    _flagCache = { at: now, paused: out.Item?.paused === true };
+  } catch (err) {
+    console.warn("isPaused read failed (fail-open):", err.message);
+    _flagCache = { at: now, paused: false };
+  }
+  return _flagCache.paused;
+}
 
 // S3 Vectors (the vector store powering similarity-based recommendations).
 const VECTOR_BUCKET = process.env.VECTOR_BUCKET;
@@ -190,6 +215,241 @@ function computeUpcoming(events, withinDays = 90, now = new Date()) {
     .sort((a, b) => a.daysUntil - b.daysUntil);
 }
 
+// ── Network graph (DynamoDB single-table: nodes + edges) ─────────────────────
+// Captures ALL data (hard onboarding data + soft swipe-derived taste) as one
+// connected graph so nothing is lost. Partitioned by owner (userId); the
+// byEntity GSI enables cross-owner traversal of edges into any node.
+const gid = () =>
+  globalThis.crypto?.randomUUID?.() ??
+  `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+
+// A node item (Put-safe: fully specified on every write).
+function gNode(ownerId, type, id, { scope, label, data } = {}) {
+  return {
+    pk: ownerId,
+    sk: `N#${type}#${id}`,
+    kind: "node",
+    entityId: `${type}#${id}`,
+    type,
+    ...(scope ? { scope } : {}),
+    ...(label ? { label: String(label).slice(0, 120) } : {}),
+    data: data ?? {},
+    updatedAt: Date.now(),
+  };
+}
+
+// A directed edge item. src/dst use "type:id" inside the sort key.
+function gEdge(ownerId, rel, srcType, srcId, dstType, dstId, data) {
+  return {
+    pk: ownerId,
+    sk: `E#${rel}#${srcType}:${srcId}#${dstType}:${dstId}`,
+    kind: "edge",
+    entityId: `${dstType}#${dstId}`,
+    rel,
+    srcRef: `${srcType}#${srcId}`,
+    dstRef: `${dstType}#${dstId}`,
+    data: data ?? {},
+    updatedAt: Date.now(),
+  };
+}
+
+// Interest nodes + LIKES edges connecting a source (user/recipient/soft) to each
+// normalized interest tag — this is what makes the graph a real "network".
+function interestItems(ownerId, srcType, srcId, interests) {
+  const out = [];
+  for (const raw of interests ?? []) {
+    const tag = String(raw).trim().toLowerCase().slice(0, 40);
+    if (!tag) continue;
+    out.push(gNode(ownerId, "interest", tag, { label: tag }));
+    out.push(gEdge(ownerId, "LIKES", srcType, srcId, "interest", tag));
+  }
+  return out;
+}
+
+// Best-effort batch Put of graph items. Never throws (the graph is a mirror).
+async function graphWrite(items) {
+  if (!GRAPH || !Array.isArray(items) || items.length === 0) return;
+  const now = Date.now();
+  const all = items.filter(Boolean).map((it) => ({ createdAt: now, ...it }));
+  try {
+    for (let i = 0; i < all.length; i += 25) {
+      const chunk = all.slice(i, i + 25);
+      await ddb.send(
+        new BatchWriteCommand({
+          RequestItems: { [GRAPH]: chunk.map((Item) => ({ PutRequest: { Item } })) },
+        })
+      );
+    }
+  } catch (err) {
+    console.error("graphWrite error", err);
+  }
+}
+
+// Merge-update a node's flat attributes (used for the user node so frequent
+// identity pings never clobber profile data written by PUT /me, and vice versa).
+async function graphMergeNode(ownerId, type, id, attrs = {}) {
+  if (!GRAPH || !ownerId) return;
+  const now = Date.now();
+  const names = { "#type": "type", "#kind": "kind" };
+  const values = { ":kind": "node", ":type": type, ":eid": `${type}#${id}`, ":now": now };
+  const sets = [
+    "#kind = :kind",
+    "#type = :type",
+    "entityId = :eid",
+    "updatedAt = :now",
+    "createdAt = if_not_exists(createdAt, :now)",
+  ];
+  let i = 0;
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null) continue;
+    const nk = `#a${i}`;
+    const vk = `:a${i}`;
+    names[nk] = k;
+    values[vk] = v;
+    sets.push(`${nk} = ${vk}`);
+    i++;
+  }
+  try {
+    await ddb.send(
+      new UpdateCommand({
+        TableName: GRAPH,
+        Key: { pk: ownerId, sk: `N#${type}#${id}` },
+        UpdateExpression: "SET " + sets.join(", "),
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      })
+    );
+  } catch (err) {
+    console.error("graphMergeNode error", err);
+  }
+}
+
+// Fan out a saved profile into the events table (scope-tagged) + the network
+// graph (user/recipient/event/interest nodes + edges). Best-effort.
+async function captureProfile(userId, profile) {
+  try {
+    const recipients = Array.isArray(profile.recipients) ? profile.recipients : [];
+    const events = Array.isArray(profile.events) ? profile.events : [];
+    const byId = Object.fromEntries(recipients.map((r) => [r.id, r]));
+
+    await graphMergeNode(userId, "user", userId, {
+      scope: "personal",
+      label: profile.name || undefined,
+      role: profile.role || undefined,
+      style: profile.style || undefined,
+      interests: Array.isArray(profile.interests) ? profile.interests : undefined,
+    });
+
+    const g = [];
+    g.push(...interestItems(userId, "user", userId, profile.interests));
+    for (const r of recipients) {
+      if (!r?.id) continue;
+      g.push(
+        gNode(userId, "recipient", r.id, {
+          scope: "shared",
+          label: r.name,
+          data: { name: r.name, relation: r.relation, interests: r.interests ?? [] },
+        })
+      );
+      g.push(gEdge(userId, "GIFTS_TO", "user", userId, "recipient", r.id, { relation: r.relation }));
+      g.push(...interestItems(userId, "recipient", r.id, r.interests));
+    }
+    for (const ev of events) {
+      if (!ev?.id) continue;
+      const scope = ev.recipientId ? "shared" : "personal";
+      g.push(
+        gNode(userId, "event", ev.id, {
+          scope,
+          label: ev.type,
+          data: { type: ev.type, date: ev.date, recurrence: ev.recurrence, budget: ev.budget, recipientId: ev.recipientId },
+        })
+      );
+      if (ev.recipientId)
+        g.push(gEdge(userId, "HAS_EVENT", "recipient", ev.recipientId, "event", ev.id, { type: ev.type, date: ev.date }));
+      else g.push(gEdge(userId, "HAS_EVENT", "user", userId, "event", ev.id, { type: ev.type, date: ev.date }));
+    }
+    await graphWrite(g);
+
+    if (EVENTS && events.length) {
+      const now = Date.now();
+      const evItems = events
+        .filter((e) => e?.id)
+        .map((ev) => ({
+          userId,
+          eventId: ev.id,
+          scope: ev.recipientId ? "shared" : "personal",
+          kind: "occasion",
+          type: ev.type,
+          date: ev.date,
+          recurrence: ev.recurrence,
+          reminderLeadDays: ev.reminderLeadDays,
+          budget: ev.budget,
+          recipientId: ev.recipientId,
+          recipientName: byId[ev.recipientId]?.name,
+          updatedAt: now,
+          createdAt: now,
+        }));
+      for (let i = 0; i < evItems.length; i += 25) {
+        const chunk = evItems.slice(i, i + 25);
+        if (chunk.length)
+          await ddb.send(
+            new BatchWriteCommand({ RequestItems: { [EVENTS]: chunk.map((Item) => ({ PutRequest: { Item } })) } })
+          );
+      }
+    }
+  } catch (err) {
+    console.error("captureProfile error", err);
+  }
+}
+
+// Mirror a soft profile (challenge connection) into the events table (shared) +
+// the network graph (soft node, COLLECTED edge, interest edges). Best-effort.
+async function captureConnection(item) {
+  try {
+    const ownerId = item.userId;
+    const g = [
+      gNode(ownerId, "soft", item.connectionId, {
+        scope: "shared",
+        label: item.guestName,
+        data: {
+          guestName: item.guestName,
+          birthday: item.birthday,
+          vibes: item.vibes,
+          seeds: item.seeds,
+          interests: item.interests,
+          yesCount: item.yesCount,
+          totalSwipes: item.totalSwipes,
+        },
+      }),
+      gEdge(ownerId, "COLLECTED", "user", ownerId, "soft", item.connectionId, { kind: "challenge" }),
+      ...interestItems(ownerId, "soft", item.connectionId, [...(item.interests || []), ...(item.vibes || [])]),
+    ];
+    await graphWrite(g);
+    if (EVENTS) {
+      await ddb.send(
+        new PutCommand({
+          TableName: EVENTS,
+          Item: {
+            userId: ownerId,
+            eventId: item.connectionId,
+            scope: "shared",
+            kind: "soft-profile",
+            type: "birthday",
+            date: item.birthday,
+            recipientName: item.guestName,
+            soft: true,
+            taste: { vibes: item.vibes, seeds: item.seeds, interests: item.interests },
+            createdAt: item.createdAt,
+            updatedAt: Date.now(),
+          },
+        })
+      );
+    }
+  } catch (err) {
+    console.error("captureConnection error", err);
+  }
+}
+
 export const handler = async (event) => {
   const method = event.requestContext?.http?.method ?? "GET";
   const path = event.requestContext?.http?.path ?? "/";
@@ -203,7 +463,7 @@ export const handler = async (event) => {
     return {
       statusCode: 204,
       headers: {
-        "access-control-allow-methods": "GET,POST,OPTIONS",
+        "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
         "access-control-allow-headers": "content-type,authorization",
         "access-control-max-age": "3600",
       },
@@ -307,7 +567,7 @@ export const handler = async (event) => {
     // from S3 Vectors. The browser uses these keys as seed vectors for the
     // recommendation kNN (a pin's key == its postId in the posts table).
     if (method === "GET" && path === "/pins") {
-      if (!s3v) return json(200, { items: [] });
+      if (!s3v || (await isPaused())) return json(200, { items: [] });
       const limit = Math.min(Number(qs.limit) || 60, 200);
       const out = await s3v.send(
         new ListVectorsCommand({
@@ -325,6 +585,7 @@ export const handler = async (event) => {
     // True "find gifts that look like this": embed the uploaded image with Titan
     // Multimodal, then kNN against the pin index. Returns post-shaped items.
     if (method === "POST" && path === "/visual-search") {
+      if (await isPaused()) return json(503, { error: "temporarily disabled (cost guard)" });
       if (!s3v) return json(503, { error: "vector store not configured" });
       const imageBase64 = body.imageBase64 || body.image;
       if (!imageBase64) return json(400, { error: "imageBase64 required" });
@@ -396,7 +657,7 @@ export const handler = async (event) => {
       // Seeds come from ?seedKeys=pin-a,pin-b or from the user's interactions.
       const seedKeys = parseList(qs.seedKeys);
       const seeds = seedKeys.length ? seedKeys : [...likedTargets];
-      if (s3v && seeds.length) {
+      if (s3v && seeds.length && !(await isPaused())) {
         try {
           const vitems = await vectorRecommend(seeds, { limit, sourceUser: qs.sourceUser });
           if (vitems && vitems.length) {
@@ -471,6 +732,8 @@ export const handler = async (event) => {
       }
       const item = { ...profile, userId, updatedAt: Date.now() };
       await ddb.send(new PutCommand({ TableName: USERS, Item: item }));
+      // Fan out into the events table + network graph so nothing is missed.
+      await captureProfile(userId, profile);
       return json(200, { ok: true, item });
     }
 
@@ -527,6 +790,8 @@ export const handler = async (event) => {
         createdAt: Date.now(),
       };
       await ddb.send(new PutCommand({ TableName: CONNECTIONS, Item: item }));
+      // Mirror the soft profile into the events table + network graph.
+      await captureConnection(item);
       return json(200, { ok: true, connectionId: item.connectionId });
     }
 
@@ -582,6 +847,174 @@ export const handler = async (event) => {
         )
       );
       return json(200, { ok: true, updated: ids.length });
+    }
+
+    // ── Unified events (personal milestones + shared occasions/soft profiles) ──
+    // GET /events?userId=&scope=  — a user's events, optionally filtered by scope.
+    if (method === "GET" && path === "/events") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      if (!EVENTS) return json(200, { items: [] });
+      const scope = qs.scope;
+      const out = await ddb.send(
+        scope
+          ? new QueryCommand({
+              TableName: EVENTS,
+              IndexName: "byScope",
+              KeyConditionExpression: "userId = :u AND #s = :s",
+              ExpressionAttributeNames: { "#s": "scope" },
+              ExpressionAttributeValues: { ":u": userId, ":s": scope },
+            })
+          : new QueryCommand({
+              TableName: EVENTS,
+              KeyConditionExpression: "userId = :u",
+              ExpressionAttributeValues: { ":u": userId },
+            })
+      );
+      const items = (out.Items ?? []).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      return json(200, { items });
+    }
+
+    // POST /events  { userId, event }  — create/upsert one event (personal|shared).
+    if (method === "POST" && path === "/events") {
+      const userId = body.userId;
+      const ev = body.event ?? {};
+      if (!userId || typeof ev !== "object") return json(400, { error: "userId and event required" });
+      if (!EVENTS) return json(503, { error: "events table not configured" });
+      const eventId = String(ev.eventId || ev.id || `evt_${gid()}`);
+      const scope = ev.scope === "shared" ? "shared" : "personal";
+      const item = { ...ev, userId, eventId, scope, createdAt: Number(ev.createdAt) || Date.now(), updatedAt: Date.now() };
+      delete item.id;
+      await ddb.send(new PutCommand({ TableName: EVENTS, Item: item }));
+      await graphWrite([
+        gNode(userId, "event", eventId, { scope, label: item.type || item.title || "event", data: item }),
+        gEdge(userId, "HAS_EVENT", "user", userId, "event", eventId, { scope }),
+      ]);
+      return json(200, { ok: true, eventId, item });
+    }
+
+    // PUT /events  { userId, eventId, patch }  — partial update (e.g. complete).
+    if (method === "PUT" && path === "/events") {
+      const { userId, eventId, patch } = body;
+      if (!userId || !eventId || typeof patch !== "object") {
+        return json(400, { error: "userId, eventId, patch required" });
+      }
+      if (!EVENTS) return json(503, { error: "events table not configured" });
+      const names = {};
+      const values = { ":now": Date.now() };
+      const sets = ["updatedAt = :now"];
+      let i = 0;
+      for (const [k, v] of Object.entries(patch)) {
+        if (k === "userId" || k === "eventId" || v === undefined) continue;
+        const nk = `#p${i}`;
+        const vk = `:p${i}`;
+        names[nk] = k;
+        values[vk] = v;
+        sets.push(`${nk} = ${vk}`);
+        i++;
+      }
+      const out = await ddb.send(
+        new UpdateCommand({
+          TableName: EVENTS,
+          Key: { userId, eventId },
+          UpdateExpression: "SET " + sets.join(", "),
+          ExpressionAttributeNames: Object.keys(names).length ? names : undefined,
+          ExpressionAttributeValues: values,
+          ReturnValues: "ALL_NEW",
+        })
+      );
+      return json(200, { ok: true, item: out.Attributes ?? null });
+    }
+
+    // POST /events/delete  { userId, eventId }  (POST avoids DELETE CORS issues).
+    if (method === "POST" && path === "/events/delete") {
+      const { userId, eventId } = body;
+      if (!userId || !eventId) return json(400, { error: "userId, eventId required" });
+      if (!EVENTS) return json(503, { error: "events table not configured" });
+      await ddb.send(new DeleteCommand({ TableName: EVENTS, Key: { userId, eventId } }));
+      return json(200, { ok: true });
+    }
+
+    // POST /events/migrate  { userId, items:[...] }  — bulk import (e.g. local
+    // milestones -> events, scope "personal"). Idempotent on eventId.
+    if (method === "POST" && path === "/events/migrate") {
+      const userId = body.userId;
+      const list = Array.isArray(body.items) ? body.items : [];
+      if (!userId) return json(400, { error: "userId required" });
+      if (!EVENTS) return json(503, { error: "events table not configured" });
+      const now = Date.now();
+      const items = list.slice(0, 200).map((ev) => {
+        const eventId = String(ev.eventId || ev.id || `evt_${gid()}`);
+        const scope = ev.scope === "shared" ? "shared" : "personal";
+        const it = { ...ev, userId, eventId, scope, createdAt: Number(ev.createdAt) || now, updatedAt: now };
+        delete it.id;
+        return it;
+      });
+      const g = [];
+      for (const it of items) {
+        g.push(gNode(userId, "event", it.eventId, { scope: it.scope, label: it.type || it.title || "event", data: it }));
+        g.push(gEdge(userId, "HAS_EVENT", "user", userId, "event", it.eventId, { scope: it.scope }));
+      }
+      for (let i = 0; i < items.length; i += 25) {
+        const chunk = items.slice(i, i + 25);
+        if (chunk.length)
+          await ddb.send(
+            new BatchWriteCommand({ RequestItems: { [EVENTS]: chunk.map((Item) => ({ PutRequest: { Item } })) } })
+          );
+      }
+      await graphWrite(g);
+      return json(200, { ok: true, migrated: items.length });
+    }
+
+    // GET /graph?userId=  — the user's whole subgraph (nodes + edges) so we can
+    // verify nothing was missed / render a network view.
+    if (method === "GET" && path === "/graph") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      if (!GRAPH) return json(200, { nodes: [], edges: [], counts: { nodes: 0, edges: 0 } });
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: GRAPH,
+          KeyConditionExpression: "pk = :u",
+          ExpressionAttributeValues: { ":u": userId },
+        })
+      );
+      const all = out.Items ?? [];
+      const nodes = all
+        .filter((i) => i.kind === "node")
+        .map((n) => ({ id: n.entityId, type: n.type, scope: n.scope, label: n.label, data: n.data ?? {}, createdAt: n.createdAt }));
+      const edges = all
+        .filter((i) => i.kind === "edge")
+        .map((e) => ({ rel: e.rel, from: e.srcRef, to: e.dstRef, data: e.data ?? {}, createdAt: e.createdAt }));
+      return json(200, { nodes, edges, counts: { nodes: nodes.length, edges: edges.length } });
+    }
+
+    // POST /me/identity  { userId, email?, name?, imageUrl? }  — ensure a users
+    // row (+ graph user node) exists from the FIRST sign-in, WITHOUT clobbering a
+    // profile written later by PUT /me.
+    if (method === "POST" && path === "/me/identity") {
+      const { userId, email, name, imageUrl } = body;
+      if (!userId) return json(400, { error: "userId required" });
+      const now = Date.now();
+      await ddb.send(
+        new UpdateCommand({
+          TableName: USERS,
+          Key: { userId },
+          UpdateExpression: "SET #id = :id, lastSeenAt = :now, createdAt = if_not_exists(createdAt, :now)",
+          ExpressionAttributeNames: { "#id": "identity" },
+          ExpressionAttributeValues: {
+            ":id": { email: email ?? null, name: name ?? null, imageUrl: imageUrl ?? null },
+            ":now": now,
+          },
+        })
+      );
+      await graphMergeNode(userId, "user", userId, {
+        scope: "personal",
+        label: name || undefined,
+        email: email || undefined,
+        imageUrl: imageUrl || undefined,
+      });
+      return json(200, { ok: true });
     }
 
     return json(404, { error: `no route for ${method} ${path}` });

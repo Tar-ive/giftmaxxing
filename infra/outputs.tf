@@ -10,8 +10,9 @@ output "tables" {
     posts        = aws_dynamodb_table.posts.name
     interactions = aws_dynamodb_table.interactions.name
     knowledge    = aws_dynamodb_table.knowledge.name
-    milestones   = aws_dynamodb_table.milestones.name
+    events       = aws_dynamodb_table.events.name
     connections  = aws_dynamodb_table.connections.name
+    graph        = aws_dynamodb_table.graph.name
   }
 }
 
@@ -43,4 +44,9 @@ output "resource_group_url" {
 output "cost_explorer_url" {
   description = "Cost Explorer. After activating the Project cost-allocation tag, use Group by -> Tag: Project for per-project spend."
   value       = "https://us-east-1.console.aws.amazon.com/cost-management/home#/cost-explorer"
+}
+
+output "cost_alerts_topic_arn" {
+  description = "SNS topic for cost/budget alerts ($10/$50/$100/$1000). Set var.alert_email to auto-subscribe (confirm the email AWS sends). Add more: aws sns subscribe --topic-arn <this> --protocol email --notification-endpoint you@example.com"
+  value       = aws_sns_topic.cost_alerts.arn
 }

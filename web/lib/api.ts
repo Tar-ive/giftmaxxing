@@ -379,3 +379,135 @@ export async function markConnectionsSeen(
     return false;
   }
 }
+
+// ── Identity (ensure a users row exists from the FIRST sign-in) ───────────────
+// Upserts identity fields keyed by the Clerk userId WITHOUT clobbering a profile
+// written later by /me. Called by AccountSync on every sign-in.
+export async function identifyMe(
+  userId: string,
+  identity: { email?: string | null; name?: string | null; imageUrl?: string | null }
+): Promise<boolean> {
+  if (!isApiConfigured() || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/me/identity`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, ...identity }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ── Unified events (personal milestones + shared occasions/soft profiles) ─────
+// Backed by the DynamoDB `events` table (scope-tagged) + mirrored into the graph.
+export type EventScope = "personal" | "shared";
+export type ApiEvent = {
+  userId: string;
+  eventId: string;
+  scope: EventScope;
+  kind?: string;
+  type?: string;
+  title?: string;
+  date?: string;
+  createdAt?: number;
+  [k: string]: unknown;
+};
+
+export async function fetchEvents(userId: string, scope?: EventScope): Promise<ApiEvent[]> {
+  if (!isApiConfigured() || !userId) return [];
+  try {
+    const q = new URLSearchParams({ userId });
+    if (scope) q.set("scope", scope);
+    const res = await fetch(`${API_BASE}/events?${q.toString()}`, { headers: { accept: "application/json" } });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { items?: ApiEvent[] };
+    return data.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveEvent(userId: string, event: Record<string, unknown>): Promise<boolean> {
+  if (!isApiConfigured() || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/events`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, event }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function patchEvent(
+  userId: string,
+  eventId: string,
+  patch: Record<string, unknown>
+): Promise<boolean> {
+  if (!isApiConfigured() || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/events`, {
+      method: "PUT",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, eventId, patch }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteEvent(userId: string, eventId: string): Promise<boolean> {
+  if (!isApiConfigured() || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/events/delete`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, eventId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Bulk import (e.g. local milestones -> events, scope "personal"). Idempotent.
+export async function migrateEvents(userId: string, items: Record<string, unknown>[]): Promise<number> {
+  if (!isApiConfigured() || !userId || items.length === 0) return 0;
+  try {
+    const res = await fetch(`${API_BASE}/events/migrate`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, items }),
+    });
+    if (!res.ok) return 0;
+    const data = (await res.json()) as { migrated?: number };
+    return data.migrated ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+// ── Network graph (read the signed-in user's nodes + edges) ───────────────────
+export type GraphNode = { id: string; type: string; scope?: string; label?: string; data?: Record<string, unknown> };
+export type GraphEdge = { rel: string; from: string; to: string; data?: Record<string, unknown> };
+
+export async function fetchGraph(
+  userId: string
+): Promise<{ nodes: GraphNode[]; edges: GraphEdge[]; counts: { nodes: number; edges: number } }> {
+  const empty = { nodes: [], edges: [], counts: { nodes: 0, edges: 0 } };
+  if (!isApiConfigured() || !userId) return empty;
+  try {
+    const res = await fetch(`${API_BASE}/graph?userId=${encodeURIComponent(userId)}`, {
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return empty;
+    return (await res.json()) as { nodes: GraphNode[]; edges: GraphEdge[]; counts: { nodes: number; edges: number } };
+  } catch {
+    return empty;
+  }
+}

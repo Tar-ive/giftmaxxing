@@ -15,12 +15,13 @@ import {
   type RecipientKnowledge,
   type RecipientSummary,
 } from "@/lib/ideas";
-import { RecipientShopHeader } from "@/components/app/recipient-shop-header";
+import { RecipientShopHeader, SoftProfileShopHeader } from "@/components/app/recipient-shop-header";
 
 export function IdeasExplorer({
   initialRecipient,
   recipientId,
-}: { initialRecipient?: string; recipientId?: string } = {}) {
+  connectionId,
+}: { initialRecipient?: string; recipientId?: string; connectionId?: string } = {}) {
   const [recipients, setRecipients] = useState<RecipientSummary[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [data, setData] = useState<RecipientKnowledge | null>(null);
@@ -80,9 +81,10 @@ export function IdeasExplorer({
   return (
     <div className="mx-auto max-w-5xl px-3 py-7 sm:px-5">
       {recipientId && <RecipientShopHeader recipientId={recipientId} />}
+      {connectionId && !recipientId && <SoftProfileShopHeader connectionId={connectionId} />}
 
       {/* Heading */}
-      {recipientId ? (
+      {recipientId || connectionId ? (
         <header className="mb-4">
           <h2 className="font-display text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
             More ideas people recommend

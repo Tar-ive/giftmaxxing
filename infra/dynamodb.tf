@@ -64,33 +64,74 @@ resource "aws_dynamodb_table" "knowledge" {
   }
 }
 
-# ── Milestones ────────────────────────────────────────────────────────────────
-# Self-gifting milestones. PK: userId, SK: milestoneId. Users set personal goals
-# with a reward budget; on completion the user treats themselves or Maxi
-# auto-orders a gift within budget.
-resource "aws_dynamodb_table" "milestones" {
-  name         = "${local.prefix}-milestones"
+# ── Events ────────────────────────────────────────────────────────────────────
+# Unified event store (formerly "milestones"). PK: userId, SK: eventId. Holds
+# everything we capture from onboarding onward, tagged by `scope`:
+#   • personal — self milestones / the user's own occasions
+#   • shared   — recipients' occasions + soft-profile birthdays from challenges
+# GSI byScope lists a user's personal vs shared events directly.
+resource "aws_dynamodb_table" "events" {
+  name         = "${local.prefix}-events"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "userId"
-  range_key    = "milestoneId"
+  range_key    = "eventId"
 
   attribute {
     name = "userId"
     type = "S"
   }
   attribute {
-    name = "milestoneId"
+    name = "eventId"
     type = "S"
   }
   attribute {
-    name = "status"
+    name = "scope"
     type = "S"
   }
 
   global_secondary_index {
-    name            = "byStatus"
+    name            = "byScope"
     hash_key        = "userId"
-    range_key       = "status"
+    range_key       = "scope"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+# ── Graph (network graph: nodes + edges) ──────────────────────────────────────
+# Single-table adjacency model capturing ALL data (hard onboarding data + soft
+# swipe-derived taste) as one connected graph so nothing is lost. Partitioned by
+# owner (userId) so a user's whole subgraph loads in one Query; the byEntity GSI
+# enables cross-owner traversal of edges into any node.
+#   pk       = userId (owner of the subgraph)
+#   sk       = "N#<type>#<id>" (node)  |  "E#<rel>#<src>#<dst>" (edge)
+#   entityId = "<type>#<id>"  (a node's self-ref, or an edge's destination ref)
+resource "aws_dynamodb_table" "graph" {
+  name         = "${local.prefix}-graph"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "pk"
+  range_key    = "sk"
+
+  attribute {
+    name = "pk"
+    type = "S"
+  }
+  attribute {
+    name = "sk"
+    type = "S"
+  }
+  attribute {
+    name = "entityId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "byEntity"
+    hash_key        = "entityId"
+    range_key       = "sk"
     projection_type = "ALL"
   }
 

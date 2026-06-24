@@ -28,7 +28,7 @@ resource "aws_cloudwatch_dashboard" "overview" {
           markdown = <<-EOT
             # Giftmaxxing (${var.env}) — AWS resource monitor
             **Region** `${var.region}` · **API** `${aws_apigatewayv2_api.http.id}` · **Lambda** `${aws_lambda_function.api.function_name}` · **Bedrock** `${local.bedrock_embed_model_id}`
-            **DynamoDB** users·posts·interactions·knowledge·milestones·connections   |   **S3** `${aws_s3_bucket.media.bucket}`   |   **S3 Vectors** `${local.prefix}-vectors` · **SNS** `${aws_sns_topic.reminders.name}`
+            **DynamoDB** users·posts·interactions·knowledge·events·connections   |   **S3** `${aws_s3_bucket.media.bucket}`   |   **S3 Vectors** `${local.prefix}-vectors` · **SNS** `${aws_sns_topic.reminders.name}`
             **Cost** → `${local.prefix}-cost` dashboard   |   **All resources** → Resource Group `${local.prefix}-resources`
           EOT
         }
@@ -179,7 +179,7 @@ resource "aws_cloudwatch_dashboard" "overview" {
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.posts.name, { stat = "Sum", label = "posts" }],
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.interactions.name, { stat = "Sum", label = "interactions" }],
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge" }],
-            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones" }],
+            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.events.name, { stat = "Sum", label = "events" }],
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections" }],
           ]
         }
@@ -203,7 +203,7 @@ resource "aws_cloudwatch_dashboard" "overview" {
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.posts.name, { stat = "Sum", label = "posts" }],
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.interactions.name, { stat = "Sum", label = "interactions" }],
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge" }],
-            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones" }],
+            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.events.name, { stat = "Sum", label = "events" }],
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections" }],
           ]
         }
@@ -231,8 +231,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.interactions.name, { stat = "Sum", label = "interactions write" }],
             ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge read" }],
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge write" }],
-            ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones read" }],
-            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones write" }],
+            ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.events.name, { stat = "Sum", label = "events read" }],
+            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.events.name, { stat = "Sum", label = "events write" }],
             ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections read" }],
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections write" }],
           ]

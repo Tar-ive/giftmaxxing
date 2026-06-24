@@ -22,6 +22,11 @@ resource "aws_lambda_function" "api" {
   timeout          = 10
   memory_size      = 256
 
+  # Baseline autoscale ceiling so a traffic/runaway spike can't balloon Lambda
+  # (and thus DynamoDB) cost. The $1,000 kill switch pauses the expensive AI
+  # routes on top of this (see killswitch.tf). -1 (via var) = uncapped.
+  reserved_concurrent_executions = var.api_reserved_concurrency
+
   environment {
     variables = {
       USERS_TABLE        = aws_dynamodb_table.users.name
@@ -29,6 +34,9 @@ resource "aws_lambda_function" "api" {
       INTERACTIONS_TABLE = aws_dynamodb_table.interactions.name
       KNOWLEDGE_TABLE    = aws_dynamodb_table.knowledge.name
       CONNECTIONS_TABLE  = aws_dynamodb_table.connections.name
+      EVENTS_TABLE       = aws_dynamodb_table.events.name
+      GRAPH_TABLE        = aws_dynamodb_table.graph.name
+      CONFIG_TABLE       = aws_dynamodb_table.config.name
       VECTOR_BUCKET      = "${local.prefix}-vectors"
       VECTOR_INDEX       = "pins"
       # Visual search: Titan Multimodal embedding model + vector dimensionality.

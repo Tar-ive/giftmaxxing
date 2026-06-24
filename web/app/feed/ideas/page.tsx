@@ -11,7 +11,10 @@ function IdeasPageInner() {
   const params = useSearchParams();
   const recipient = params.get("recipient") ?? undefined;
   const recipientId = params.get("rid") ?? undefined;
-  return <IdeasExplorer initialRecipient={recipient} recipientId={recipientId} />;
+  const connectionId = params.get("cid") ?? undefined;
+  return (
+    <IdeasExplorer initialRecipient={recipient} recipientId={recipientId} connectionId={connectionId} />
+  );
 }
 
 export default function IdeasPage() {

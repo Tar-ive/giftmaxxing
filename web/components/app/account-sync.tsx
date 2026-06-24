@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { loadProfile, saveProfile, type UserProfile } from "@/lib/onboarding";
-import { fetchMe, saveMe, setMyUserId } from "@/lib/api";
+import { fetchMe, saveMe, setMyUserId, identifyMe } from "@/lib/api";
 import { markProfileSyncSettled } from "@/lib/profile-status";
 
 // Bridges Clerk auth → our profile store ("start storing this data").
@@ -50,6 +50,14 @@ export function AccountSync() {
     // Stash the Clerk userId so non-Clerk client code (e.g. the swipe share
     // link) can attribute a shared challenge back to this sender.
     setMyUserId(userId);
+
+    // Ensure a users row (+ graph user node) exists from the very first sign-in,
+    // even before onboarding — so every authenticated user is persisted.
+    void identifyMe(userId, {
+      email: user.primaryEmailAddress?.emailAddress ?? null,
+      name: user.fullName ?? null,
+      imageUrl: user.imageUrl ?? null,
+    });
 
     // Push the current local profile to the cloud (no-op if none yet).
     const push = () => {
