@@ -18,10 +18,9 @@ type Item = {
 const ITEMS: Item[] = [
   { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
   { label: "Search", href: "/feed/search", icon: "search" },
-  { label: "Explore", href: "/feed/explore", icon: "compass" },
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
   { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
-  { label: "Milestones", href: "/feed/milestones", icon: "trend" },
+  { label: "Events", href: "/feed/events", icon: "calendar" },
   { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
   { label: "Messages", href: "/feed/messages", icon: "message" },
@@ -119,7 +118,7 @@ export function MobileBars() {
   const me = useCurrentUser();
   const tabs: Item[] = [
     { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
-    { label: "Explore", href: "/feed/explore", icon: "compass" },
+    { label: "Search", href: "/feed/search", icon: "search" },
     { label: "Create", href: "/feed/create", icon: "plusSquare" },
     { label: "Activity", href: "/feed/activity", icon: "heart" },
     { label: "Profile", href: "/feed/you", icon: "home" },

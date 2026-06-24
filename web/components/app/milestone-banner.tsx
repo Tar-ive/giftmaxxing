@@ -15,7 +15,7 @@ export function MilestoneBanner() {
     const meta = CATEGORY_META[ctx.nextUnclaimed.category];
     return (
       <Link
-        href="/feed/milestones?tab=rewards"
+        href="/feed/events?tab=rewards"
         className="block rounded-2xl border border-green-200 bg-green-50 p-4 transition-colors hover:bg-green-100"
       >
         <div className="flex items-center gap-3">
@@ -43,7 +43,7 @@ export function MilestoneBanner() {
   if (ctx.activeCount > 0) {
     return (
       <Link
-        href="/feed/milestones"
+        href="/feed/events"
         className="block rounded-2xl border border-line bg-surface p-4 transition-colors hover:bg-ink/5"
       >
         <div className="flex items-center gap-3">

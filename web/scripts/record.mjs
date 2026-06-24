@@ -25,7 +25,8 @@ const vp = VIEWPORTS[process.env.VIEWPORT || "desktop"] || VIEWPORTS.desktop;
 // Routes to visit in order. Missing/slow routes are skipped, not fatal.
 const ROUTES = [
   "/feed",
-  "/feed/explore",
+  "/feed/search",
+  "/feed/events",
   "/feed/recommendations",
   "/feed/drops",
   "/feed/pools",

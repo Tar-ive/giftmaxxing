@@ -87,7 +87,7 @@ export default function ActivityPage() {
             {it.type === "maxi" ? (
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-coral text-lg">🎁</span>
             ) : it.type === "milestone" ? (
-              <Link href="/feed/milestones">
+              <Link href="/feed/events">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-green-100 text-lg">🏆</span>
               </Link>
             ) : it.type === "drop" ? (
