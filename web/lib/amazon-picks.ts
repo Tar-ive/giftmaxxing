@@ -13,7 +13,12 @@ export type AmazonPick = {
   title?: string;
   brand?: string;
   category?: string;
-  price?: number;
+  blurb?: string; // short description: your own words, or PA-API "Features"
+  image?: string; // primary product image URL — PA-API ONLY, never scraped
+  price?: number; // amount; stored for future use, not rendered (PA-API 24h price rule)
+  currency?: string;
+  priceUpdatedAt?: string; // ISO timestamp the price was fetched (enforces the 24h rule)
+  updatedAt?: string; // ISO timestamp this pick was last enriched
   emoji?: string;
   grad?: Grad;
 };
