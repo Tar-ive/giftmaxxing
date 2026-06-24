@@ -20,7 +20,6 @@ const ITEMS: Item[] = [
   { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
   { label: "Search", href: "/feed/search", icon: "search" },
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
-  { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
   { label: "Events", href: "/feed/events", icon: "calendar" },
   { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
@@ -116,11 +115,9 @@ export function Sidebar() {
 /* Items shown in the mobile "More" drawer (not in the bottom tab bar) */
 const DRAWER_ITEMS: Item[] = [
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
-  { label: "Recs Lab", href: "/feed/recommendations", icon: "sparkle" },
   { label: "Events", href: "/feed/events", icon: "calendar" },
   { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
-  { label: "Notifications", href: "/feed/activity", icon: "heart" },
 ];
 
 /* Mobile top + bottom bars (Instagram mobile web) */
