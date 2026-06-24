@@ -23,6 +23,7 @@ export function EventBanner() {
   if (ctx.occasion) params.set("occasion", ctx.occasion);
   if (ctx.budget) params.set("budget", String(ctx.budget));
   if (ctx.sourceUser) params.set("sourceUser", ctx.sourceUser);
+  if (ctx.recipientName) params.set("name", ctx.recipientName);
   const href = `/feed/ideas${params.toString() ? `?${params.toString()}` : ""}`;
 
   return (

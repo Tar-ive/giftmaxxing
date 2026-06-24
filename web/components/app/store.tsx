@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { type Post } from "@/lib/social";
+import { type Post, type GroupChat, GROUP_CHATS } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
@@ -39,6 +39,13 @@ type Store = {
   openPost: (id: string | null) => void;
   storyIndex: number | null;
   openStory: (i: number | null) => void;
+  // group chats
+  groupChats: GroupChat[];
+  openChatId: string | null;
+  openChat: (id: string | null) => void;
+  sendChatMessage: (chatId: string, text: string) => void;
+  togglePinChat: (chatId: string) => void;
+  togglePinMessage: (chatId: string, messageId: string) => void;
 };
 
 const Ctx = createContext<Store | null>(null);
@@ -61,6 +68,8 @@ export function AppStore({ children }: { children: React.ReactNode }) {
   const [follows, setFollows] = useState<Set<string>>(new Set());
   const [openPostId, setOpenPostId] = useState<string | null>(null);
   const [storyIndex, setStoryIndex] = useState<number | null>(null);
+  const [groupChats, setGroupChats] = useState<GroupChat[]>(GROUP_CHATS);
+  const [openChatId, setOpenChatId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingRef = useRef(false); // guards against duplicate observer fires
@@ -150,6 +159,45 @@ export function AppStore({ children }: { children: React.ReactNode }) {
 
   const isFollowing = useCallback((u: string) => follows.has(u), [follows]);
 
+  const sendChatMessage = useCallback((chatId: string, text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    setGroupChats((prev) =>
+      prev.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              messages: [
+                ...c.messages,
+                { id: `cm-${Date.now()}`, user: "you", text: clean, time: "now" },
+              ],
+            }
+          : c
+      )
+    );
+  }, []);
+
+  const togglePinChat = useCallback((chatId: string) => {
+    setGroupChats((prev) =>
+      prev.map((c) => (c.id === chatId ? { ...c, pinned: !c.pinned } : c))
+    );
+  }, []);
+
+  const togglePinMessage = useCallback((chatId: string, messageId: string) => {
+    setGroupChats((prev) =>
+      prev.map((c) =>
+        c.id === chatId
+          ? {
+              ...c,
+              messages: c.messages.map((m) =>
+                m.id === messageId ? { ...m, pinned: !m.pinned } : m
+              ),
+            }
+          : c
+      )
+    );
+  }, []);
+
   const loadMore = useCallback(() => {
     if (loadingRef.current || !hasMore) return;
     loadingRef.current = true;
@@ -213,8 +261,14 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       openPost: setOpenPostId,
       storyIndex,
       openStory: setStoryIndex,
+      groupChats,
+      openChatId,
+      openChat: setOpenChatId,
+      sendChatMessage,
+      togglePinChat,
+      togglePinMessage,
     }),
-    [posts, follows, toggleLike, toggleSave, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex]
+    [posts, follows, toggleLike, toggleSave, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
