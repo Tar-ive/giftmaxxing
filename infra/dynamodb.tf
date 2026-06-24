@@ -64,6 +64,41 @@ resource "aws_dynamodb_table" "knowledge" {
   }
 }
 
+# ── Milestones ────────────────────────────────────────────────────────────────
+# Self-gifting milestones. PK: userId, SK: milestoneId. Users set personal goals
+# with a reward budget; on completion the user treats themselves or Maxi
+# auto-orders a gift within budget.
+resource "aws_dynamodb_table" "milestones" {
+  name         = "${local.prefix}-milestones"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
+  range_key    = "milestoneId"
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+  attribute {
+    name = "milestoneId"
+    type = "S"
+  }
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "byStatus"
+    hash_key        = "userId"
+    range_key       = "status"
+    projection_type = "ALL"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
 # ── Interactions ─────────────────────────────────────────────────────────────
 # PK: userId, SK: targetId (e.g. "post#p1"). One row per (user, target) so
 # likes/saves are naturally idempotent. `type` holds like|save|comment.
