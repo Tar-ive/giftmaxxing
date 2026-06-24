@@ -18,6 +18,7 @@ import {
   ListVectorsCommand,
 } from "@aws-sdk/client-s3vectors";
 import { BedrockRuntimeClient, InvokeModelCommand, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { classifyPin } from "./quality.mjs";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -128,6 +129,61 @@ function scorePost(p, { vibes = [], recipient, occasion, category, budget, event
   return s;
 }
 
+// ── Feed freshness: per-user de-dup + variety ────────────────────────────────
+// The byFeed GSI is newest-first and deterministic, so every visit used to serve
+// the SAME head items. We (a) start each fresh load at a RANDOM point in the
+// catalog's createdAt range and (b) drop anything the user has already
+// seen/liked/saved — so the feed feels new every visit and never repeats. Bounds
+// are cached (5 min) to avoid two extra reads per request.
+let _feedBounds = { at: 0, min: 0, max: 0 };
+async function getFeedBounds() {
+  const now = Date.now();
+  if (now - _feedBounds.at < 300000 && _feedBounds.max) return _feedBounds;
+  try {
+    const edge = (forward) =>
+      ddb.send(
+        new QueryCommand({
+          TableName: POSTS,
+          IndexName: "byFeed",
+          KeyConditionExpression: "feedPk = :f",
+          ExpressionAttributeValues: { ":f": "all" },
+          ProjectionExpression: "createdAt",
+          ScanIndexForward: forward,
+          Limit: 1,
+        })
+      );
+    const [newest, oldest] = await Promise.all([edge(false), edge(true)]);
+    _feedBounds = {
+      at: now,
+      min: oldest.Items?.[0]?.createdAt ?? 0,
+      max: newest.Items?.[0]?.createdAt ?? now,
+    };
+  } catch (e) {
+    console.warn("getFeedBounds failed (no variety this req):", e.message);
+  }
+  return _feedBounds;
+}
+
+// Every target a user has already interacted with (seen/liked/saved/hidden) so
+// the feed and recs can exclude them. One query on the interactions table.
+async function userExcludeSet(userId) {
+  if (!userId || !INTERACTIONS) return new Set();
+  try {
+    const inter = await ddb.send(
+      new QueryCommand({
+        TableName: INTERACTIONS,
+        KeyConditionExpression: "userId = :u",
+        ExpressionAttributeValues: { ":u": userId },
+        ProjectionExpression: "target",
+      })
+    );
+    return new Set((inter.Items ?? []).map((i) => i.target).filter(Boolean));
+  } catch (e) {
+    console.warn("userExcludeSet failed:", e.message);
+    return new Set();
+  }
+}
+
 // ── Vector recommendations (S3 Vectors) ──────────────────────────────────────
 // Replaces the hand-tuned "taste" term with real embedding similarity: build a
 // taste vector = centroid of the user's seed pin embeddings, then ask the index
@@ -153,16 +209,45 @@ async function getCentroid(keys) {
 
 function vecToItem(v) {
   const m = v.metadata ?? {};
+  // Prefer the REAL outbound product link embedded in the vector metadata; fall
+  // back to the Pinterest pin page for legacy vectors that predate that field.
+  const productUrl = m.link || m.pinUrl || "";
+  const price = typeof m.price === "number" ? m.price : Number(m.price) || 0;
+  const merchant = m.domain || m.sourceUser || "Pinterest";
+  const q = classifyPin({ title: m.title, domain: m.domain, link: productUrl, price });
   return {
     postId: v.key,
     author: m.sourceUser || "pinterest",
     image: m.imageUrl || "",
     s3Key: m.s3Key || "",
     name: m.title || "",
-    link: m.pinUrl || "",
-    source: m.source || "pinterest-rss",
+    contentType: q.contentType,
+    qualityScore: q.qualityScore,
+    feedEligible: q.feedEligible,
+    route: q.route,
+    // url = real product link (feed items use `url`); keep link for back-compat.
+    url: productUrl,
+    link: productUrl,
+    pinUrl: m.pinUrl || "",
+    price,
+    priceDisplay: price > 0 ? `$${price}` : null,
+    merchant,
+    domain: m.domain || "",
+    category: m.category || "",
+    recipient: m.recipient || "anyone",
+    occasion: m.occasion || "any",
+    source: m.source || "pinterest",
     rec: true,
     reason: "Similar to your taste",
+    // Nested product so card components that read item.product render buyable.
+    product: {
+      id: v.key,
+      name: m.title || "",
+      brand: merchant,
+      price,
+      image: m.imageUrl || "",
+      url: productUrl,
+    },
     _score: v.distance != null ? 1 - v.distance : null,
     _distance: v.distance ?? null,
   };
@@ -177,7 +262,8 @@ async function vectorRecommend(seedKeys, { limit, sourceUser }) {
     new QueryVectorsCommand({
       vectorBucketName: VECTOR_BUCKET,
       indexName: VECTOR_INDEX,
-      topK: limit + seedKeys.length,
+      // Over-fetch: the quality filter below drops listicles/guides (~37%).
+      topK: (limit + seedKeys.length) * 3,
       queryVector: { float32: centroid },
       returnMetadata: true,
       returnDistance: true,
@@ -186,8 +272,9 @@ async function vectorRecommend(seedKeys, { limit, sourceUser }) {
   );
   return (out.vectors ?? [])
     .filter((v) => !seen.has(v.key))
-    .slice(0, limit)
-    .map(vecToItem);
+    .map(vecToItem)
+    .filter((it) => it.feedEligible)
+    .slice(0, limit);
 }
 
 // Server-side mirror of web/lib/events.ts date math: whole days until an event's
@@ -1005,32 +1092,83 @@ export const handler = async (event) => {
         eventBoost: Number(qs.eventBoost) || 0,
       };
 
-      // Preferred path: read ONE recency-ordered page from the byFeed GSI
-      // (PK feedPk="all", SK createdAt) instead of scanning the whole table —
-      // this is what lets the feed scale past a few hundred posts. Facets are
-      // hard-filtered; the returned page is then ranked by scorePost().
+      // Per-user de-dup: skip anything this viewer has already seen/liked/saved.
+      const exclude = await userExcludeSet(qs.userId);
+
+      // Preferred path: read a recency-ordered page from the byFeed GSI (PK
+      // feedPk="all", SK createdAt) instead of scanning the whole table. Facets
+      // are hard-filtered; the page is ranked by scorePost() + qualityScore.
       try {
         const eav = { ":f": "all" };
         const filters = [];
         if (qs.recipient && qs.recipient !== "anyone") { filters.push("recipient = :r"); eav[":r"] = qs.recipient; }
         if (qs.occasion && qs.occasion !== "any") { filters.push("occasion = :o"); eav[":o"] = qs.occasion; }
         if (qs.category) { filters.push("category = :c"); eav[":c"] = qs.category; }
-        const out = await ddb.send(
-          new QueryCommand({
-            TableName: POSTS,
-            IndexName: "byFeed",
-            KeyConditionExpression: "feedPk = :f",
-            ExpressionAttributeValues: eav,
-            FilterExpression: filters.length ? filters.join(" AND ") : undefined,
-            ScanIndexForward: false, // newest first
-            Limit: filters.length ? 150 : limit, // over-read when filtering
-            ExclusiveStartKey: start,
-          })
-        );
-        const ranked = (out.Items ?? [])
-          .map((p) => ({ ...p, _score: scorePost(p, opts) }))
-          .sort((a, b) => b._score - a._score);
-        return json(200, { items: ranked, cursor: encodeCursor(out.LastEvaluatedKey) });
+        // Over-read: the quality + de-dup filters below remove listicles/guides
+        // (~37%) and already-seen items, so fetch a wider window than the page.
+        const fetchN = filters.length ? 150 : Math.min(Math.max(limit * 4, 80), 150);
+        // Variety: on a fresh (uncursored, unfiltered) load, jump to a RANDOM
+        // spot in the catalog instead of always the newest head. Paginated loads
+        // (cursor present) continue deterministically from there.
+        let kce = "feedPk = :f";
+        if (!start && !filters.length && qs.fresh !== "0") {
+          const b = await getFeedBounds();
+          if (b.max > b.min) {
+            eav[":seek"] = b.min + Math.floor((0.1 + Math.random() * 0.9) * (b.max - b.min));
+            kce = "feedPk = :f AND createdAt <= :seek";
+          }
+        }
+        const runQuery = (keyCond, startKey) =>
+          ddb.send(
+            new QueryCommand({
+              TableName: POSTS,
+              IndexName: "byFeed",
+              KeyConditionExpression: keyCond,
+              ExpressionAttributeValues: eav,
+              FilterExpression: filters.length ? filters.join(" AND ") : undefined,
+              ScanIndexForward: false, // newest first
+              Limit: fetchN,
+              ExclusiveStartKey: startKey,
+            })
+          );
+        // Fill a full page of feed-eligible products, reading more GSI pages as
+        // needed. The random-seek entry point can land in a listicle/gift-guide
+        // cluster (those boards are adjacent in createdAt) that filters out almost
+        // entirely, so a single page can come back empty — keep walking the older
+        // range (then wrap to the newest head once) until we reach `limit`. Keeps
+        // only single buyable products; qualityScore boosts priced/retailer items.
+        const eligible = [];
+        const picked = new Set();
+        const take = (items) => {
+          for (const p of items ?? []) {
+            if (picked.has(p.postId) || exclude.has(p.postId)) continue;
+            const q = classifyPin({ title: p.caption ?? p.product?.name, domain: p.domain ?? p.merchant, link: p.url ?? p.productUrl, price: p.price ?? p.product?.price });
+            if (!q.feedEligible) continue;
+            picked.add(p.postId);
+            eligible.push({ ...p, contentType: q.contentType, qualityScore: q.qualityScore, feedEligible: true, _score: scorePost(p, opts) + q.qualityScore * 0.4 });
+          }
+        };
+        // First read the random variety window (or, when paginating, the cursor
+        // page). If a FRESH load under-fills — the seek landed in a listicle
+        // cluster — top up from the product-dense NEWEST head instead of walking
+        // deeper into the (older, listicle-heavy) tail. Cursor pages just walk LEK.
+        let lastKey = start;
+        let toppedUp = false;
+        for (let attempt = 0; attempt < 6 && eligible.length < limit; attempt++) {
+          const out = await runQuery(kce, lastKey);
+          take(out.Items);
+          lastKey = out.LastEvaluatedKey;
+          if (eav[":seek"]) { delete eav[":seek"]; kce = "feedPk = :f"; } // seek = entry only
+          if (eligible.length >= limit) break;
+          if (!start && !toppedUp) {
+            toppedUp = true;
+            lastKey = undefined;  // jump to the newest (product-dense) head
+            continue;
+          }
+          if (!lastKey) break;    // reached the end of the range
+        }
+        eligible.sort((a, b) => b._score - a._score);
+        return json(200, { items: eligible.slice(0, limit), cursor: encodeCursor(lastKey) });
       } catch (err) {
         // byFeed GSI not deployed yet (or transient error) -> legacy fallback.
         console.warn("byFeed query failed, falling back to full scan:", err.message);
@@ -1048,7 +1186,9 @@ export const handler = async (event) => {
         scanKey = out.LastEvaluatedKey;
       } while (scanKey);
       const ranked = allItems
-        .map((p) => ({ ...p, _score: scorePost(p, opts) }))
+        .map((p) => ({ p, q: classifyPin({ title: p.caption ?? p.product?.name, domain: p.domain ?? p.merchant, link: p.url ?? p.productUrl, price: p.price ?? p.product?.price }) }))
+        .filter((x) => x.q.feedEligible && !exclude.has(x.p.postId))
+        .map(({ p, q }) => ({ ...p, contentType: q.contentType, qualityScore: q.qualityScore, _score: scorePost(p, opts) + q.qualityScore * 0.4 }))
         .sort((a, b) => b._score - a._score);
       const offset = start?._offset ?? 0;
       const page = ranked.slice(offset, offset + limit);
@@ -1101,7 +1241,7 @@ export const handler = async (event) => {
           returnMetadata: true,
         })
       );
-      const items = (out.vectors ?? []).map(vecToItem);
+      const items = (out.vectors ?? []).map(vecToItem).filter((it) => it.feedEligible);
       return json(200, { items });
     }
 
@@ -1125,14 +1265,14 @@ export const handler = async (event) => {
         new QueryVectorsCommand({
           vectorBucketName: VECTOR_BUCKET,
           indexName: VECTOR_INDEX,
-          topK: limit,
+          topK: limit * 3, // over-fetch; quality filter drops listicles/guides
           queryVector: { float32: queryVector },
           returnMetadata: true,
           returnDistance: true,
           filter: body.sourceUser ? { sourceUser: { $eq: body.sourceUser } } : undefined,
         })
       );
-      const items = (out.vectors ?? []).map(vecToItem);
+      const items = (out.vectors ?? []).map(vecToItem).filter((it) => it.feedEligible).slice(0, limit);
       return json(200, { items, source: "visual" });
     }
 
@@ -1208,7 +1348,9 @@ export const handler = async (event) => {
       const out = await ddb.send(new ScanCommand(scan));
       const items = (out.Items ?? [])
         .filter((p) => !likedTargets.has(p.postId) && p.author !== userId)
-        .map((p) => ({ ...p, _score: scorePost(p, opts) }))
+        .map((p) => ({ p, q: classifyPin({ title: p.caption ?? p.product?.name, domain: p.domain ?? p.merchant, link: p.url ?? p.productUrl, price: p.price ?? p.product?.price }) }))
+        .filter((x) => x.q.feedEligible)
+        .map(({ p, q }) => ({ ...p, contentType: q.contentType, qualityScore: q.qualityScore, _score: scorePost(p, opts) + q.qualityScore * 0.4 }))
         .sort((a, b) => b._score - a._score)
         .slice(0, limit);
 
