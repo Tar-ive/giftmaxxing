@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
+import { AuthConsent } from "@/components/app/auth-consent";
 
 // The sign-in card on the invite reveal. The gift set is a preview; a real
 // account (Clerk) is required to "claim" it and enter the app. Once a guest who
@@ -46,6 +47,7 @@ export function GuestClaimCard({ inviterName }: { inviterName: string }) {
       <p className="mt-3 text-[11px] text-ink-faint">
         {inviterName} already has your taste saved — signing up is just for you.
       </p>
+      <AuthConsent />
     </div>
   );
 }

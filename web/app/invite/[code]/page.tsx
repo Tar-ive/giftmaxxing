@@ -12,6 +12,7 @@ import { GRADIENTS } from "@/lib/data";
 import { shortTitle } from "@/lib/feed-builder";
 import { type Pin } from "@/lib/pins";
 import { GuestClaimCard } from "@/components/app/guest-claim-card";
+import { PoolInvite } from "@/components/app/pool-invite";
 import { EVENT_TYPE_META, type EventType, parseISODate } from "@/lib/events";
 
 const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
@@ -102,6 +103,11 @@ export default function InvitePage() {
         </button>
       </div>
     );
+  }
+
+  // ── Group-gift invite — show the pool, require sign-in + consent to chip in ─
+  if (invite.pool) {
+    return <PoolInvite invite={invite} />;
   }
 
   // ── Welcome phase ─────────────────────────────────────────────────────────
