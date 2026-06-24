@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { SwipeDeck } from "@/components/app/swipe-deck";
 import { ShareSheet } from "@/components/app/share-sheet";
 import { Icons } from "@/components/ui";
@@ -11,12 +12,24 @@ import { buildInviteUrl } from "@/lib/invite";
 import { EVENT_TYPE_META, type EventType } from "@/lib/events";
 
 export default function SwipePage() {
+  return (
+    <Suspense fallback={null}>
+      <SwipeInner />
+    </Suspense>
+  );
+}
+
+function SwipeInner() {
+  const params = useSearchParams();
   const me = useCurrentUser();
   const firstName = me.name !== "You" ? me.name.split(/\s+/)[0] : null;
   const [senderId, setSenderId] = useState<string | null>(null);
-  const [to, setTo] = useState("");
-  const [occasion, setOccasion] = useState<EventType>("birthday");
-  const [date, setDate] = useState("");
+  const [to, setTo] = useState(() => params.get("to") ?? "");
+  const [occasion, setOccasion] = useState<EventType>(() => {
+    const q = params.get("occasion");
+    return q && q in EVENT_TYPE_META ? (q as EventType) : "birthday";
+  });
+  const [date, setDate] = useState(() => params.get("date") ?? "");
 
   useEffect(() => {
     // Read the stashed Clerk userId after mount (SSR-safe).

@@ -18,6 +18,7 @@ export function EventBanner() {
   const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
 
   const params = new URLSearchParams();
+  if (ctx.recipientId) params.set("rid", ctx.recipientId);
   if (ctx.recipient) params.set("recipient", ctx.recipient);
   if (ctx.occasion) params.set("occasion", ctx.occasion);
   if (ctx.budget) params.set("budget", String(ctx.budget));

@@ -210,6 +210,8 @@ export type FeedEventContext = {
   eventInDays?: number;
   eventBoost?: number; // 0..1, 1 = imminent
   recipientName?: string;
+  recipientId?: string; // the saved Recipient.id (deep-links Shop gifts to them)
+  interests?: string[]; // the recipient's interest tags (for personalized picks)
   eventType?: EventType;
 };
 
@@ -236,6 +238,8 @@ export function feedContextFromEvents(
     eventInDays: days,
     eventBoost,
     recipientName: r?.name,
+    recipientId: r?.id,
+    interests: r?.interests,
     eventType: next.type,
   };
 }

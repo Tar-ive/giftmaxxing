@@ -15,8 +15,12 @@ import {
   type RecipientKnowledge,
   type RecipientSummary,
 } from "@/lib/ideas";
+import { RecipientShopHeader } from "@/components/app/recipient-shop-header";
 
-export function IdeasExplorer({ initialRecipient }: { initialRecipient?: string } = {}) {
+export function IdeasExplorer({
+  initialRecipient,
+  recipientId,
+}: { initialRecipient?: string; recipientId?: string } = {}) {
   const [recipients, setRecipients] = useState<RecipientSummary[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [data, setData] = useState<RecipientKnowledge | null>(null);
@@ -26,6 +30,7 @@ export function IdeasExplorer({ initialRecipient }: { initialRecipient?: string 
   // Load the recipient picker once, then auto-select the most-discussed one.
   useEffect(() => {
     if (!isApiConfigured()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setError("Connect the knowledge API (NEXT_PUBLIC_API_URL) to explore gift ideas.");
       return;
     }
@@ -55,6 +60,7 @@ export function IdeasExplorer({ initialRecipient }: { initialRecipient?: string 
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingIdeas(true);
     (async () => {
       try {
@@ -73,20 +79,33 @@ export function IdeasExplorer({ initialRecipient }: { initialRecipient?: string 
 
   return (
     <div className="mx-auto max-w-5xl px-3 py-7 sm:px-5">
+      {recipientId && <RecipientShopHeader recipientId={recipientId} />}
+
       {/* Heading */}
-      <header className="mb-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/70 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
-          <Icons.sparkle size={14} className="text-coral" />
-          Mined from real Reddit gift discussions
-        </div>
-        <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
-          Who are you shopping for?
-        </h1>
-        <p className="mt-1.5 max-w-xl text-sm text-ink-soft">
-          Pick a person to see the gift ideas people actually recommend for them — and the
-          combos that get suggested together.
-        </p>
-      </header>
+      {recipientId ? (
+        <header className="mb-4">
+          <h2 className="font-display text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
+            More ideas people recommend
+          </h2>
+          <p className="mt-1 max-w-xl text-sm text-ink-soft">
+            Real gift threads from Reddit — browse by relationship if you want more.
+          </p>
+        </header>
+      ) : (
+        <header className="mb-6">
+          <div className="inline-flex items-center gap-2 rounded-full border border-line bg-surface/70 px-3 py-1 text-xs font-semibold text-ink-soft backdrop-blur">
+            <Icons.sparkle size={14} className="text-coral" />
+            Mined from real Reddit gift discussions
+          </div>
+          <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">
+            Who are you shopping for?
+          </h1>
+          <p className="mt-1.5 max-w-xl text-sm text-ink-soft">
+            Pick a person to see the gift ideas people actually recommend for them — and the
+            combos that get suggested together.
+          </p>
+        </header>
+      )}
 
       {/* Recipient picker */}
       {error && !recipients ? (

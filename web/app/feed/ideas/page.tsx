@@ -10,7 +10,8 @@ import { IdeasExplorer } from "@/components/app/ideas-explorer";
 function IdeasPageInner() {
   const params = useSearchParams();
   const recipient = params.get("recipient") ?? undefined;
-  return <IdeasExplorer initialRecipient={recipient} />;
+  const recipientId = params.get("rid") ?? undefined;
+  return <IdeasExplorer initialRecipient={recipient} recipientId={recipientId} />;
 }
 
 export default function IdeasPage() {

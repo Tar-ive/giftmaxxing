@@ -12,8 +12,18 @@ import { GRADIENTS } from "@/lib/data";
 import { shortTitle } from "@/lib/feed-builder";
 import { type Pin } from "@/lib/pins";
 import { GuestClaimCard } from "@/components/app/guest-claim-card";
+import { EVENT_TYPE_META, type EventType, parseISODate } from "@/lib/events";
 
 const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Format a sender-set event date ("YYYY-MM-DD") as e.g. "Jun 30" for the invite.
+function formatInviteDate(iso?: string): string | null {
+  if (!iso) return null;
+  const p = parseISODate(iso);
+  return p ? `${MONTHS[p.m - 1]} ${p.d}` : null;
+}
 
 // ── Phases ──────────────────────────────────────────────────────────────────
 type Phase = "welcome" | "swipe" | "reveal";
@@ -25,6 +35,15 @@ export default function InvitePage() {
 
   const invite = useMemo(() => decodeInvite(code), [code]);
   const inviterName = invite?.name ?? "Someone";
+
+  // The sender can carry the occasion + date in the link, so the invite feels
+  // personal ("for your birthday") and shows they know the date.
+  const occasionMeta =
+    invite?.occasion && invite.occasion in EVENT_TYPE_META
+      ? EVENT_TYPE_META[invite.occasion as EventType]
+      : null;
+  const occasionLabel = occasionMeta?.label.toLowerCase();
+  const eventDateStr = formatInviteDate(invite?.date);
 
   const [phase, setPhase] = useState<Phase>("welcome");
   const [results, setResults] = useState<Pin[]>([]);
@@ -93,9 +112,19 @@ export default function InvitePage() {
         <h1 className="mt-6 text-center font-display text-3xl font-extrabold leading-tight text-ink sm:text-4xl">
           {inviterName} wants to find<br />your perfect gift
         </h1>
+        {occasionMeta && (
+          <span className="mt-4 inline-flex items-center gap-2 rounded-full bg-coral-soft px-3.5 py-1.5 text-sm font-bold text-coral">
+            <span>{occasionMeta.emoji}</span>
+            <span>
+              {occasionMeta.label}
+              {eventDateStr ? ` · ${eventDateStr}` : ""}
+            </span>
+          </span>
+        )}
         <p className="mx-auto mt-3 max-w-md text-center text-ink-soft">
-          Swipe on gift ideas so {inviterName} knows exactly what you&apos;d love. No
-          sign-up, no forms &mdash; just swipe!
+          {occasionLabel
+            ? `${inviterName} wants to give you something special for your ${occasionLabel}. Swipe a few ideas so they know exactly what you'd love.`
+            : `Swipe on gift ideas so ${inviterName} knows exactly what you'd love. No sign-up, no forms, just swipe!`}
         </p>
         <button
           onClick={startSwiping}
@@ -105,8 +134,7 @@ export default function InvitePage() {
         </button>
         <p className="mt-4 text-xs text-ink-faint">Takes less than a minute</p>
         <p className="mx-auto mt-3 max-w-xs text-center text-[11px] leading-relaxed text-ink-faint">
-          Swiping shares your gift taste with {inviterName} so they can gift you &mdash; no
-          account or personal details needed.{" "}
+          {`Swiping shares your gift taste with ${inviterName} so they can gift you. No account or personal details needed. `}
           <a href="/privacy#recipient" className="underline hover:text-ink">
             How we use this
           </a>
@@ -150,10 +178,13 @@ export default function InvitePage() {
             <Icons.gift size={44} />
           </div>
           <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-ink">
-            {guestFirst !== "Friend" ? `${guestFirst}, your` : "Your"} gift set is ready
+            {guestFirst !== "Friend" ? `${guestFirst}, your` : "Your"}
+            {occasionLabel ? ` ${occasionLabel}` : ""} gift set is ready
           </h2>
           <p className="mx-auto mt-2 max-w-sm text-ink-soft">
-            Based on your swipes, here&apos;s what {inviterName} can shop from.
+            {occasionLabel
+              ? `Based on your swipes, here's what ${inviterName} can shop from for your ${occasionLabel}.`
+              : `Based on your swipes, here's what ${inviterName} can shop from.`}
           </p>
         </div>
 

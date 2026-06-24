@@ -166,19 +166,35 @@ export default function OnboardingPage() {
       recurrence: Recurrence;
       reminderLeadDays: number;
       budget?: number;
+      interests?: string[];
     }) => {
       const key = (n: string, rel: string) => `${n.trim().toLowerCase()}|${rel}`;
+      const cleanInterests = (input.interests ?? []).filter(Boolean);
       const existing = recipients.find(
         (r) => key(r.name, r.relation) === key(input.recipientName, input.relation),
       );
       let recipientId: string;
       if (existing) {
         recipientId = existing.id;
+        // Merge any newly-picked interests into the existing recipient.
+        if (cleanInterests.length > 0) {
+          setRecipients((prev) =>
+            prev.map((r) =>
+              r.id === existing.id
+                ? {
+                    ...r,
+                    interests: Array.from(new Set([...(r.interests ?? []), ...cleanInterests])),
+                  }
+                : r,
+            ),
+          );
+        }
       } else {
         const newR: Recipient = {
           id: genId("rcp"),
           name: input.recipientName.trim(),
           relation: input.relation,
+          ...(cleanInterests.length > 0 ? { interests: cleanInterests } : {}),
         };
         recipientId = newR.id;
         setRecipients((prev) => [...prev, newR]);
@@ -856,6 +872,7 @@ function StepEvents({
     recurrence: Recurrence;
     reminderLeadDays: number;
     budget?: number;
+    interests?: string[];
   }) => void;
   onRemove: (id: string) => void;
 } & StepProps) {
@@ -866,6 +883,15 @@ function StepEvents({
   const [recurrence, setRecurrence] = useState<Recurrence>("annual");
   const [budget, setBudget] = useState("");
   const [lead, setLead] = useState(7);
+  const [rInterests, setRInterests] = useState<Set<InterestTag>>(new Set());
+
+  const toggleInterest = (tag: InterestTag) =>
+    setRInterests((prev) => {
+      const next = new Set(prev);
+      if (next.has(tag)) next.delete(tag);
+      else next.add(tag);
+      return next;
+    });
 
   const recById = useMemo(
     () => Object.fromEntries(recipients.map((r) => [r.id, r])),
@@ -883,10 +909,12 @@ function StepEvents({
       recurrence,
       reminderLeadDays: lead,
       budget: budget ? Number(budget) : undefined,
+      interests: Array.from(rInterests),
     });
     setRName("");
     setDate("");
     setBudget("");
+    setRInterests(new Set());
   };
 
   const fieldCls =
@@ -1017,6 +1045,35 @@ function StepEvents({
                 placeholder="optional"
                 className={fieldCls}
               />
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <label className={labelCls}>
+              What is {rName.trim() ? rName.trim().split(/\s+/)[0] : "they"} into?{" "}
+              <span className="font-normal normal-case tracking-normal text-ink-faint">
+                (optional — powers their gift picks)
+              </span>
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {(Object.keys(INTEREST_META) as InterestTag[]).map((tag) => {
+                const on = rInterests.has(tag);
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleInterest(tag)}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                      on
+                        ? "border-coral bg-coral text-white"
+                        : "border-line bg-cream text-ink-soft hover:border-ink/20"
+                    }`}
+                  >
+                    <span>{INTEREST_META[tag].emoji}</span>
+                    {INTEREST_META[tag].label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
