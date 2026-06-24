@@ -456,7 +456,46 @@ async function captureConnection(item) {
 // the SAME data the rest of the API serves, then return { say, pins, actions }.
 // Long-term memory lives as MEM# items in the graph table (pk=userId) and is
 // invisible to GET /graph (which only returns kind node|edge).
-const MAXI_MODEL_ID = process.env.MAXI_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+// ── Maxi model router ───────────────────────────────────────────────────
+// Two Bedrock tiers, chosen per request to keep cost low:
+//   • BASE (default): Amazon's own model (Nova) — cheapest; handles browsing,
+//     gift discovery, taste chat, and Q&A.
+//   • SHOPPING: a stronger model (Claude Haiku) — used when an AGENTIC SHOPPING
+//     experience is triggered (the user wants to add to cart / buy / checkout, or
+//     the agent itself reaches for a cart/checkout tool mid-loop), where reliable
+//     multi-step tool orchestration matters more than raw token price.
+const MAXI_BASE_MODEL_ID = process.env.MAXI_BASE_MODEL_ID || "us.amazon.nova-lite-v1:0";
+const MAXI_SHOPPING_MODEL_ID =
+  process.env.MAXI_SHOPPING_MODEL_ID || process.env.MAXI_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+
+// Tools that, once the agent reaches for them, mean we're in a shopping flow.
+const MAXI_SHOPPING_TOOLS = new Set(["add_to_cart", "checkout"]);
+
+// Transactional intent in the user's message. Mirrors the offline responder's
+// regexes (web/lib/maxi.ts) so the router and the fallback agree on "shopping".
+const MAXI_SHOPPING_INTENT_RE = new RegExp(
+  [
+    "check\\s?out",
+    "place (an |the |my )?order",
+    "order now",
+    "buy\\b",
+    "purchase",
+    "complete (my )?(purchase|order)",
+    "pay( now)?",
+    "add .*(cart|basket)",
+    "add (it|that|this|these|them|the first|the second|the third|one|two|three|all)\\b",
+    "(my|the) (cart|basket)",
+    "add to cart",
+  ].join("|"),
+  "i"
+);
+
+// Pick the tier for a request: an explicit client signal wins, otherwise sniff
+// transactional intent from the latest user message.
+function maxiIsShopping(userText, body) {
+  if (body && (body.mode === "shopping" || body.agentic === true || body.shopping === true)) return true;
+  return MAXI_SHOPPING_INTENT_RE.test(String(userText || ""));
+}
 
 // ── Maxi budgets (token-per-interaction + monthly Bedrock $ cap) ─────────────
 // Per-INTERACTION: maxTokens caps output per model call; MAXI_INTERACTION_TOKEN_
@@ -469,12 +508,28 @@ const MAXI_MAX_TOKENS = Number(process.env.MAXI_MAX_TOKENS || 768);
 const MAXI_INTERACTION_TOKEN_BUDGET = Number(process.env.MAXI_INTERACTION_TOKEN_BUDGET || 30000);
 const MAXI_MAX_STEPS = Number(process.env.MAXI_MAX_STEPS || 5);
 const MAXI_MONTHLY_BUDGET_USD = Number(process.env.MAXI_MONTHLY_BUDGET_USD || 25);
-const MAXI_PRICE_IN_PER_1M = Number(process.env.MAXI_PRICE_IN_PER_1M || 1.0);
-const MAXI_PRICE_OUT_PER_1M = Number(process.env.MAXI_PRICE_OUT_PER_1M || 5.0);
+// Per-tier Bedrock prices (USD per 1M tokens) so the monthly $ budget stays
+// accurate even when one interaction spans both models. BASE defaults to Amazon
+// Nova Lite; SHOPPING falls back to the legacy MAXI_PRICE_* (Haiku) numbers.
+// VERIFY all four against current Bedrock pricing.
+const MAXI_BASE_PRICE_IN_PER_1M = Number(process.env.MAXI_BASE_PRICE_IN_PER_1M || 0.06);
+const MAXI_BASE_PRICE_OUT_PER_1M = Number(process.env.MAXI_BASE_PRICE_OUT_PER_1M || 0.24);
+const MAXI_SHOPPING_PRICE_IN_PER_1M = Number(
+  process.env.MAXI_SHOPPING_PRICE_IN_PER_1M || process.env.MAXI_PRICE_IN_PER_1M || 1.0
+);
+const MAXI_SHOPPING_PRICE_OUT_PER_1M = Number(
+  process.env.MAXI_SHOPPING_PRICE_OUT_PER_1M || process.env.MAXI_PRICE_OUT_PER_1M || 5.0
+);
 
 const maxiMonthKey = () => `maxi-budget#${new Date().toISOString().slice(0, 7)}`;
-const maxiCostUsd = (inTok, outTok) =>
-  ((Number(inTok) || 0) / 1e6) * MAXI_PRICE_IN_PER_1M + ((Number(outTok) || 0) / 1e6) * MAXI_PRICE_OUT_PER_1M;
+
+// Cost of a single model call, priced by the model that actually served it.
+function maxiStepCostUsd(modelId, inTok, outTok) {
+  const shopping = modelId === MAXI_SHOPPING_MODEL_ID;
+  const pin = shopping ? MAXI_SHOPPING_PRICE_IN_PER_1M : MAXI_BASE_PRICE_IN_PER_1M;
+  const pout = shopping ? MAXI_SHOPPING_PRICE_OUT_PER_1M : MAXI_BASE_PRICE_OUT_PER_1M;
+  return ((Number(inTok) || 0) / 1e6) * pin + ((Number(outTok) || 0) / 1e6) * pout;
+}
 
 // Month-to-date Maxi Bedrock spend (USD). Fail-open to 0 so a read error never
 // blocks Maxi (the per-interaction token cap still bounds any single call).
@@ -490,7 +545,7 @@ async function maxiSpentThisMonth() {
 }
 
 // Atomically add this interaction's usage to the month's counter (best-effort).
-async function recordMaxiUsage(inTok, outTok) {
+async function recordMaxiUsage(inTok, outTok, costUsd) {
   if (!CONFIG) return;
   try {
     await ddb.send(
@@ -500,7 +555,7 @@ async function recordMaxiUsage(inTok, outTok) {
         UpdateExpression: "SET updatedAt = :now ADD spentUsd :c, tokensIn :i, tokensOut :o",
         ExpressionAttributeValues: {
           ":now": Date.now(),
-          ":c": maxiCostUsd(inTok, outTok),
+          ":c": Number(costUsd) || 0,
           ":i": Number(inTok) || 0,
           ":o": Number(outTok) || 0,
         },
@@ -1522,14 +1577,19 @@ export const handler = async (event) => {
         })),
       };
       const tctx = { userId, pins: [], actions: [] };
+      // Model routing: cheap Amazon Nova by default; Claude Haiku once an agentic
+      // shopping experience is triggered (intent now, or a cart/checkout tool below).
+      let isShopping = maxiIsShopping(userText, body);
+      let modelId = isShopping ? MAXI_SHOPPING_MODEL_ID : MAXI_BASE_MODEL_ID;
       let say = "";
       let usedIn = 0;
       let usedOut = 0;
+      let usedCost = 0;
       try {
         for (let step = 0; step < MAXI_MAX_STEPS; step++) {
           const res = await bedrock.send(
             new ConverseCommand({
-              modelId: MAXI_MODEL_ID,
+              modelId,
               system: [{ text: sys }],
               messages,
               toolConfig,
@@ -1537,8 +1597,11 @@ export const handler = async (event) => {
             })
           );
           // Per-interaction token budget: sum usage across the tool-use loop.
-          usedIn += res.usage?.inputTokens || 0;
-          usedOut += res.usage?.outputTokens || 0;
+          const stepIn = res.usage?.inputTokens || 0;
+          const stepOut = res.usage?.outputTokens || 0;
+          usedIn += stepIn;
+          usedOut += stepOut;
+          usedCost += maxiStepCostUsd(modelId, stepIn, stepOut);
           const overTokenBudget = usedIn + usedOut >= MAXI_INTERACTION_TOKEN_BUDGET;
           const msg = res.output?.message;
           if (msg) messages.push(msg);
@@ -1547,6 +1610,13 @@ export const handler = async (event) => {
           if (textOut) say = textOut;
           const toolUses = blocks.filter((b) => b.toolUse).map((b) => b.toolUse);
           if (res.stopReason === "tool_use" && toolUses.length && !overTokenBudget) {
+            // Agentic-shopping trigger: if the agent reaches for a cart/checkout
+            // tool while still on the cheap base model, escalate the rest of the
+            // loop (incl. the order-confirmation turn) to the shopping model.
+            if (!isShopping && toolUses.some((tu) => MAXI_SHOPPING_TOOLS.has(tu.name))) {
+              isShopping = true;
+              modelId = MAXI_SHOPPING_MODEL_ID;
+            }
             const results = [];
             for (const tu of toolUses) {
               let out;
@@ -1574,9 +1644,12 @@ export const handler = async (event) => {
       }
 
       // Bill this interaction's Bedrock usage to the monthly budget counter.
-      await recordMaxiUsage(usedIn, usedOut);
-      const costUsd = maxiCostUsd(usedIn, usedOut);
-      console.log("maxi usage", JSON.stringify({ userId, usedIn, usedOut, costUsd }));
+      await recordMaxiUsage(usedIn, usedOut, usedCost);
+      const costUsd = usedCost;
+      console.log(
+        "maxi usage",
+        JSON.stringify({ userId, tier: isShopping ? "shopping" : "base", model: modelId, usedIn, usedOut, costUsd })
+      );
 
       const seen = new Set();
       const pins = tctx.pins

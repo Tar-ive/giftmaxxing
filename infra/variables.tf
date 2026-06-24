@@ -47,8 +47,23 @@ variable "api_reserved_concurrency" {
   default     = -1
 }
 
+variable "maxi_base_model_id" {
+  description = "Bedrock model / inference-profile id for Maxi's BASE (default) tier — the cheapest option, used for browsing, gift discovery, taste chat, and Q&A. Default = Amazon Nova Lite (us cross-region inference profile)."
+  type        = string
+  default     = "us.amazon.nova-lite-v1:0"
+}
+
+variable "maxi_shopping_model_id" {
+  description = "Bedrock model / inference-profile id for Maxi's SHOPPING tier — used when an agentic shopping experience (add-to-cart / buy / checkout) is triggered. Default = Claude Haiku 4.5 (us cross-region inference profile)."
+  type        = string
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
+
+# DEPRECATED alias kept for back-compat: maps to env MAXI_MODEL_ID, which the
+# handler now uses ONLY as a fallback for maxi_shopping_model_id. Prefer the two
+# tier-specific vars above.
 variable "maxi_model_id" {
-  description = "Bedrock model / inference-profile id Maxi (the gift concierge) invokes via the Converse API. Default = the Claude Haiku 4.5 us cross-region inference profile."
+  description = "DEPRECATED — legacy single-model id. Now only a fallback for maxi_shopping_model_id (env MAXI_MODEL_ID). Prefer maxi_base_model_id + maxi_shopping_model_id."
   type        = string
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
@@ -78,22 +93,44 @@ variable "maxi_monthly_budget_usd" {
   default     = 25
 }
 
+# Maxi SHOPPING-tier (Haiku) prices. Fed to the handler as both the legacy
+# MAXI_PRICE_* and the MAXI_SHOPPING_PRICE_* envs.
 variable "maxi_price_in_per_1m" {
-  description = "Bedrock price (USD) per 1M INPUT tokens for the Maxi model, used to estimate spend vs maxi_monthly_budget_usd. VERIFY against current Bedrock pricing for Claude Haiku 4.5."
+  description = "Bedrock price (USD) per 1M INPUT tokens for Maxi's SHOPPING model (Haiku), used to estimate spend vs maxi_monthly_budget_usd. VERIFY against current Bedrock pricing for Claude Haiku 4.5."
   type        = number
   default     = 1.0
 }
 
 variable "maxi_price_out_per_1m" {
-  description = "Bedrock price (USD) per 1M OUTPUT tokens for the Maxi model. VERIFY against current Bedrock pricing for Claude Haiku 4.5."
+  description = "Bedrock price (USD) per 1M OUTPUT tokens for Maxi's SHOPPING model (Haiku). VERIFY against current Bedrock pricing for Claude Haiku 4.5."
   type        = number
   default     = 5.0
+}
+
+# Maxi BASE-tier (Nova) prices for accurate monthly $ accounting when a request
+# stays on the cheap default model.
+variable "maxi_base_price_in_per_1m" {
+  description = "Bedrock price (USD) per 1M INPUT tokens for Maxi's BASE model (Amazon Nova Lite). VERIFY against current Bedrock Nova pricing."
+  type        = number
+  default     = 0.06
+}
+
+variable "maxi_base_price_out_per_1m" {
+  description = "Bedrock price (USD) per 1M OUTPUT tokens for Maxi's BASE model (Amazon Nova Lite). VERIFY against current Bedrock Nova pricing."
+  type        = number
+  default     = 0.24
 }
 
 variable "alarm_bedrock_invocations_5min" {
   description = "Real-time tripwire: trip the kill switch if Bedrock (Titan) invocations exceed this in a 5-min window. Tune to your normal visual-search volume."
   type        = number
   default     = 500
+}
+
+variable "alarm_maxi_invocations_5min" {
+  description = "Real-time tripwire: trip the kill switch if Maxi (Bedrock Converse) invocations exceed this in a 5-min window, summed PER ModelId. Catches a runaway tool-use loop or traffic spike. Tune to expected Maxi chat volume (each interaction = up to maxi_max_steps model calls)."
+  type        = number
+  default     = 300
 }
 
 variable "alarm_api_requests_5min" {
