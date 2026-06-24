@@ -12,8 +12,14 @@ function IdeasPageInner() {
   const recipient = params.get("recipient") ?? undefined;
   const recipientId = params.get("rid") ?? undefined;
   const connectionId = params.get("cid") ?? undefined;
+  const recipientName = params.get("name") ?? undefined;
   return (
-    <IdeasExplorer initialRecipient={recipient} recipientId={recipientId} connectionId={connectionId} />
+    <IdeasExplorer
+      initialRecipient={recipient}
+      recipientId={recipientId}
+      connectionId={connectionId}
+      recipientName={recipientName}
+    />
   );
 }
 

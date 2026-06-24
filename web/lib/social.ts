@@ -144,6 +144,114 @@ export const STORIES: Story[] = [
   { id: "s_remy", user: "remy", label: "Remy", kind: "event" },
 ];
 
+// Group chats for coordinating gifts (replaces stories in the tray).
+export type ChatMessage = {
+  id: string;
+  user: string;
+  text: string;
+  time: string;
+  pinned?: boolean;
+};
+
+export type GroupChat = {
+  id: string;
+  forUser: string; // who the gift is for
+  occasion?: string;
+  countdown?: string;
+  members: string[]; // user ids participating
+  messages: ChatMessage[];
+  pinned: boolean; // whether the chat is pinned to the tray
+  newChat?: boolean; // "start a new group chat" placeholder
+};
+
+export const GROUP_CHATS: GroupChat[] = [
+  {
+    id: "gc_new",
+    forUser: "you",
+    occasion: "new",
+    members: [],
+    messages: [],
+    pinned: false,
+    newChat: true,
+  },
+  {
+    id: "gc_maya",
+    forUser: "maya",
+    occasion: "birthday",
+    countdown: "4d",
+    members: ["you", "jules", "noor", "sam"],
+    pinned: true,
+    messages: [
+      { id: "m1", user: "jules", text: "Should we pool for that camera she's been eyeing?", time: "2h", pinned: true },
+      { id: "m2", user: "noor", text: "Yes! I can chip in $30", time: "1h" },
+      { id: "m3", user: "sam", text: "Count me in. What's the total?", time: "45m" },
+      { id: "m4", user: "you", text: "It's $89. If we split 4 ways that's ~$22 each", time: "30m", pinned: true },
+      { id: "m5", user: "jules", text: "Perfect. I'll order it tonight", time: "12m" },
+    ],
+  },
+  {
+    id: "gc_sam",
+    forUser: "sam",
+    occasion: "farewell",
+    members: ["you", "maya", "jules", "theo"],
+    pinned: true,
+    messages: [
+      { id: "m6", user: "maya", text: "Sam's going to Lisbon! Should we get him something travel-related?", time: "1d", pinned: true },
+      { id: "m7", user: "theo", text: "What about those noise-cancelling buds he wanted?", time: "1d" },
+      { id: "m8", user: "you", text: "Good idea. Or a travel journal?", time: "22h" },
+      { id: "m9", user: "jules", text: "Let's do both! Travel journal + a nice pen", time: "20h" },
+    ],
+  },
+  {
+    id: "gc_noor",
+    forUser: "noor",
+    occasion: "birthday",
+    countdown: "11d",
+    members: ["you", "maya", "remy"],
+    pinned: false,
+    messages: [
+      { id: "m10", user: "maya", text: "Noor's birthday is coming up. She's really into plants lately", time: "3d" },
+      { id: "m11", user: "remy", text: "I saw this amazing terrarium kit for $45", time: "2d", pinned: true },
+      { id: "m12", user: "you", text: "That's perfect for her apartment!", time: "1d" },
+    ],
+  },
+  {
+    id: "gc_ivy",
+    forUser: "ivy",
+    occasion: "anniversary",
+    countdown: "18d",
+    members: ["you", "theo", "maya"],
+    pinned: false,
+    messages: [
+      { id: "m13", user: "theo", text: "Ivy and Alex's anniversary is in 18 days", time: "5d" },
+      { id: "m14", user: "maya", text: "She loves warm tones. What about that sunset lamp?", time: "4d" },
+      { id: "m15", user: "you", text: "Great call. I'll check the price", time: "3d" },
+    ],
+  },
+  {
+    id: "gc_theo",
+    forUser: "theo",
+    occasion: "just because",
+    members: ["you", "ivy", "maya"],
+    pinned: false,
+    messages: [
+      { id: "m16", user: "ivy", text: "Found a rare pressing of Theo's favorite album", time: "2d", pinned: true },
+      { id: "m17", user: "maya", text: "He would LOVE that. How much?", time: "1d" },
+    ],
+  },
+  {
+    id: "gc_remy",
+    forUser: "remy",
+    occasion: "housewarming",
+    members: ["you", "noor", "jules"],
+    pinned: false,
+    messages: [
+      { id: "m18", user: "noor", text: "Remy just moved! We should get a housewarming gift", time: "6h" },
+      { id: "m19", user: "jules", text: "What about a nice candle set?", time: "3h" },
+    ],
+  },
+];
+
 export type Suggestion = { user: string; reason: string };
 export const SUGGESTIONS: Suggestion[] = [
   { user: "remy", reason: "Followed by jules + 3 more" },

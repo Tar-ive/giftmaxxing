@@ -16,17 +16,59 @@ import {
   type RecipientSummary,
 } from "@/lib/ideas";
 import { RecipientShopHeader, SoftProfileShopHeader } from "@/components/app/recipient-shop-header";
+import { loadProfile } from "@/lib/onboarding";
+import { getMyUserId, fetchConnections, type SoftConnection } from "@/lib/api";
 
 export function IdeasExplorer({
   initialRecipient,
   recipientId,
   connectionId,
-}: { initialRecipient?: string; recipientId?: string; connectionId?: string } = {}) {
+  recipientName: propName,
+}: {
+  initialRecipient?: string;
+  recipientId?: string;
+  connectionId?: string;
+  recipientName?: string;
+} = {}) {
   const [recipients, setRecipients] = useState<RecipientSummary[] | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [data, setData] = useState<RecipientKnowledge | null>(null);
   const [loadingIdeas, setLoadingIdeas] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolvedName, setResolvedName] = useState<string | undefined>(propName);
+
+  // Resolve recipient name from local profile or soft connection when not passed as prop.
+  useEffect(() => {
+    if (propName) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setResolvedName(propName);
+      return;
+    }
+    if (recipientId) {
+      const p = loadProfile();
+      const r = p?.recipients?.find((rec: { id: string; name: string }) => rec.id === recipientId);
+      if (r?.name) {
+        setResolvedName(r.name);
+        return;
+      }
+    }
+    if (connectionId) {
+      let cancelled = false;
+      (async () => {
+        const uid = getMyUserId();
+        if (!uid) return;
+        const { items } = await fetchConnections(uid);
+        const conn = items.find((c: SoftConnection) => c.connectionId === connectionId);
+        if (!cancelled && conn?.guestName) {
+          setResolvedName(conn.guestName);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+    setResolvedName(undefined);
+  }, [propName, recipientId, connectionId]);
+
+  const recipientName = resolvedName;
 
   // Load the recipient picker once, then auto-select the most-discussed one.
   useEffect(() => {
@@ -87,10 +129,14 @@ export function IdeasExplorer({
       {recipientId || connectionId ? (
         <header className="mb-4">
           <h2 className="font-display text-xl font-extrabold tracking-tight text-ink sm:text-2xl">
-            More ideas people recommend
+            {recipientName
+              ? `More ideas for ${recipientName.split(/\s+/)[0]}`
+              : "More ideas people recommend"}
           </h2>
           <p className="mt-1 max-w-xl text-sm text-ink-soft">
-            Real gift threads from Reddit — browse by relationship if you want more.
+            {recipientName
+              ? `Tailored picks based on ${recipientName.split(/\s+/)[0]}'s taste — browse by relationship for more.`
+              : "Real gift threads from Reddit \u2014 browse by relationship if you want more."}
           </p>
         </header>
       ) : (
@@ -151,17 +197,27 @@ export function IdeasExplorer({
             <>
               <div className="mb-5 flex items-baseline gap-2">
                 <h2 className="font-display text-2xl font-bold text-ink">
-                  Gift ideas for {data.label.toLowerCase()}
+                  {recipientName
+                    ? `Gift ideas for ${recipientName.split(/\s+/)[0]}`
+                    : `Gift ideas for ${data.label.toLowerCase()}`}
                 </h2>
                 <span className="text-xs font-medium text-ink-faint">
                   from {data.postCount} discussions
                 </span>
               </div>
 
-              {data.bundles.length > 0 && <Bundles bundles={data.bundles} />}
+              {data.bundles.length > 0 && (
+                <Bundles
+                  bundles={data.bundles}
+                  recipientFirstName={recipientName?.split(/\s+/)[0]}
+                />
+              )}
 
               <h3 className="mb-3 mt-8 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-ink-soft">
-                <Icons.trend size={16} className="text-coral" /> Most recommended
+                <Icons.trend size={16} className="text-coral" />{" "}
+                {recipientName
+                  ? `Top picks for ${recipientName.split(/\s+/)[0]}`
+                  : "Most recommended"}
               </h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {data.ideas.map((idea, i) => (
@@ -176,11 +232,12 @@ export function IdeasExplorer({
   );
 }
 
-function Bundles({ bundles }: { bundles: Bundle[] }) {
+function Bundles({ bundles, recipientFirstName }: { bundles: Bundle[]; recipientFirstName?: string }) {
   return (
     <div>
       <h3 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-ink-soft">
-        <Icons.gift size={16} className="text-coral" /> Bundle them together
+        <Icons.gift size={16} className="text-coral" />{" "}
+        {recipientFirstName ? `Bundle for ${recipientFirstName}` : "Bundle them together"}
       </h3>
       <div className="flex gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {bundles.map((b, i) => (
