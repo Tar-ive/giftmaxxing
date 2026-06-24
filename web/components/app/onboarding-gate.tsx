@@ -3,7 +3,11 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { isOnboardingComplete } from "@/lib/onboarding";
-import { isProfileSyncSettled, subscribeProfileSync } from "@/lib/profile-status";
+import {
+  isProfileSyncSettled,
+  subscribeProfileSync,
+  markProfileSyncSettled,
+} from "@/lib/profile-status";
 
 // Clerk-enabled builds restore a returning user's profile from DynamoDB on
 // sign-in (AccountSync). Only those builds need to wait for that restore before
@@ -50,6 +54,17 @@ export function OnboardingGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (state === "redirect") router.replace("/onboarding");
   }, [state, router]);
+
+  // Safety net: AccountSync normally fires the settle signal, but it only mounts
+  // when BOTH Clerk keys are present (see app/layout.tsx). This gate, however,
+  // waits whenever just the *publishable* key is set — so a half-configured
+  // build (publishable key, no secret) would spin forever. Force-settle after a
+  // grace period (longer than AccountSync's own 6s safety) so we never hang.
+  useEffect(() => {
+    if (state !== "loading") return;
+    const t = window.setTimeout(markProfileSyncSettled, 8000);
+    return () => window.clearTimeout(t);
+  }, [state]);
 
   if (state === "complete") return <>{children}</>;
 
