@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -12,8 +13,13 @@ import { type Post } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
+import { fetchFeed, isApiConfigured } from "@/lib/api";
 
 const FEED_CAP = 216; // soft cap (~3 passes over the pin set) for the cycling feed
+
+// Only surface posts with a real, hotlinkable photo. Drops Reddit preview.redd.it
+// images (they 403 cross-origin), matching the bundled feed's photo-only quality.
+const isPhoto = (p: Post) => !!p.product.image && !p.product.image.includes("redd.it");
 
 type Store = {
   posts: Post[];
@@ -60,6 +66,8 @@ export function AppStore({ children }: { children: React.ReactNode }) {
   const loadingRef = useRef(false); // guards against duplicate observer fires
   const seqRef = useRef(0); // makes appended feed item ids unique across cycles
   const offsetRef = useRef(12); // next flat offset into the cycling pin feed
+  const apiModeRef = useRef(false); // true once the live API feed takes over
+  const cursorRef = useRef<string | null>(null); // API feed pagination cursor
 
   // Pins repeat once we loop the set; give every appended item a unique id so
   // React keys + like/save stay correct.
@@ -67,6 +75,31 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     (list: Post[]) => list.map((p) => ({ ...p, id: `${p.id}~${seqRef.current++}` })),
     []
   );
+
+  // On mount, try the live API feed (real, scalable — paginated from DynamoDB via
+  // the byFeed GSI). If it returns enough real-photo posts, it takes over from the
+  // bundled pins; otherwise we keep the bundled feed so the app never goes blank.
+  useEffect(() => {
+    if (!isApiConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { posts: apiPosts, cursor } = await fetchFeed({ limit: 16 });
+        const photos = apiPosts.filter(isPhoto);
+        if (!cancelled && photos.length >= 6) {
+          apiModeRef.current = true;
+          cursorRef.current = cursor;
+          setHasMore(cursor != null);
+          setPosts(photos);
+        }
+      } catch {
+        // keep the bundled feed on any error
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggleLike = useCallback((postId: string) => {
     setPosts((prev) =>
@@ -121,7 +154,33 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     if (loadingRef.current || !hasMore) return;
     loadingRef.current = true;
     setLoadingMore(true);
-    // brief latency so the skeletons flash, then append the next cycled page
+
+    // API mode: page the live feed via the cursor, de-duping by id.
+    if (apiModeRef.current) {
+      (async () => {
+        try {
+          const { posts: apiPosts, cursor } = await fetchFeed({
+            limit: 12,
+            cursor: cursorRef.current,
+          });
+          cursorRef.current = cursor;
+          const photos = apiPosts.filter(isPhoto);
+          setPosts((prev) => {
+            const seen = new Set(prev.map((p) => p.id));
+            return [...prev, ...photos.filter((p) => !seen.has(p.id))];
+          });
+          setHasMore(cursor != null);
+        } catch {
+          setHasMore(false);
+        } finally {
+          setLoadingMore(false);
+          loadingRef.current = false;
+        }
+      })();
+      return;
+    }
+
+    // Bundled fallback: append the next cycled page after a brief skeleton flash.
     setTimeout(() => {
       setPosts((prev) => {
         if (prev.length >= FEED_CAP) {

@@ -9,7 +9,7 @@
 # Cost: AWS Resource Groups and Tag Editor are FREE.
 resource "aws_resourcegroups_group" "giftmaxxing" {
   name        = "${local.prefix}-resources"
-  description = "All ${var.project} (${var.env}) resources, selected by tag."
+  description = "All ${var.project} ${var.env} resources selected by Project and Env tags"
 
   resource_query {
     query = jsonencode({

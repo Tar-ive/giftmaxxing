@@ -9,6 +9,9 @@
     "ingest": "node ingest.mjs",
     "scrape:pinterest:dry": "node pinterest-rss.mjs --dry-run",
     "scrape:pinterest": "node pinterest-rss.mjs",
+    "scrape:dry": "node pinterest-scrape.mjs --target 200 --dry-run",
+    "scrape": "node pinterest-scrape.mjs --target 10000",
+    "scrape:resume": "node pinterest-scrape.mjs --target 10000 --resume",
     "vectors:setup": "node s3vectors-setup.mjs",
     "embed": "node embed.mjs",
     "vectors:query": "node vector-query.mjs"

@@ -1,6 +1,7 @@
 // Pinterest pins manifest -> DynamoDB `posts` table via the /seed API endpoint.
 //
-// Reads the manifest written by pinterest-rss.mjs, transforms each pin into the
+// Reads the manifest written by pinterest-scrape.mjs (or the older
+// pinterest-rss.mjs), transforms each pin into the
 // DynamoDB post item shape (same schema as Reddit posts from transform.mjs), and
 // POSTs them to the /seed endpoint so they appear in the /feed alongside Reddit
 // posts.
@@ -69,39 +70,64 @@ function shortCaption(title) {
   return title.slice(0, max).replace(/\s+\S*$/, "") + "...";
 }
 
+// Bucket a real price into the priceTier the feed ranker / budget filter uses.
+function priceTier(price) {
+  if (typeof price !== "number" || price <= 0) return "unknown";
+  if (price < 25) return "budget";
+  if (price < 75) return "mid";
+  if (price < 150) return "premium";
+  return "luxury";
+}
+
 // Map one Pinterest pin record -> one DynamoDB post item (same shape as Reddit).
-function pinToPostItem(pin) {
-  const cat = categorize(pin.title);
-  const grad = gradFor(pin.sourceUser || "pinterest");
-  const createdAt = pin.pubDate ? new Date(pin.pubDate).getTime() : Date.now();
+// Reads the real fields from pinterest-scrape.mjs (link, price, recipient, …)
+// and falls back gracefully for the older pinterest-rss.mjs manifest shape.
+function pinToPostItem(pin, i = 0) {
+  const category = pin.category || categorize(pin.title);
+  const merchant = pin.siteName || pin.domain || pin.sourceUser || "Pinterest";
+  const grad = gradFor(pin.sourceUser || pin.domain || "pinterest");
+  // The real outbound product URL; fall back to the Pinterest pin page.
+  const productUrl = pin.link || pin.pinUrl || null;
+  const price = typeof pin.price === "number" && pin.price > 0 ? pin.price : 0;
+  // Spread synthetic timestamps so the feed isn't one flat block.
+  const createdAt = pin.pubDate ? new Date(pin.pubDate).getTime() : Date.now() - i * 1000;
 
   return {
     postId: pin.id,
+    feedPk: "all", // recency-feed GSI partition (see infra byFeed index)
     author: `pinterest_${(pin.sourceUser || "unknown").toLowerCase()}`,
     createdAt,
-    likes: Math.floor(Math.random() * 50) + 5,
+    likes: typeof pin.ratingCount === "number" ? Math.min(9999, pin.ratingCount) : Math.floor(Math.random() * 50) + 5,
     comments: 0,
     caption: shortCaption(pin.title),
     source: `Pinterest/${pin.sourceUser || "unknown"}`,
-    url: pin.pinUrl || null,
+    url: productUrl,
     rec: true,
-    reason: `Curated by ${pin.sourceUser || "Pinterest"}`,
-    recipient: "anyone",
-    occasion: "any",
-    category: cat,
+    reason: `Real find from ${merchant}`,
+    recipient: pin.recipient || "anyone",
+    occasion: pin.occasion || "any",
+    category,
     vibes: ["aesthetic", "curated"],
     status: "find",
-    priceTier: "unknown",
-    merchant: pin.sourceUser || null,
-    productUrl: pin.pinUrl || null,
+    priceTier: priceTier(price),
+    price,
+    priceDisplay: pin.priceDisplay || (price > 0 ? `$${price}` : null),
+    inStock: pin.inStock ?? null,
+    ratingCount: pin.ratingCount ?? null,
+    merchant,
+    domain: pin.domain || null,
+    pinUrl: pin.pinUrl || null,
+    productUrl,
+    dominantColor: pin.dominantColor || null,
     product: {
       id: pin.id,
       name: shortCaption(pin.title),
-      brand: pin.sourceUser || "Pinterest",
-      price: 0,
+      brand: merchant,
+      price,
       grad,
       emoji: "\uD83D\uDCCC",
       image: hiResImage(pin.imageUrl),
+      url: productUrl,
     },
   };
 }
@@ -117,7 +143,7 @@ async function main() {
 
   const items = records
     .filter((r) => r.id && r.imageUrl)
-    .map(pinToPostItem);
+    .map((r, i) => pinToPostItem(r, i));
 
   console.log(`Transformed ${items.length} Pinterest pins into post items.`);
 

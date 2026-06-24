@@ -15,7 +15,9 @@ resource "aws_dynamodb_table" "users" {
 }
 
 # ── Posts ────────────────────────────────────────────────────────────────────
-# PK: postId. GSI byAuthor lets us list a user's finds for the profile grid.
+# PK: postId. GSI byAuthor lists a user's finds for the profile grid; GSI byFeed
+# (PK feedPk="all", SK createdAt) is the recency-ordered index the /feed endpoint
+# pages through so it scales past a few hundred posts without a full-table scan.
 resource "aws_dynamodb_table" "posts" {
   name         = "${local.prefix}-posts"
   billing_mode = "PAY_PER_REQUEST"
@@ -33,10 +35,24 @@ resource "aws_dynamodb_table" "posts" {
     name = "createdAt"
     type = "N"
   }
+  # Constant partition key ("all") for the global feed index. Single hot
+  # partition is fine at this scale; shard into "all#<n>" + scatter-gather if the
+  # feed ever exceeds GSI partition throughput (~3k RCU/s).
+  attribute {
+    name = "feedPk"
+    type = "S"
+  }
 
   global_secondary_index {
     name            = "byAuthor"
     hash_key        = "author"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "byFeed"
+    hash_key        = "feedPk"
     range_key       = "createdAt"
     projection_type = "ALL"
   }

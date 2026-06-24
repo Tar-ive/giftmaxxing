@@ -1,0 +1,36 @@
+{
+  "_comment": "Seeds for pinterest-scrape.mjs. `users` are gift-relevant Pinterest accounts whose recent pins (via RSS) bootstrap board discovery. `queries` drive search-based discovery and tag results with recipient/occasion facets for diversity. `boards` are explicit user/slug boards to crawl directly. Facets (recipient/occasion/categoryHint) are applied to every pin discovered through that seed.",
+  "users": [
+    { "user": "etsy", "recipient": "anyone", "occasion": "any" },
+    { "user": "uncommongoods", "recipient": "anyone", "occasion": "any" },
+    { "user": "thegrommet", "recipient": "anyone", "occasion": "any" },
+    { "user": "anthropologie", "recipient": "partner", "occasion": "any" },
+    { "user": "Food52", "recipient": "anyone", "occasion": "any", "categoryHint": "kitchen" },
+    { "user": "papersource", "recipient": "anyone", "occasion": "any", "categoryHint": "stationery" },
+    { "user": "REI", "recipient": "anyone", "occasion": "any", "categoryHint": "outdoors" },
+    { "user": "Sephora", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" }
+  ],
+  "queries": [
+    { "q": "unique gifts for mom", "recipient": "mom", "occasion": "any" },
+    { "q": "gifts for dad who has everything", "recipient": "dad", "occasion": "any" },
+    { "q": "gifts for him", "recipient": "partner", "occasion": "any" },
+    { "q": "gifts for her", "recipient": "partner", "occasion": "any" },
+    { "q": "gifts for teens", "recipient": "teen", "occasion": "any" },
+    { "q": "gifts for kids", "recipient": "kid", "occasion": "any" },
+    { "q": "gifts for best friend", "recipient": "friend", "occasion": "any" },
+    { "q": "gifts for coworkers", "recipient": "coworker", "occasion": "any" },
+    { "q": "gifts for grandma", "recipient": "grandparent", "occasion": "any" },
+    { "q": "gifts for new baby", "recipient": "baby", "occasion": "newbaby" },
+    { "q": "birthday gift ideas", "recipient": "anyone", "occasion": "birthday" },
+    { "q": "wedding gift ideas", "recipient": "couple", "occasion": "wedding" },
+    { "q": "graduation gifts", "recipient": "anyone", "occasion": "graduation" },
+    { "q": "anniversary gifts", "recipient": "partner", "occasion": "anniversary" },
+    { "q": "housewarming gifts", "recipient": "anyone", "occasion": "housewarming" },
+    { "q": "christmas gift ideas", "recipient": "anyone", "occasion": "holiday" },
+    { "q": "cozy home gifts", "recipient": "anyone", "occasion": "any", "categoryHint": "home" },
+    { "q": "jewelry gifts", "recipient": "partner", "occasion": "any", "categoryHint": "jewelry" },
+    { "q": "tech gadget gifts", "recipient": "anyone", "occasion": "any", "categoryHint": "tech" },
+    { "q": "self care gift box", "recipient": "anyone", "occasion": "any", "categoryHint": "wellness" }
+  ],
+  "boards": []
+}

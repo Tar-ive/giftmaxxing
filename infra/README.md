@@ -102,8 +102,10 @@ tables (read / write / throttle), S3 media, SNS, Bedrock, and a recent-errors lo
 - **CloudWatch free tier**: 3 dashboards × up to 50 metrics each. Usage (~49) and
   cost (9) are split to stay free; piling more metrics onto `overview` may tip it over.
 - **S3 Vectors** (`giftmaxxing-<env>-vectors`, index `pins`) is **not** Terraform-
-  managed (created by `ingest/s3vectors-setup.mjs`) and is untagged, so it won't show
-  in the Resource Group or tag-based cost. Tag it in that script / console for full coverage.
+  managed (created by `ingest/s3vectors-setup.mjs`), but that script now **tags** the
+  bucket + index (`Project` / `Env` / `ManagedBy=s3vectors-setup`), so they're covered by
+  cost allocation and the Tag Editor. Caveat: S3 Vectors is a new resource type, so it may
+  not yet surface in the Resource Group UI even though it's correctly tagged.
 
 ## Teardown
 

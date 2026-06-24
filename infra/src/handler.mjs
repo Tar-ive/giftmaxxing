@@ -840,15 +840,36 @@ async function runMaxiTool(name, input, ctx) {
 }
 
 // Build a clean alternating Converse transcript (must start + end on a user turn).
+// Redact sensitive identifiers from anything we send to the AI provider (Bedrock).
+// First names are intentionally kept (Maxi needs them to personalize), but emails,
+// phone numbers, and card/ID-like numbers are stripped so they never leave for the
+// model. Recurses into tool-result objects/arrays. Backs the privacy statement.
+function scrubPII(v) {
+  if (typeof v === "string") {
+    return v
+      .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+      .replace(/\b(?:\d[ -]?){13,19}\b/g, "[number]")
+      .replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[id]")
+      .replace(/(?:\+?\d{1,3}[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, "[phone]");
+  }
+  if (Array.isArray(v)) return v.map(scrubPII);
+  if (v && typeof v === "object") {
+    const o = {};
+    for (const [k, val] of Object.entries(v)) o[k] = scrubPII(val);
+    return o;
+  }
+  return v;
+}
+
 function buildMaxiMessages(incoming, userText) {
   const turns = [];
   for (const m of (Array.isArray(incoming) ? incoming : []).slice(-12)) {
     const role = m.role === "assistant" ? "assistant" : "user";
     const text = typeof m.text === "string" ? m.text : typeof m.content === "string" ? m.content : "";
     const t = String(text).trim();
-    if (t) turns.push({ role, content: [{ text: t.slice(0, 2000) }] });
+    if (t) turns.push({ role, content: [{ text: scrubPII(t.slice(0, 2000)) }] });
   }
-  if (userText) turns.push({ role: "user", content: [{ text: userText.slice(0, 2000) }] });
+  if (userText) turns.push({ role: "user", content: [{ text: scrubPII(userText.slice(0, 2000)) }] });
   const norm = [];
   for (const m of turns) {
     if (!norm.length && m.role !== "user") continue;
@@ -908,21 +929,6 @@ export const handler = async (event) => {
         );
         return json(200, { items: out.Items ?? [], cursor: encodeCursor(out.LastEvaluatedKey) });
       }
-      // Scan the full table (no Limit) so every item participates in ranking.
-      // DynamoDB Scan returns items in partition-key order, which clusters
-      // sources together; without a full scan the ranker only sees one source
-      // per page. The table is small (~300 items) so this is fine.
-      const allItems = [];
-      let scanKey = undefined;
-      // Paginate through the full table (1 MB pages) collecting all items.
-      do {
-        const out = await ddb.send(
-          new ScanCommand({ TableName: POSTS, ExclusiveStartKey: scanKey })
-        );
-        allItems.push(...(out.Items ?? []));
-        scanKey = out.LastEvaluatedKey;
-      } while (scanKey);
-
       const opts = {
         vibes: parseList(qs.vibes),
         recipient: qs.recipient,
@@ -931,11 +937,52 @@ export const handler = async (event) => {
         budget: Number(qs.budget) || undefined,
         eventBoost: Number(qs.eventBoost) || 0,
       };
+
+      // Preferred path: read ONE recency-ordered page from the byFeed GSI
+      // (PK feedPk="all", SK createdAt) instead of scanning the whole table —
+      // this is what lets the feed scale past a few hundred posts. Facets are
+      // hard-filtered; the returned page is then ranked by scorePost().
+      try {
+        const eav = { ":f": "all" };
+        const filters = [];
+        if (qs.recipient && qs.recipient !== "anyone") { filters.push("recipient = :r"); eav[":r"] = qs.recipient; }
+        if (qs.occasion && qs.occasion !== "any") { filters.push("occasion = :o"); eav[":o"] = qs.occasion; }
+        if (qs.category) { filters.push("category = :c"); eav[":c"] = qs.category; }
+        const out = await ddb.send(
+          new QueryCommand({
+            TableName: POSTS,
+            IndexName: "byFeed",
+            KeyConditionExpression: "feedPk = :f",
+            ExpressionAttributeValues: eav,
+            FilterExpression: filters.length ? filters.join(" AND ") : undefined,
+            ScanIndexForward: false, // newest first
+            Limit: filters.length ? 150 : limit, // over-read when filtering
+            ExclusiveStartKey: start,
+          })
+        );
+        const ranked = (out.Items ?? [])
+          .map((p) => ({ ...p, _score: scorePost(p, opts) }))
+          .sort((a, b) => b._score - a._score);
+        return json(200, { items: ranked, cursor: encodeCursor(out.LastEvaluatedKey) });
+      } catch (err) {
+        // byFeed GSI not deployed yet (or transient error) -> legacy fallback.
+        console.warn("byFeed query failed, falling back to full scan:", err.message);
+      }
+
+      // Legacy fallback: scan the whole table, rank globally, paginate by offset.
+      // Only used until the byFeed GSI exists; fine for a few hundred items.
+      const allItems = [];
+      let scanKey = undefined;
+      do {
+        const out = await ddb.send(
+          new ScanCommand({ TableName: POSTS, ExclusiveStartKey: scanKey })
+        );
+        allItems.push(...(out.Items ?? []));
+        scanKey = out.LastEvaluatedKey;
+      } while (scanKey);
       const ranked = allItems
         .map((p) => ({ ...p, _score: scorePost(p, opts) }))
         .sort((a, b) => b._score - a._score);
-
-      // Client-side cursor = index into the ranked list.
       const offset = start?._offset ?? 0;
       const page = ranked.slice(offset, offset + limit);
       const nextOffset = offset + limit;
@@ -1107,6 +1154,12 @@ export const handler = async (event) => {
         Array.from({ length: Math.ceil(arr.length / 25) }, (_, i) =>
           arr.slice(i * 25, i * 25 + 25)
         );
+      // Posts must carry feedPk="all" + a numeric createdAt so they show up in
+      // the byFeed recency GSI the /feed endpoint pages through.
+      const prep = (name, Item) =>
+        name === POSTS
+          ? { ...Item, feedPk: "all", createdAt: Number(Item.createdAt) || Date.now() }
+          : Item;
       for (const table of [
         [USERS, body.users ?? []],
         [POSTS, body.posts ?? []],
@@ -1116,7 +1169,7 @@ export const handler = async (event) => {
           if (c.length === 0) continue;
           await ddb.send(
             new BatchWriteCommand({
-              RequestItems: { [name]: c.map((Item) => ({ PutRequest: { Item } })) },
+              RequestItems: { [name]: c.map((Item) => ({ PutRequest: { Item: prep(name, Item) } })) },
             })
           );
         }
@@ -1443,7 +1496,7 @@ export const handler = async (event) => {
 
       const memories = await recallMemories(userId, 8);
       const memBlock = memories.length
-        ? `\n\nWhat you remember about this user:\n- ${memories.join("\n- ")}`
+        ? `\n\nWhat you remember about this user:\n- ${memories.map(scrubPII).join("\n- ")}`
         : "";
       const nameLine = typeof body.name === "string" && body.name ? `\n\nThe user's first name is ${body.name}.` : "";
       const signedOut = userId
@@ -1493,7 +1546,7 @@ export const handler = async (event) => {
               results.push({
                 toolResult: {
                   toolUseId: tu.toolUseId,
-                  content: [{ json: out }],
+                  content: [{ json: scrubPII(out) }],
                   status: out && out.error ? "error" : "success",
                 },
               });

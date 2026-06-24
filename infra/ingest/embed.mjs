@@ -116,7 +116,14 @@ async function main() {
           imageUrl: rec.imageUrl ?? "",
           s3Key: rec.s3Key ?? "",
           sourceUser: rec.sourceUser ?? "",
-          source: rec.source ?? "pinterest-rss",
+          source: rec.source ?? "pinterest",
+          // Real shoppable fields so visual-search / /pins results are buyable.
+          link: rec.link ?? "",
+          domain: rec.domain ?? "",
+          category: rec.category ?? "",
+          recipient: rec.recipient ?? "anyone",
+          occasion: rec.occasion ?? "any",
+          ...(typeof rec.price === "number" && rec.price > 0 ? { price: rec.price } : {}),
         },
       });
       if (++done % 20 === 0) console.log(`  …embedded ${done}`);

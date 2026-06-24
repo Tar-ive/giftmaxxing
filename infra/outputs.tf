@@ -50,3 +50,23 @@ output "cost_alerts_topic_arn" {
   description = "SNS topic for cost/budget alerts ($10/$50/$100/$1000). Set var.alert_email to auto-subscribe (confirm the email AWS sends). Add more: aws sns subscribe --topic-arn <this> --protocol email --notification-endpoint you@example.com"
   value       = aws_sns_topic.cost_alerts.arn
 }
+
+output "cost_killswitch_topic_arn" {
+  description = "SNS topic that triggers the auto-pause breaker (the $1,000 budget + real-time CloudWatch alarms publish here)."
+  value       = aws_sns_topic.cost_killswitch.arn
+}
+
+output "breaker_function_name" {
+  description = "The cost kill-switch (breaker) Lambda."
+  value       = aws_lambda_function.breaker.function_name
+}
+
+output "killswitch_resume_command" {
+  description = "APPROVE + turn paused features back on after the kill switch engages."
+  value       = "aws lambda invoke --function-name ${aws_lambda_function.breaker.function_name} --payload '{\"action\":\"resume\"}' --cli-binary-format raw-in-base64-out /dev/stdout"
+}
+
+output "killswitch_engage_test_command" {
+  description = "Manually ENGAGE the kill switch to test it (pauses non-essential features)."
+  value       = "aws lambda invoke --function-name ${aws_lambda_function.breaker.function_name} --payload '{\"action\":\"engage\",\"reason\":\"manual test\"}' --cli-binary-format raw-in-base64-out /dev/stdout"
+}
