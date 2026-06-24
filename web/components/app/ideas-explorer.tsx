@@ -65,6 +65,7 @@ export function IdeasExplorer({
       })();
       return () => { cancelled = true; };
     }
+    setResolvedName(undefined);
   }, [propName, recipientId, connectionId]);
 
   const recipientName = resolvedName;

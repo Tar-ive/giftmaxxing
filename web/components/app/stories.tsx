@@ -93,6 +93,10 @@ export function StoryViewer() {
   const chat = openChatId ? groupChats.find((c) => c.id === openChatId) : null;
 
   useEffect(() => {
+    setInput("");
+  }, [openChatId]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat?.messages.length]);
 
