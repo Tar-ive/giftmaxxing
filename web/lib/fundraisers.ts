@@ -2,6 +2,7 @@
 // birthday, graduation, farewell, etc. Persisted in localStorage (demo; no real
 // payments). Seeded with a few live-looking pools on first load.
 import type { Grad } from "@/lib/data";
+import type { PoolInviteSnapshot } from "@/lib/invite";
 
 export type Contribution = { id: string; name: string; amount: number; at: number };
 
@@ -17,6 +18,8 @@ export type Fundraiser = {
   goal: number;
   organizer: string;
   contributions: Contribution[];
+  /** Giftmaxxing user ids invited in-app who haven't contributed yet. */
+  invited?: string[];
   deadline?: string;
   createdAt: number;
 };
@@ -153,4 +156,86 @@ export function newFundraiser(input: {
     createdAt: Date.now(),
     contributions: [],
   };
+}
+
+// Invite a Giftmaxxing user to a pool in-app. Idempotent — stored on the pool so
+// the organizer can see who's been asked even before they chip in.
+export function inviteToPool(list: Fundraiser[], id: string, userId: string): Fundraiser[] {
+  return list.map((f) =>
+    f.id === id
+      ? { ...f, invited: Array.from(new Set([...(f.invited ?? []), userId])) }
+      : f
+  );
+}
+
+// Add a pool only if its id isn't already present (idempotent). Used when an
+// invited guest joins a pool that arrived via an invite link.
+export function upsertFundraiser(list: Fundraiser[], f: Fundraiser): Fundraiser[] {
+  return list.some((x) => x.id === f.id) ? list : [f, ...list];
+}
+
+// Reconstruct a full Fundraiser from the compact snapshot carried in an invite
+// link (the pool store is client-side, so an invited guest's browser has no copy
+// until they join). The organizer is the inviter's display name.
+export function fundraiserFromInvite(snap: PoolInviteSnapshot, organizer: string): Fundraiser {
+  return {
+    id: snap.id,
+    title: snap.title,
+    recipient: "",
+    occasion: snap.occasion,
+    blurb: snap.blurb ?? "Chip in toward one gift that actually lands.",
+    emoji: snap.emoji ?? "🎁",
+    grad: (snap.grad as Grad) ?? "coral",
+    image: snap.image ?? null,
+    goal: Math.max(10, Math.round(snap.goal || 100)),
+    organizer: organizer || "a friend",
+    createdAt: Date.now(),
+    contributions: [],
+  };
+}
+
+// ── Pending pool join ────────────────────────────────────────────────────────
+// When an invited guest signs in to join a pool, we stash the pool snapshot so
+// the pools page can add it to their list the moment auth completes (which may
+// be a full-page Clerk redirect, losing in-memory state).
+const PENDING_JOIN_KEY = "giftmaxxing_pending_pool_join";
+
+export type PendingPoolJoin = { snapshot: PoolInviteSnapshot; organizer: string };
+
+export function savePendingPoolJoin(join: PendingPoolJoin): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PENDING_JOIN_KEY, JSON.stringify(join));
+  } catch {
+    /* quota — non-critical */
+  }
+}
+
+export function loadPendingPoolJoin(): PendingPoolJoin | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(PENDING_JOIN_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      (parsed as PendingPoolJoin).snapshot &&
+      typeof (parsed as PendingPoolJoin).snapshot.id === "string"
+    ) {
+      return parsed as PendingPoolJoin;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingPoolJoin(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(PENDING_JOIN_KEY);
+  } catch {
+    /* ignore */
+  }
 }

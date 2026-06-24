@@ -8,6 +8,21 @@
 // the guest goes straight from swiping to seeing their gift set.
 // ────────────────────────────────────────────────────────────────────────────
 
+/** Compact, URL-embeddable snapshot of a group-gift pool. Group-gift invites
+ *  carry their own copy of the pool because the pool store is client-side
+ *  (localStorage), so an external recipient's browser has no record of it until
+ *  they join. Keep this small — it lives inside the invite code in the URL. */
+export type PoolInviteSnapshot = {
+  id: string;
+  title: string;
+  occasion: string;
+  goal: number;
+  blurb?: string;
+  emoji?: string;
+  grad?: string;
+  image?: string | null;
+};
+
 export type InvitePayload = {
   /** Display name of the person who sent the invite. */
   name: string;
@@ -23,6 +38,10 @@ export type InvitePayload = {
   occasion?: string;
   /** Event date (YYYY-MM-DD) the sender set for the recipient. */
   date?: string;
+  /** Group-gift invite: when present, the link invites the recipient to JOIN a
+   *  group gift (chip in) rather than run the swipe challenge. /invite/[code]
+   *  routes these through sign-in + consent before they can contribute. */
+  pool?: PoolInviteSnapshot;
 };
 
 // ── Encoding / decoding ──────────────────────────────────────────────────────
@@ -93,6 +112,27 @@ export function buildInviteUrl(
   if (opts.to?.trim()) payload.to = opts.to.trim();
   if (opts.occasion?.trim()) payload.occasion = opts.occasion.trim();
   if (opts.date?.trim()) payload.date = opts.date.trim();
+  const code = encodeInvite(payload);
+  return `${base}/invite/${code}`;
+}
+
+// ── Group-gift invite-link builder ───────────────────────────────────────────
+// Builds an /invite/<code> link that invites someone to JOIN a group gift. The
+// recipient must sign in (and agree to the terms) before they can chip in — see
+// the PoolInvite landing. The pool snapshot rides along in the code so the link
+// renders the pool even on a device that has never seen it.
+export function buildPoolInviteUrl(
+  inviterName: string,
+  pool: PoolInviteSnapshot,
+  opts: { senderId?: string; origin?: string } = {}
+): string {
+  const envSite = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "");
+  const base =
+    opts.origin ||
+    envSite ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+  const payload: InvitePayload = { name: inviterName.trim() || "A friend", pool };
+  if (opts.senderId) payload.senderId = opts.senderId;
   const code = encodeInvite(payload);
   return `${base}/invite/${code}`;
 }

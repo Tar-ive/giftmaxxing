@@ -10,9 +10,17 @@ import {
   newFundraiser,
   raisedOf,
   progressOf,
+  inviteToPool,
+  upsertFundraiser,
+  fundraiserFromInvite,
+  loadPendingPoolJoin,
+  clearPendingPoolJoin,
 } from "@/lib/fundraisers";
 import { USERS } from "@/lib/social";
 import { useCurrentUser } from "@/lib/identity";
+import { getMyUserId } from "@/lib/api";
+import { buildPoolInviteUrl, type PoolInviteSnapshot } from "@/lib/invite";
+import { InvitePeopleSheet } from "@/components/app/invite-people-sheet";
 import { Icons } from "@/components/ui";
 
 const QUICK = [10, 25, 50, 100];
@@ -24,8 +32,17 @@ export default function PoolsPage() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
+    let list = loadFundraisers();
+    // An invited guest who just signed in lands here with a stashed pool — add it
+    // to their list (idempotent), then forget it.
+    const pending = loadPendingPoolJoin();
+    if (pending) {
+      list = upsertFundraiser(list, fundraiserFromInvite(pending.snapshot, pending.organizer));
+      saveFundraisers(list);
+      clearPendingPoolJoin();
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPools(loadFundraisers());
+    setPools(list);
   }, []);
 
   const persist = (list: Fundraiser[]) => {
@@ -35,6 +52,10 @@ export default function PoolsPage() {
 
   const contribute = (id: string, amount: number) => {
     persist(addContribution(pools, id, myName, amount));
+  };
+
+  const inviteFriend = (id: string, userId: string) => {
+    persist(inviteToPool(pools, id, userId));
   };
 
   return (
@@ -56,7 +77,13 @@ export default function PoolsPage() {
 
       <div className="space-y-5">
         {pools.map((f) => (
-          <PoolCard key={f.id} f={f} onContribute={contribute} />
+          <PoolCard
+            key={f.id}
+            f={f}
+            onContribute={contribute}
+            onInviteFriend={inviteFriend}
+            inviterName={me.name !== "You" ? me.name : "A friend"}
+          />
         ))}
         {pools.length === 0 && (
           <p className="py-16 text-center text-sm text-ink-faint">No pools yet. Start the first one ✨</p>
@@ -66,13 +93,40 @@ export default function PoolsPage() {
   );
 }
 
-function PoolCard({ f, onContribute }: { f: Fundraiser; onContribute: (id: string, amount: number) => void }) {
+function PoolCard({
+  f,
+  onContribute,
+  onInviteFriend,
+  inviterName,
+}: {
+  f: Fundraiser;
+  onContribute: (id: string, amount: number) => void;
+  onInviteFriend: (id: string, userId: string) => void;
+  inviterName: string;
+}) {
   const [open, setOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [custom, setCustom] = useState("");
   const raised = raisedOf(f);
   const pct = Math.round(progressOf(f) * 100);
   const recipient = USERS[f.recipient];
   const funded = raised >= f.goal;
+
+  // Compact pool snapshot for the invite link — it rides along in the code so an
+  // external recipient sees the pool before signing in. Computed client-side.
+  const snapshot: PoolInviteSnapshot = {
+    id: f.id,
+    title: f.title,
+    occasion: f.occasion,
+    goal: f.goal,
+    blurb: f.blurb,
+    emoji: f.emoji,
+    grad: f.grad,
+    image: f.image ?? null,
+  };
+  const inviteUrl = buildPoolInviteUrl(inviterName, snapshot, {
+    senderId: getMyUserId() ?? undefined,
+  });
 
   const give = (amount: number) => {
     if (amount > 0) {
@@ -117,7 +171,7 @@ function PoolCard({ f, onContribute }: { f: Fundraiser; onContribute: (id: strin
           <span className="text-ink-soft">{f.contributions.length} contributor{f.contributions.length === 1 ? "" : "s"} · {pct}%</span>
         </div>
 
-        {/* contributor avatars */}
+        {/* contributor + invited avatars */}
         <div className="mt-3 flex items-center gap-3">
           <div className="flex -space-x-2">
             {f.contributions.slice(-5).map((c) => {
@@ -128,14 +182,35 @@ function PoolCard({ f, onContribute }: { f: Fundraiser; onContribute: (id: strin
                 </span>
               );
             })}
+            {/* invited in-app but not yet contributed — shown faded */}
+            {(f.invited ?? [])
+              .filter((uid) => !f.contributions.some((c) => c.name === uid))
+              .slice(0, 3)
+              .map((uid) => {
+                const u = USERS[uid];
+                return (
+                  <span key={`inv-${uid}`} title={`${u?.name ?? uid} · invited`} className="grid h-7 w-7 place-items-center rounded-full border-2 border-dashed border-line bg-cream text-[11px] font-bold text-ink-faint">
+                    {(u?.name ?? uid).charAt(0).toUpperCase()}
+                  </span>
+                );
+              })}
           </div>
-          {funded ? (
-            <span className="ml-auto flex items-center gap-1 text-sm font-bold text-green-600"><Icons.check size={16} /> Fully funded!</span>
-          ) : (
-            <button onClick={() => setOpen((o) => !o)} className="ml-auto rounded-full bg-ink px-5 py-2 text-sm font-bold text-cream transition-opacity hover:opacity-90">
-              Chip in
+
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setInviteOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-4 py-2 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
+            >
+              <Icons.users size={16} /> Invite
             </button>
-          )}
+            {funded ? (
+              <span className="flex items-center gap-1 text-sm font-bold text-green-600"><Icons.check size={16} /> Funded!</span>
+            ) : (
+              <button onClick={() => setOpen((o) => !o)} className="rounded-full bg-ink px-5 py-2 text-sm font-bold text-cream transition-opacity hover:opacity-90">
+                Chip in
+              </button>
+            )}
+          </div>
         </div>
 
         {open && !funded && (
@@ -164,6 +239,16 @@ function PoolCard({ f, onContribute }: { f: Fundraiser; onContribute: (id: strin
             <p className="mt-2 text-[11px] text-ink-faint">Simulated — no real payment is processed.</p>
           </div>
         )}
+
+        <InvitePeopleSheet
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          url={inviteUrl}
+          poolTitle={f.title}
+          invited={f.invited ?? []}
+          contributorIds={f.contributions.map((c) => c.name)}
+          onInviteFriend={(userId) => onInviteFriend(f.id, userId)}
+        />
       </div>
     </div>
   );

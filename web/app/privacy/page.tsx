@@ -84,6 +84,25 @@ export default function PrivacyPage() {
           We retain only what&apos;s needed to provide the feature.
         </p>
 
+        <h2 id="group-gifts" className="scroll-mt-24 pt-4 font-display text-xl font-bold text-ink">
+          Group gifts &amp; payments
+        </h2>
+        <p>
+          Giftmaxxing lets you <strong className="text-ink">organize a group gift and invite
+          people</strong> to it — in the app or by sharing a link. Anyone who opens an invite
+          link must <strong className="text-ink">sign in and agree to these terms</strong> before
+          they can take part.
+        </p>
+        <p>
+          <strong className="text-ink">We do not process payments, hold funds, or manage how a
+          group gift&apos;s cost is split.</strong> Any money movement happens directly between
+          you and the people you invite, using whatever method you choose. You and your group are{" "}
+          <strong className="text-ink">solely responsible</strong> for collecting, splitting, and
+          settling contributions. Giftmaxxing is not a party to those transactions and takes no
+          responsibility or liability for them — including amounts owed, refunds, chargebacks, or
+          disputes between participants.
+        </p>
+
         <h2 className="pt-4 font-display text-xl font-bold text-ink">Your choices</h2>
         <p>
           You can edit or delete your profile, recipients, events, and connections from

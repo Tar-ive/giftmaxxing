@@ -2,6 +2,7 @@
 
 import { useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
 import { Maxi } from "@/components/ui";
+import { AuthConsent } from "@/components/app/auth-consent";
 
 // Hard auth boundary for the app shell. When Clerk is configured, every /feed/*
 // route requires a real signed-in session — a local onboarding profile alone is
@@ -43,6 +44,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </button>
         </SignUpButton>
       </div>
+      <AuthConsent />
     </div>
   );
 }
