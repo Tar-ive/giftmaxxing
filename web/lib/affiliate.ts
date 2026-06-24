@@ -31,7 +31,13 @@ export function extractAsin(input: string): string | null {
 
 // Clean, tagged product link. Intentionally minimal — no tracking cruft.
 export function amazonUrl(asin: string): string {
-  return `${AMAZON_MARKETPLACE}/dp/${asin}?tag=${AMAZON_ASSOC_TAG}`;
+  const normalized = asin.trim().toUpperCase();
+  // A malformed ASIN must never crash the Shop render: fall back to a tagged
+  // search link (still carries the affiliate tag) instead of emitting /dp/<junk>.
+  if (!isValidAsin(normalized)) {
+    return `${AMAZON_MARKETPLACE}/s?k=${encodeURIComponent(asin)}&tag=${AMAZON_ASSOC_TAG}`;
+  }
+  return `${AMAZON_MARKETPLACE}/dp/${normalized}?tag=${AMAZON_ASSOC_TAG}`;
 }
 
 // Deterministic, stable visuals so a pick always renders the same tile even

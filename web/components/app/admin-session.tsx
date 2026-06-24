@@ -2,19 +2,27 @@
 
 import { useEffect } from "react";
 import { ADMIN_BYPASS, ADMIN_USER_ID } from "@/lib/admin";
-import { setMyUserId } from "@/lib/api";
+import { getMyUserId, setMyUserId } from "@/lib/api";
 
 // Local dev-only admin session indicator + identity pin.
 //
-// In normal/production builds ADMIN_BYPASS is a compile-time `false`, so this
-// component tree-shakes to `return null` and the effect never ships. In a dev
-// admin session it pins the fake admin user id (so backend writes are
+// In production ADMIN_BYPASS is a compile-time `false`, so the render returns
+// null (no badge) and the bypass branch tree-shakes away; the only surviving
+// effect is a cheap localStorage hygiene check that clears a stale synthetic
+// uid if one was ever left behind (a no-op for real users). In a dev admin
+// session it instead pins the fake admin user id (so backend writes are
 // attributable) and shows a small, unmistakable badge so the bypassed session
 // is never confused with a real authenticated login.
 export function AdminSession() {
   useEffect(() => {
-    if (!ADMIN_BYPASS) return;
-    setMyUserId(ADMIN_USER_ID);
+    if (ADMIN_BYPASS) {
+      // Pin the synthetic id so backend writes during a bypass session are attributable.
+      setMyUserId(ADMIN_USER_ID);
+    } else if (getMyUserId() === ADMIN_USER_ID) {
+      // Bypass is off but a previous local dev session left the synthetic id behind;
+      // clear it so it can never leak into attribution. No-op for real users.
+      setMyUserId(null);
+    }
   }, []);
 
   if (!ADMIN_BYPASS) return null;

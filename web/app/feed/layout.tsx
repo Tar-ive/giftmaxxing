@@ -18,7 +18,6 @@ export default function FeedLayout({ children }: { children: React.ReactNode }) 
     <OnboardingGate>
       <AppStore>
         <MaxiProvider>
-          <AdminSession />
           <div className="flex min-h-screen">
             <Sidebar />
             <div className="flex-1">
@@ -33,5 +32,10 @@ export default function FeedLayout({ children }: { children: React.ReactNode }) 
     </OnboardingGate>
   );
 
-  return clerkEnabled ? <AuthGate>{app}</AuthGate> : app;
+  return (
+    <>
+      <AdminSession />
+      {clerkEnabled ? <AuthGate>{app}</AuthGate> : app}
+    </>
+  );
 }
