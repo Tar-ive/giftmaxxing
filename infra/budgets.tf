@@ -84,16 +84,31 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
-  # One ACTUAL-spend notification per absolute threshold -> the cost-alerts topic.
+  # One ACTUAL-spend notification per absolute threshold -> the cost-alerts topic
+  # (SNS) AND directly to the cost-alert email recipients. The direct emails are
+  # codified here via var.cost_alert_emails so `terraform apply` never again wipes
+  # addresses added by hand in the AWS console.
   dynamic "notification" {
     for_each = local.cost_alert_thresholds
     content {
-      comparison_operator       = "GREATER_THAN"
-      threshold                 = notification.value
-      threshold_type            = "ABSOLUTE_VALUE"
-      notification_type         = "ACTUAL"
-      subscriber_sns_topic_arns = [aws_sns_topic.cost_alerts.arn]
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value
+      threshold_type             = "ABSOLUTE_VALUE"
+      notification_type          = "ACTUAL"
+      subscriber_sns_topic_arns  = [aws_sns_topic.cost_alerts.arn]
+      subscriber_email_addresses = var.cost_alert_emails
     }
+  }
+
+  # Forecasted-spend heads-up: email the cost-alert recipients when AWS PROJECTS
+  # month-end spend over $500. Forecasts fire earlier than ACTUAL, buying lead
+  # time. Codifies a notification previously added by hand in the console.
+  notification {
+    comparison_operator        = "GREATER_THAN"
+    threshold                  = 500
+    threshold_type             = "ABSOLUTE_VALUE"
+    notification_type          = "FORECASTED"
+    subscriber_email_addresses = var.cost_alert_emails
   }
 
   # $1,000 -> trigger the auto-pause kill switch. AWS Budgets allows only ONE SNS
