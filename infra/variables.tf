@@ -34,6 +34,12 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "cost_alert_emails" {
+  description = "Addresses emailed DIRECTLY by the monthly budget (in addition to var.alert_email's SNS subscription) for the actual-threshold + $500 forecasted notifications. Codifies the recipients so `terraform apply` never again wipes emails added by hand in the AWS console. Unlike SNS, budget emails need NO confirmation. Set in terraform.tfvars (gitignored)."
+  type        = list(string)
+  default     = []
+}
+
 variable "alert_sms_number" {
   description = "Optional phone number in E.164 format (e.g. +15551234567) for SMS cost alerts. Leave empty to skip. SNS SMS may require moving the account out of the SMS sandbox / verifying the number first."
   type        = string
