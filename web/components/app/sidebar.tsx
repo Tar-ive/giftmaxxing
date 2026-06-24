@@ -179,8 +179,11 @@ export function MobileBars() {
           if (isMenu)
             return (
               <button
+                type="button"
                 key={t.label}
                 aria-label="Open navigation menu"
+                aria-expanded={drawerOpen}
+                aria-controls="mobile-nav-drawer"
                 className="text-ink"
                 onClick={() => setDrawerOpen(true)}
               >
@@ -200,14 +203,33 @@ export function MobileBars() {
 
       {/* Mobile navigation drawer (bottom sheet) */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div
+          className="fixed inset-0 z-50 md:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
+        >
           {/* Backdrop */}
-          <div
+          <button
+            type="button"
+            aria-label="Close navigation menu"
             className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
             onClick={() => setDrawerOpen(false)}
           />
           {/* Sheet */}
-          <div className="absolute bottom-0 left-0 right-0 animate-rise rounded-t-3xl border-t border-line bg-cream pb-8 pt-3 shadow-xl">
+          <div
+            id="mobile-nav-drawer"
+            className="absolute bottom-0 left-0 right-0 animate-rise rounded-t-3xl border-t border-line bg-cream pb-8 pt-3 shadow-xl"
+          >
+            {/* Close button */}
+            <button
+              type="button"
+              aria-label="Close navigation menu"
+              className="absolute right-4 top-3 text-ink"
+              onClick={() => setDrawerOpen(false)}
+            >
+              <Icons.close size={20} />
+            </button>
             {/* Handle */}
             <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-ink/20" />
             <nav className="grid grid-cols-3 gap-2 px-4">
