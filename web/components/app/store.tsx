@@ -13,7 +13,7 @@ import { type Post, type GroupChat, GROUP_CHATS } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
-import { fetchFeed, isApiConfigured } from "@/lib/api";
+import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
 
 const FEED_CAP = 216; // soft cap (~3 passes over the pin set) for the cycling feed
 
@@ -26,6 +26,7 @@ type Store = {
   follows: Set<string>;
   toggleLike: (postId: string) => void;
   toggleSave: (postId: string) => void;
+  reportSeen: (postId: string) => void;
   addComment: (postId: string, text: string) => void;
   addPost: (post: Post) => void;
   toggleFollow: (userId: string) => void;
@@ -93,7 +94,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        const { posts: apiPosts, cursor } = await fetchFeed({ limit: 16 });
+        const { posts: apiPosts, cursor } = await fetchFeed({ limit: 16, userId: getMyUserId() });
         const photos = apiPosts.filter(isPhoto);
         if (!cancelled && photos.length >= 6) {
           apiModeRef.current = true;
@@ -112,18 +113,34 @@ export function AppStore({ children }: { children: React.ReactNode }) {
 
   const toggleLike = useCallback((postId: string) => {
     setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, liked: !p.liked, likes: p.likes + (p.liked ? -1 : 1) }
-          : p
-      )
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        const liked = !p.liked;
+        // Persist likes (idempotent) so they seed recs + drop out of future feeds.
+        if (liked && apiModeRef.current) recordInteraction(getMyUserId(), postId, "like");
+        return { ...p, liked, likes: p.likes + (liked ? 1 : -1) };
+      })
     );
   }, []);
 
   const toggleSave = useCallback((postId: string) => {
     setPosts((prev) =>
-      prev.map((p) => (p.id === postId ? { ...p, saved: !p.saved } : p))
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        const saved = !p.saved;
+        if (saved && apiModeRef.current) recordInteraction(getMyUserId(), postId, "save");
+        return { ...p, saved };
+      })
     );
+  }, []);
+
+  // Mark a post seen once it's dwelled in view (called by PostCard's observer).
+  // API mode only — bundled-pin ids aren't real backend postIds. recordInteraction
+  // de-dupes per session, so repeated observer fires are cheap. This is what makes
+  // the feed fresh: the backend excludes seen targets on the next load.
+  const reportSeen = useCallback((postId: string) => {
+    if (!apiModeRef.current) return;
+    recordInteraction(getMyUserId(), postId, "seen");
   }, []);
 
   const addComment = useCallback((postId: string, text: string) => {
@@ -210,6 +227,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           const { posts: apiPosts, cursor } = await fetchFeed({
             limit: 12,
             cursor: cursorRef.current,
+            userId: getMyUserId(),
           });
           cursorRef.current = cursor;
           const photos = apiPosts.filter(isPhoto);
@@ -250,6 +268,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       follows,
       toggleLike,
       toggleSave,
+      reportSeen,
       addComment,
       addPost,
       toggleFollow,
@@ -268,7 +287,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       togglePinChat,
       togglePinMessage,
     }),
-    [posts, follows, toggleLike, toggleSave, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
+    [posts, follows, toggleLike, toggleSave, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

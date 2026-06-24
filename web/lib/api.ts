@@ -93,6 +93,9 @@ type FeedOpts = {
   category?: string;
   budget?: number;
   eventBoost?: number;
+  // Viewer id (from getMyUserId). When present the backend excludes everything
+  // this user has already seen/liked/saved, so the feed never repeats.
+  userId?: string | null;
 };
 
 async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
@@ -105,6 +108,7 @@ async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
   if (opts.category) q.set("category", opts.category);
   if (opts.budget) q.set("budget", String(opts.budget));
   if (opts.eventBoost) q.set("eventBoost", String(opts.eventBoost));
+  if (opts.userId) q.set("userId", opts.userId);
 
   const res = await fetch(`${API_BASE}${path}?${q.toString()}`, {
     headers: { accept: "application/json" },
@@ -120,6 +124,31 @@ async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
 export const fetchFeed = (opts: FeedOpts = {}) => getPage("/feed", opts);
 export const fetchRecommendations = (opts: FeedOpts = {}) =>
   getPage("/recommendations", opts);
+
+// Fire-and-forget interaction logging (POST /interactions). Powers two things:
+//  1. Feed freshness — the backend excludes every target a user has interacted
+//     with, so "seen" impressions stop items from reappearing on the next load.
+//  2. Personalized recs — likes/saves become vector seeds for /recommendations.
+// Idempotent per session: each (user,type,target) is sent at most once, so the
+// impression observer can call this freely without spamming the API.
+const _sentInteractions = new Set<string>();
+export function recordInteraction(
+  userId: string | null | undefined,
+  targetId: string,
+  type: "seen" | "like" | "save"
+): void {
+  if (!isApiConfigured() || !userId || !targetId) return;
+  const key = `${userId}#${type}#${targetId}`;
+  if (_sentInteractions.has(key)) return;
+  _sentInteractions.add(key);
+  void fetch(`${API_BASE}/interactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ userId, targetId, type }),
+  }).catch(() => {
+    _sentInteractions.delete(key); // allow a retry after a transient failure
+  });
+}
 
 // ── Vector recommendations (S3 Vectors) ──────────────────────────────────────
 // Raw item shape returned by GET /pins and the vector path of /recommendations.

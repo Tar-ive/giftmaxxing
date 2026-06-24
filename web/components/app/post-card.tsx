@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { GRADIENTS } from "@/lib/data";
 import { resolveUser, commentCountOf, type Post } from "@/lib/social";
@@ -10,7 +10,7 @@ import { useStore } from "@/components/app/store";
 import { useMaxi } from "@/components/app/maxi-provider";
 
 export function PostCard({ post }: { post: Post }) {
-  const { toggleLike, toggleSave, addComment, toggleFollow, isFollowing, openPost } = useStore();
+  const { toggleLike, toggleSave, addComment, toggleFollow, isFollowing, openPost, reportSeen } = useStore();
   const { ask } = useMaxi();
   const me = useCurrentUser();
   const u = post.user === "you" ? me : resolveUser(post);
@@ -18,6 +18,37 @@ export function PostCard({ post }: { post: Post }) {
   const [draft, setDraft] = useState("");
   const [burst, setBurst] = useState(false);
   const lastTap = useRef(0);
+  const articleRef = useRef<HTMLElement>(null);
+
+  // Report an impression once the card has dwelled in view (~50% visible for
+  // 800ms). The store forwards it to the backend, which then excludes this item
+  // from the next feed load — the "don't show me what I've already seen" loop.
+  // Fires at most once per card; recordInteraction also de-dupes per session.
+  useEffect(() => {
+    const el = articleRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          if (!timer)
+            timer = setTimeout(() => {
+              reportSeen(post.id);
+              io.disconnect();
+            }, 800);
+        } else if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      },
+      { threshold: 0.5 }
+    );
+    io.observe(el);
+    return () => {
+      if (timer) clearTimeout(timer);
+      io.disconnect();
+    };
+  }, [post.id, reportSeen]);
 
   const doubleTapLike = () => {
     if (!post.liked) toggleLike(post.id);
@@ -32,7 +63,7 @@ export function PostCard({ post }: { post: Post }) {
   };
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
+    <article ref={articleRef} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
       {/* header */}
       <div className="flex items-center gap-3 px-4 py-3">
         <Link href={`/feed/${u.id}`}>
