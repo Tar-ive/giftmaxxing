@@ -42,6 +42,15 @@ resource "aws_lambda_function" "api" {
       # Visual search: Titan Multimodal embedding model + vector dimensionality.
       BEDROCK_EMBED_MODEL_ID = "amazon.titan-embed-image-v1"
       VECTOR_DIM             = "1024"
+      # Maxi: Claude Haiku 4.5 gift concierge (Bedrock Converse) — POST /maxi.
+      MAXI_MODEL_ID = var.maxi_model_id
+      # Maxi budgets: per-interaction token caps + a hard monthly Bedrock $ cap.
+      MAXI_MAX_TOKENS               = tostring(var.maxi_max_tokens)
+      MAXI_INTERACTION_TOKEN_BUDGET = tostring(var.maxi_interaction_token_budget)
+      MAXI_MAX_STEPS                = tostring(var.maxi_max_steps)
+      MAXI_MONTHLY_BUDGET_USD       = tostring(var.maxi_monthly_budget_usd)
+      MAXI_PRICE_IN_PER_1M          = tostring(var.maxi_price_in_per_1m)
+      MAXI_PRICE_OUT_PER_1M         = tostring(var.maxi_price_out_per_1m)
     }
   }
 

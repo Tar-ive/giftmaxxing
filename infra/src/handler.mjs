@@ -17,7 +17,7 @@ import {
   GetVectorsCommand,
   ListVectorsCommand,
 } from "@aws-sdk/client-s3vectors";
-import { BedrockRuntimeClient, InvokeModelCommand } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, InvokeModelCommand, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -448,6 +448,416 @@ async function captureConnection(item) {
   } catch (err) {
     console.error("captureConnection error", err);
   }
+}
+
+// ── Maxi: the Haiku 4.5 gift concierge (Bedrock Converse + tool use) ─────────
+// Real LLM agent hosted IN this Lambda (no container): the browser POSTs the
+// chat transcript to /maxi, we run a bounded tool-use loop where each tool reads
+// the SAME data the rest of the API serves, then return { say, pins, actions }.
+// Long-term memory lives as MEM# items in the graph table (pk=userId) and is
+// invisible to GET /graph (which only returns kind node|edge).
+const MAXI_MODEL_ID = process.env.MAXI_MODEL_ID || "us.anthropic.claude-haiku-4-5-20251001-v1:0";
+
+// ── Maxi budgets (token-per-interaction + monthly Bedrock $ cap) ─────────────
+// Per-INTERACTION: maxTokens caps output per model call; MAXI_INTERACTION_TOKEN_
+// BUDGET hard-caps TOTAL tokens (in+out) summed across the tool-use loop — when
+// exceeded we stop looping. Per-MONTH: an estimated-USD Bedrock cap tracked in
+// the config table (key maxi-budget#YYYY-MM, atomic ADD, per-month key so there's
+// no reset logic); when hit, /maxi 503s and the client falls back to the offline
+// responder. Prices are env-driven — VERIFY against Bedrock's Haiku 4.5 pricing.
+const MAXI_MAX_TOKENS = Number(process.env.MAXI_MAX_TOKENS || 768);
+const MAXI_INTERACTION_TOKEN_BUDGET = Number(process.env.MAXI_INTERACTION_TOKEN_BUDGET || 30000);
+const MAXI_MAX_STEPS = Number(process.env.MAXI_MAX_STEPS || 5);
+const MAXI_MONTHLY_BUDGET_USD = Number(process.env.MAXI_MONTHLY_BUDGET_USD || 25);
+const MAXI_PRICE_IN_PER_1M = Number(process.env.MAXI_PRICE_IN_PER_1M || 1.0);
+const MAXI_PRICE_OUT_PER_1M = Number(process.env.MAXI_PRICE_OUT_PER_1M || 5.0);
+
+const maxiMonthKey = () => `maxi-budget#${new Date().toISOString().slice(0, 7)}`;
+const maxiCostUsd = (inTok, outTok) =>
+  ((Number(inTok) || 0) / 1e6) * MAXI_PRICE_IN_PER_1M + ((Number(outTok) || 0) / 1e6) * MAXI_PRICE_OUT_PER_1M;
+
+// Month-to-date Maxi Bedrock spend (USD). Fail-open to 0 so a read error never
+// blocks Maxi (the per-interaction token cap still bounds any single call).
+async function maxiSpentThisMonth() {
+  if (!CONFIG) return 0;
+  try {
+    const out = await ddb.send(new GetCommand({ TableName: CONFIG, Key: { key: maxiMonthKey() } }));
+    return Number(out.Item?.spentUsd) || 0;
+  } catch (e) {
+    console.warn("maxiSpentThisMonth read failed (fail-open):", e.message);
+    return 0;
+  }
+}
+
+// Atomically add this interaction's usage to the month's counter (best-effort).
+async function recordMaxiUsage(inTok, outTok) {
+  if (!CONFIG) return;
+  try {
+    await ddb.send(
+      new UpdateCommand({
+        TableName: CONFIG,
+        Key: { key: maxiMonthKey() },
+        UpdateExpression: "SET updatedAt = :now ADD spentUsd :c, tokensIn :i, tokensOut :o",
+        ExpressionAttributeValues: {
+          ":now": Date.now(),
+          ":c": maxiCostUsd(inTok, outTok),
+          ":i": Number(inTok) || 0,
+          ":o": Number(outTok) || 0,
+        },
+      })
+    );
+  } catch (e) {
+    console.warn("recordMaxiUsage failed:", e.message);
+  }
+}
+
+const MAXI_SYSTEM = `You are Maxi, the gift concierge inside Giftmaxxing. You help people find, shortlist, and (simulated) check out gifts, and you remember their taste and the people they shop for.
+
+Voice: warm, concise, a little playful — 1 to 3 sentences. You may be read aloud, so avoid markdown tables and long lists; at most one tasteful emoji.
+
+Use tools, don't guess:
+- Find gifts by budget / vibe / recipient / category with find_gifts.
+- Look up Reddit-mined ideas for a recipient with gift_ideas, or list types with list_recipients.
+- Recall who they shop for and key dates with get_profile, upcoming_events, list_connections, relationship_graph — and proactively flag a date that's near.
+- When the user states a durable fact (a budget, a like/dislike, who they shop for), call remember_fact. When they give a concrete dated occasion, call save_event so reminders fire.
+- add_to_cart and checkout are SIMULATED — say so honestly; never imply a real charge or shipment.
+
+After find_gifts or gift_ideas, briefly say what you found; the products render automatically, so don't recite every price in prose. Ground all product claims in tool results — never invent prices, brands, or links. If a tool returns nothing, say so and offer an alternative.`;
+
+async function recallMemories(userId, limit = 8) {
+  if (!GRAPH || !userId) return [];
+  try {
+    const out = await ddb.send(
+      new QueryCommand({
+        TableName: GRAPH,
+        KeyConditionExpression: "pk = :u AND begins_with(sk, :p)",
+        ExpressionAttributeValues: { ":u": userId, ":p": "MEM#" },
+        ScanIndexForward: false,
+        Limit: limit,
+      })
+    );
+    return (out.Items ?? []).map((m) => m.text).filter(Boolean);
+  } catch (e) {
+    console.warn("recallMemories failed:", e.message);
+    return [];
+  }
+}
+
+async function saveMemory(userId, kind, text) {
+  if (!GRAPH || !userId || !text) return;
+  const k = ["preference", "semantic", "summary"].includes(kind) ? kind : "semantic";
+  await ddb.send(
+    new PutCommand({
+      TableName: GRAPH,
+      Item: {
+        pk: userId,
+        sk: `MEM#${k}#${gid()}`,
+        kind: "memory",
+        memKind: k,
+        text: String(text).slice(0, 280),
+        createdAt: Date.now(),
+      },
+    })
+  );
+}
+
+function maxiProduct(p) {
+  return {
+    postId: p.postId,
+    title: String(p.title || p.name || "").slice(0, 90),
+    price: typeof p.price === "number" ? p.price : null,
+    brand: p.brand || null,
+    image: p.image || p.imageUrl || null,
+    category: p.category || null,
+  };
+}
+
+async function toolFindGifts({ budget, category, recipient, vibes, limit }) {
+  const n = Math.min(Number(limit) || 6, 10);
+  const opts = {
+    vibes: Array.isArray(vibes) ? vibes : parseList(vibes),
+    recipient: recipient || undefined,
+    category: category || undefined,
+    budget: Number(budget) || undefined,
+  };
+  const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 150 }));
+  let pool = out.Items ?? [];
+  if (opts.budget) pool = pool.filter((p) => (typeof p.price === "number" ? p.price : 1e9) <= opts.budget);
+  const items = pool
+    .map((p) => ({ p, s: scorePost(p, opts) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, n)
+    .map(({ p }) => maxiProduct(p));
+  return { items, count: items.length };
+}
+
+async function toolGiftIdeas({ recipient }) {
+  if (!recipient) return { error: "recipient required" };
+  const out = await ddb.send(
+    new GetCommand({ TableName: KNOWLEDGE, Key: { recipient: String(recipient).toLowerCase() } })
+  );
+  if (!out.Item) return { ideas: [], bundles: [], note: "no mined data for that recipient" };
+  const ideas = (out.Item.ideas ?? [])
+    .slice(0, 8)
+    .map((i) => ({ item: i.item || i.label || i.name, count: i.count }));
+  const bundles = (out.Item.bundles ?? []).slice(0, 4).map((b) => ({ items: (b.items || []).slice(0, 4) }));
+  return { ideas, bundles };
+}
+
+async function toolListRecipients() {
+  const out = await ddb.send(new ScanCommand({ TableName: KNOWLEDGE }));
+  const items = (out.Items ?? [])
+    .filter((r) => r.recipient !== "anyone" && r.recipient !== "self")
+    .map((r) => ({ recipient: r.recipient, label: r.label || r.recipient, postCount: r.postCount ?? 0 }))
+    .sort((a, b) => (b.postCount ?? 0) - (a.postCount ?? 0))
+    .slice(0, 20);
+  return { items };
+}
+
+async function toolGetProfile(userId) {
+  if (!userId) return { error: "not signed in" };
+  const out = await ddb.send(new GetCommand({ TableName: USERS, Key: { userId } }));
+  const it = out.Item;
+  if (!it) return { exists: false };
+  return {
+    exists: true,
+    name: it.identity?.name || it.name || it.profile?.name || null,
+    interests: (it.interests || it.profile?.interests || []).slice(0, 12),
+    recipients: (it.recipients || []).slice(0, 12).map((r) => ({ id: r.id, name: r.name, relation: r.relation })),
+    events: (it.events || []).slice(0, 12).map((e) => ({ type: e.type || e.title, date: e.date, recipientId: e.recipientId })),
+  };
+}
+
+async function toolUpcomingEvents(userId, withinDays) {
+  if (!userId) return { error: "not signed in" };
+  const out = await ddb.send(new GetCommand({ TableName: USERS, Key: { userId } }));
+  const events = Array.isArray(out.Item?.events) ? out.Item.events : [];
+  const recipients = Array.isArray(out.Item?.recipients) ? out.Item.recipients : [];
+  const byId = Object.fromEntries(recipients.map((r) => [r.id, r]));
+  const items = computeUpcoming(events, Number(withinDays) || 90).map((u) => ({
+    type: u.type,
+    date: u.date,
+    daysUntil: u.daysUntil,
+    recipient: byId[u.recipientId]?.name ?? u.recipientName ?? null,
+  }));
+  return { items };
+}
+
+async function toolListConnections(userId) {
+  if (!userId) return { error: "not signed in" };
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: CONNECTIONS,
+      KeyConditionExpression: "userId = :u",
+      ExpressionAttributeValues: { ":u": userId },
+    })
+  );
+  const items = (out.Items ?? [])
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, 15)
+    .map((c) => ({
+      name: c.guestName,
+      birthday: c.birthday || null,
+      interests: (c.interests || []).slice(0, 6),
+      vibes: (c.vibes || []).slice(0, 6),
+      connectionId: c.connectionId,
+    }));
+  return { items };
+}
+
+async function toolRelationshipGraph(userId) {
+  if (!userId || !GRAPH) return { error: "no graph" };
+  const out = await ddb.send(
+    new QueryCommand({
+      TableName: GRAPH,
+      KeyConditionExpression: "pk = :u",
+      ExpressionAttributeValues: { ":u": userId },
+    })
+  );
+  const all = (out.Items ?? []).filter((i) => i.kind === "node" || i.kind === "edge");
+  const nodes = all.filter((i) => i.kind === "node");
+  const edges = all.filter((i) => i.kind === "edge");
+  const byType = {};
+  for (const n of nodes) byType[n.type] = (byType[n.type] || 0) + 1;
+  const people = nodes
+    .filter((n) => n.type === "recipient" || n.type === "soft")
+    .map((n) => n.label)
+    .filter(Boolean)
+    .slice(0, 12);
+  return { counts: { nodes: nodes.length, edges: edges.length, byType }, people };
+}
+
+async function toolSaveEvent(userId, { title, date, recipientName }) {
+  if (!userId) return { error: "not signed in — can't save" };
+  if (!title || !date) return { error: "need a title and a date (YYYY-MM-DD)" };
+  const out = await ddb.send(new GetCommand({ TableName: USERS, Key: { userId } }));
+  const item = out.Item || { userId, createdAt: Date.now() };
+  const events = Array.isArray(item.events) ? item.events : [];
+  const ev = {
+    id: `evt_${gid()}`,
+    type: String(title).slice(0, 80),
+    date: String(date).slice(0, 10),
+    recipientName: recipientName ? String(recipientName).slice(0, 60) : undefined,
+    source: "maxi",
+    createdAt: Date.now(),
+  };
+  events.push(ev);
+  item.events = events;
+  item.updatedAt = Date.now();
+  await ddb.send(new PutCommand({ TableName: USERS, Item: item }));
+  return { ok: true, saved: { type: ev.type, date: ev.date } };
+}
+
+async function toolRememberFact(userId, { fact, kind }) {
+  if (!userId) return { error: "not signed in — no long-term memory" };
+  if (!fact) return { error: "nothing to remember" };
+  await saveMemory(userId, kind, fact);
+  return { ok: true };
+}
+
+// Tool specs advertised to the model (JSON Schema per Converse toolConfig).
+const MAXI_TOOLS = [
+  {
+    name: "find_gifts",
+    description: "Search the gift catalog by budget, category, recipient type, and/or vibes. Returns products that render to the user.",
+    schema: {
+      type: "object",
+      properties: {
+        budget: { type: "number", description: "max price in USD" },
+        category: { type: "string", description: "e.g. home, kitchen, jewelry, tech, wellness, plants, art" },
+        recipient: { type: "string", description: "recipient type, e.g. mom, dad, friend, partner" },
+        vibes: { type: "array", items: { type: "string" }, description: "taste keywords, e.g. cozy, minimal" },
+        limit: { type: "number", description: "how many to return (max 10)" },
+      },
+    },
+  },
+  {
+    name: "gift_ideas",
+    description: "Reddit-mined gift ideas and bundles for a specific recipient type.",
+    schema: { type: "object", properties: { recipient: { type: "string" } }, required: ["recipient"] },
+  },
+  {
+    name: "list_recipients",
+    description: "List the recipient types we have mined gift ideas for.",
+    schema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_profile",
+    description: "The signed-in user's saved profile: their name, interests, the recipients they shop for, and their saved events.",
+    schema: { type: "object", properties: {} },
+  },
+  {
+    name: "upcoming_events",
+    description: "The user's upcoming saved occasions (soonest first) within a window of days.",
+    schema: { type: "object", properties: { withinDays: { type: "number" } } },
+  },
+  {
+    name: "list_connections",
+    description: "Soft profiles the user collected from swipe challenges — friends' names, birthdays, and taste.",
+    schema: { type: "object", properties: {} },
+  },
+  {
+    name: "relationship_graph",
+    description: "A compact summary of the user's gifting network graph: node/edge counts by type and the people in it.",
+    schema: { type: "object", properties: {} },
+  },
+  {
+    name: "save_event",
+    description: "Save a concrete dated occasion to the user's profile so reminders fire. Date must be YYYY-MM-DD.",
+    schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD" },
+        recipientName: { type: "string" },
+      },
+      required: ["title", "date"],
+    },
+  },
+  {
+    name: "remember_fact",
+    description: "Remember a durable preference or fact about the user for future sessions (e.g. budget, a like/dislike).",
+    schema: {
+      type: "object",
+      properties: {
+        fact: { type: "string" },
+        kind: { type: "string", enum: ["preference", "semantic"] },
+      },
+      required: ["fact"],
+    },
+  },
+  {
+    name: "add_to_cart",
+    description: "Add products (by postId) to the user's SIMULATED cart in the browser.",
+    schema: {
+      type: "object",
+      properties: { postIds: { type: "array", items: { type: "string" } } },
+      required: ["postIds"],
+    },
+  },
+  {
+    name: "checkout",
+    description: "Place the user's SIMULATED order (no real charge or shipment).",
+    schema: { type: "object", properties: {} },
+  },
+];
+
+async function runMaxiTool(name, input, ctx) {
+  const i = input || {};
+  switch (name) {
+    case "find_gifts": {
+      const r = await toolFindGifts(i);
+      ctx.pins.push(...(r.items || []));
+      return r;
+    }
+    case "gift_ideas":
+      return toolGiftIdeas(i);
+    case "list_recipients":
+      return toolListRecipients();
+    case "get_profile":
+      return toolGetProfile(ctx.userId);
+    case "upcoming_events":
+      return toolUpcomingEvents(ctx.userId, i.withinDays);
+    case "list_connections":
+      return toolListConnections(ctx.userId);
+    case "relationship_graph":
+      return toolRelationshipGraph(ctx.userId);
+    case "save_event":
+      return toolSaveEvent(ctx.userId, i);
+    case "remember_fact":
+      return toolRememberFact(ctx.userId, i);
+    case "add_to_cart": {
+      const ids = Array.isArray(i.postIds) ? i.postIds.map(String) : [];
+      ctx.actions.push({ type: "add_to_cart", postIds: ids });
+      return { ok: true, added: ids.length };
+    }
+    case "checkout":
+      ctx.actions.push({ type: "checkout" });
+      return { ok: true };
+    default:
+      return { error: `unknown tool ${name}` };
+  }
+}
+
+// Build a clean alternating Converse transcript (must start + end on a user turn).
+function buildMaxiMessages(incoming, userText) {
+  const turns = [];
+  for (const m of (Array.isArray(incoming) ? incoming : []).slice(-12)) {
+    const role = m.role === "assistant" ? "assistant" : "user";
+    const text = typeof m.text === "string" ? m.text : typeof m.content === "string" ? m.content : "";
+    const t = String(text).trim();
+    if (t) turns.push({ role, content: [{ text: t.slice(0, 2000) }] });
+  }
+  if (userText) turns.push({ role: "user", content: [{ text: userText.slice(0, 2000) }] });
+  const norm = [];
+  for (const m of turns) {
+    if (!norm.length && m.role !== "user") continue;
+    const last = norm[norm.length - 1];
+    if (last && last.role === m.role) last.content.push(...m.content);
+    else norm.push({ role: m.role, content: [...m.content] });
+  }
+  while (norm.length && norm[norm.length - 1].role !== "user") norm.pop();
+  return norm;
 }
 
 export const handler = async (event) => {
@@ -1015,6 +1425,105 @@ export const handler = async (event) => {
         imageUrl: imageUrl || undefined,
       });
       return json(200, { ok: true });
+    }
+
+    // POST /maxi  { userId?, name?, message, messages? } — Maxi, the Haiku 4.5
+    // gift concierge. Runs a bounded Bedrock Converse tool-use loop and returns
+    // { say, pins, actions }. Falls back client-side if this 5xx's.
+    if (method === "POST" && path === "/maxi") {
+      if (await isPaused()) return json(503, { error: "Maxi is napping (cost guard)" });
+      // Per-MONTH Bedrock budget: hard stop once month-to-date Maxi spend is used up.
+      if (MAXI_MONTHLY_BUDGET_USD > 0 && (await maxiSpentThisMonth()) >= MAXI_MONTHLY_BUDGET_USD) {
+        return json(503, { error: "maxi_budget_exhausted" });
+      }
+      const userId = typeof body.userId === "string" && body.userId ? body.userId : null;
+      const userText = typeof body.message === "string" ? body.message.trim() : "";
+      const messages = buildMaxiMessages(body.messages, userText);
+      if (!messages.length) return json(400, { error: "message required" });
+
+      const memories = await recallMemories(userId, 8);
+      const memBlock = memories.length
+        ? `\n\nWhat you remember about this user:\n- ${memories.join("\n- ")}`
+        : "";
+      const nameLine = typeof body.name === "string" && body.name ? `\n\nThe user's first name is ${body.name}.` : "";
+      const signedOut = userId
+        ? ""
+        : "\n\nThe user is signed out: get_profile, upcoming_events, list_connections, relationship_graph, save_event, and remember_fact are unavailable — help with catalog search only and gently suggest signing in to unlock memory.";
+      const sys = MAXI_SYSTEM + nameLine + signedOut + memBlock;
+
+      const toolConfig = {
+        tools: MAXI_TOOLS.map((t) => ({
+          toolSpec: { name: t.name, description: t.description, inputSchema: { json: t.schema } },
+        })),
+      };
+      const tctx = { userId, pins: [], actions: [] };
+      let say = "";
+      let usedIn = 0;
+      let usedOut = 0;
+      try {
+        for (let step = 0; step < MAXI_MAX_STEPS; step++) {
+          const res = await bedrock.send(
+            new ConverseCommand({
+              modelId: MAXI_MODEL_ID,
+              system: [{ text: sys }],
+              messages,
+              toolConfig,
+              inferenceConfig: { maxTokens: MAXI_MAX_TOKENS, temperature: 0.4 },
+            })
+          );
+          // Per-interaction token budget: sum usage across the tool-use loop.
+          usedIn += res.usage?.inputTokens || 0;
+          usedOut += res.usage?.outputTokens || 0;
+          const overTokenBudget = usedIn + usedOut >= MAXI_INTERACTION_TOKEN_BUDGET;
+          const msg = res.output?.message;
+          if (msg) messages.push(msg);
+          const blocks = msg?.content ?? [];
+          const textOut = blocks.filter((b) => b.text).map((b) => b.text).join(" ").trim();
+          if (textOut) say = textOut;
+          const toolUses = blocks.filter((b) => b.toolUse).map((b) => b.toolUse);
+          if (res.stopReason === "tool_use" && toolUses.length && !overTokenBudget) {
+            const results = [];
+            for (const tu of toolUses) {
+              let out;
+              try {
+                out = await runMaxiTool(tu.name, tu.input, tctx);
+              } catch (e) {
+                out = { error: e.message };
+              }
+              results.push({
+                toolResult: {
+                  toolUseId: tu.toolUseId,
+                  content: [{ json: out }],
+                  status: out && out.error ? "error" : "success",
+                },
+              });
+            }
+            messages.push({ role: "user", content: results });
+            continue;
+          }
+          break;
+        }
+      } catch (e) {
+        console.warn("maxi converse failed:", e.name, e.message);
+        return json(502, { error: "agent_unavailable", detail: e.name });
+      }
+
+      // Bill this interaction's Bedrock usage to the monthly budget counter.
+      await recordMaxiUsage(usedIn, usedOut);
+      const costUsd = maxiCostUsd(usedIn, usedOut);
+      console.log("maxi usage", JSON.stringify({ userId, usedIn, usedOut, costUsd }));
+
+      const seen = new Set();
+      const pins = tctx.pins
+        .filter((p) => p && p.postId && !seen.has(p.postId) && seen.add(p.postId))
+        .slice(0, 10);
+      return json(200, {
+        say: say || "Hmm, I didn't quite catch that — tell me a budget or who it's for and I'll find something.",
+        pins,
+        actions: tctx.actions,
+        source: "agent",
+        usage: { inputTokens: usedIn, outputTokens: usedOut, costUsd: Math.round(costUsd * 1e5) / 1e5 },
+      });
     }
 
     return json(404, { error: `no route for ${method} ${path}` });

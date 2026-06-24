@@ -27,6 +27,7 @@ import {
   removeFromCart,
 } from "@/lib/cart";
 import { respond, type MaxiReply } from "@/lib/maxi";
+import { askMaxi, getMyUserId, type MaxiAgentProduct } from "@/lib/api";
 import { Maxi, Icons } from "@/components/ui";
 
 type Msg = {
@@ -100,6 +101,27 @@ function resultToPin(r: { id: string; imageUrl: string; title: string; brand?: s
   };
 }
 
+// Map an agent product to a Pin card: prefer the bundled pin (real photo/grad/
+// emoji), else synthesize one from the returned fields.
+function agentPinToPin(p: MaxiAgentProduct): Pin {
+  const existing = PINS.find((x) => x.id === p.postId);
+  if (existing) return existing;
+  const h = hashNum(p.postId);
+  return {
+    id: p.postId,
+    title: p.title || "Gift idea",
+    image: p.image || "",
+    thumb: p.image || "",
+    source: p.brand || "giftmaxxing",
+    brand: p.brand || "Giftmaxxing",
+    url: "#",
+    price: typeof p.price === "number" ? p.price : 20 + (h % 180),
+    grad: GRAD_KEYS[h % GRAD_KEYS.length],
+    emoji: "\uD83C\uDF81",
+    category: p.category || "gift",
+  };
+}
+
 export function MaxiProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Msg[]>([
@@ -114,6 +136,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const lastShownRef = useRef<Pin[]>([]);
   const profileRef = useRef<{ vibes: string[]; name?: string }>({ vibes: [] });
+  const messagesRef = useRef<Msg[]>([]);
 
   // hydrate cart + profile on mount (SSR-safe localStorage read)
   useEffect(() => {
@@ -124,6 +147,11 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     saveCart(cart);
   }, [cart]);
+  // Mirror messages into a ref so send() reads the live transcript for the agent
+  // without re-creating the callback every render.
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const addPinToCart = useCallback((pin: Pin) => {
     setCart((prev) => addPinToCartArr(prev, pin));
@@ -141,15 +169,48 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       setSending(true);
       (async () => {
         let reply: MaxiReply;
-        try {
-          reply = await respond(clean, {
-            lastShown: lastShownRef.current,
-            vibes: profileRef.current.vibes,
-            cart,
-            name: profileRef.current.name,
-          });
-        } catch {
-          reply = { text: "Hmm, I glitched for a second — try that again?" };
+        // Try the real LLM agent first (behind a flag); fall back to the offline
+        // rule-based responder on any miss so the panel always answers.
+        const agent =
+          process.env.NEXT_PUBLIC_MAXI_AGENT === "1"
+            ? await askMaxi({
+                userId: getMyUserId(),
+                name: profileRef.current.name,
+                message: clean,
+                messages: messagesRef.current
+                  .filter((mm) => mm.text)
+                  .map((mm) => ({
+                    role: mm.from === "you" ? ("user" as const) : ("assistant" as const),
+                    text: mm.text,
+                  })),
+              })
+            : null;
+        if (agent) {
+          const pins = agent.pins.map(agentPinToPin);
+          const byId = new Map(pins.map((p) => [p.id, p]));
+          const addPins = agent.actions
+            .filter((a) => a.type === "add_to_cart")
+            .flatMap((a) => a.postIds ?? [])
+            .map((id) => byId.get(id) ?? PINS.find((p) => p.id === id))
+            .filter((p): p is Pin => Boolean(p));
+          reply = {
+            text: agent.say,
+            pins: pins.length ? pins : undefined,
+            source: agent.source,
+            addPins: addPins.length ? addPins : undefined,
+            checkout: agent.actions.some((a) => a.type === "checkout"),
+          };
+        } else {
+          try {
+            reply = await respond(clean, {
+              lastShown: lastShownRef.current,
+              vibes: profileRef.current.vibes,
+              cart,
+              name: profileRef.current.name,
+            });
+          } catch {
+            reply = { text: "Hmm, I glitched for a second — try that again?" };
+          }
         }
         if (reply.addPins?.length) setCart((prev) => reply.addPins!.reduce((acc, p) => addPinToCartArr(acc, p), prev));
         if (reply.checkout) setCart([]);

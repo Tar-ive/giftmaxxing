@@ -511,3 +511,55 @@ export async function fetchGraph(
     return empty;
   }
 }
+
+// ── Maxi agent (Claude Haiku 4.5 via POST /maxi) ─────────────────────────────
+export type MaxiAgentProduct = {
+  postId: string;
+  title: string;
+  price: number | null;
+  brand: string | null;
+  image: string | null;
+  category: string | null;
+};
+export type MaxiAction = { type: string; postIds?: string[] };
+export type MaxiAgentReply = {
+  say: string;
+  pins: MaxiAgentProduct[];
+  actions: MaxiAction[];
+  source: string;
+};
+
+// Calls the real LLM agent (Bedrock Converse + tools, server-side). Returns null
+// on ANY failure (not configured, 5xx, cost-guard, network) so callers can fall
+// back to the offline rule-based responder in web/lib/maxi.ts.
+export async function askMaxi(input: {
+  userId?: string | null;
+  name?: string;
+  message: string;
+  messages?: { role: "user" | "assistant"; text: string }[];
+}): Promise<MaxiAgentReply | null> {
+  if (!isApiConfigured()) return null;
+  try {
+    const res = await fetch(`${API_BASE}/maxi`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        userId: input.userId ?? undefined,
+        name: input.name,
+        message: input.message,
+        messages: (input.messages ?? []).slice(-12),
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as Partial<MaxiAgentReply>;
+    if (!data || typeof data.say !== "string") return null;
+    return {
+      say: data.say,
+      pins: Array.isArray(data.pins) ? data.pins : [],
+      actions: Array.isArray(data.actions) ? data.actions : [],
+      source: typeof data.source === "string" ? data.source : "agent",
+    };
+  } catch {
+    return null;
+  }
+}
