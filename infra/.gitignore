@@ -5,5 +5,7 @@
 build/
 node_modules/
 crash.log
+tfplan
+*.tfplan
 *.tfvars
 !example.tfvars

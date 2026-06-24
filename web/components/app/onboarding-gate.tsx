@@ -3,43 +3,59 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { isOnboardingComplete } from "@/lib/onboarding";
+import { isProfileSyncSettled, subscribeProfileSync } from "@/lib/profile-status";
 
-function subscribeToStorage(cb: () => void) {
+// Clerk-enabled builds restore a returning user's profile from DynamoDB on
+// sign-in (AccountSync). Only those builds need to wait for that restore before
+// deciding whether to send the user to onboarding.
+const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
+type GateState = "loading" | "complete" | "redirect";
+
+function subscribe(cb: () => void) {
+  // The native `storage` event only fires in *other* tabs, so it never catches
+  // a same-tab write. We also listen for the "giftmaxxing:profile" event
+  // (dispatched on every profile save/restore) and the cloud-sync settle signal.
   window.addEventListener("storage", cb);
-  return () => window.removeEventListener("storage", cb);
+  window.addEventListener("giftmaxxing:profile", cb);
+  const unsubscribe = subscribeProfileSync(cb);
+  return () => {
+    window.removeEventListener("storage", cb);
+    window.removeEventListener("giftmaxxing:profile", cb);
+    unsubscribe();
+  };
 }
 
-function getOnboardingSnapshot(): boolean {
-  return isOnboardingComplete();
+function getSnapshot(): GateState {
+  if (isOnboardingComplete()) return "complete";
+  // No profile yet: only redirect once any cloud restore has settled, otherwise
+  // wait — a returning user's profile may still be loading from DynamoDB.
+  if (!clerkEnabled || isProfileSyncSettled()) return "redirect";
+  return "loading";
 }
 
-function getServerSnapshot(): boolean {
-  return false;
+function getServerSnapshot(): GateState {
+  return "loading";
 }
 
 /**
- * Checks localStorage for a completed onboarding profile. If absent,
- * redirects to /onboarding. Renders children only after the check passes.
+ * Gates the feed on a completed onboarding profile. Renders children once a
+ * profile is present, redirects to /onboarding only after any cloud restore has
+ * settled, and shows a spinner while a signed-in user's profile is still loading.
  */
 export function OnboardingGate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const complete = useSyncExternalStore(
-    subscribeToStorage,
-    getOnboardingSnapshot,
-    getServerSnapshot,
-  );
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   useEffect(() => {
-    if (!complete) router.replace("/onboarding");
-  }, [complete, router]);
+    if (state === "redirect") router.replace("/onboarding");
+  }, [state, router]);
 
-  if (!complete) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-cream">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-coral" />
-      </div>
-    );
-  }
+  if (state === "complete") return <>{children}</>;
 
-  return <>{children}</>;
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-cream">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-line border-t-coral" />
+    </div>
+  );
 }
