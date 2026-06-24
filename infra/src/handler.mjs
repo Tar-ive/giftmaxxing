@@ -518,8 +518,8 @@ Voice: warm, concise, a little playful — 1 to 3 sentences. You may be read alo
 IMPORTANT — identity rules:
 - The user's first name is provided in the system prompt below (if known). ALWAYS use that name when addressing the user.
 - get_profile returns the user's OWN profile. The "yourName" field is the user's own name. The "recipients" list contains OTHER people the user shops for — never confuse a recipient's name with the user's name.
-- list_connections returns friends/contacts ("soft profiles") — these are OTHER people, NOT the user. Their "name" field is the friend's name.
-- relationship_graph returns "people" — these are OTHER people in the user's gifting network, NOT the user themselves.
+- list_connections returns friends/contacts ("soft profiles") — these are OTHER people, NOT the user. Their "friendName" field is the friend's name.
+- relationship_graph returns "otherPeople" — these are OTHER people in the user's gifting network, NOT the user themselves.
 - If the user asks "what is my name?" or similar, respond with the name from the system prompt or from get_profile's "yourName" field. NEVER return a connection's or recipient's name as the user's name.
 
 Use tools, don't guess:
@@ -631,7 +631,7 @@ async function toolGetProfile(userId) {
     yourName: it.identity?.name || it.name || it.profile?.name || null,
     note: "yourName is the user's OWN name. recipients below are OTHER people they shop for.",
     interests: (it.interests || it.profile?.interests || []).slice(0, 12),
-    recipients: (it.recipients || []).slice(0, 12).map((r) => ({ id: r.id, name: r.name, relation: r.relation, note: "this is someone the user shops FOR, not the user" })),
+    recipients: (it.recipients || []).slice(0, 12).map((r) => ({ id: r.id, name: r.name, relation: r.relation })),
     events: (it.events || []).slice(0, 12).map((e) => ({ type: e.type || e.title, date: e.date, recipientId: e.recipientId })),
   };
 }
