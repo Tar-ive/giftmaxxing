@@ -265,3 +265,117 @@ export async function fetchUpcomingEvents(
     return [];
   }
 }
+
+// ── Soft profiles / viral swipe-challenge connections ────────────────────────
+// When a guest finishes a shared swipe challenge, a "soft profile" is created on
+// the sender's account (POST /connections, keyed by the sender's Clerk userId).
+// The sender reads them back (GET /connections) as notifications + connections.
+
+const UID_KEY = "giftmaxxing_uid";
+
+// The signed-in user's Clerk userId, stashed to localStorage by AccountSync so
+// non-Clerk client code (e.g. the swipe share link) can read it synchronously.
+export function getMyUserId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(UID_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setMyUserId(userId: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (userId) localStorage.setItem(UID_KEY, userId);
+    else localStorage.removeItem(UID_KEY);
+  } catch {
+    /* ignore quota / disabled storage */
+  }
+}
+
+// Taste + identity captured from a guest's completed swipe challenge.
+export type GuestSoftProfile = {
+  name: string;
+  handle?: string;
+  birthday?: string;
+  vibes?: string[];
+  seeds?: string[];
+  interests?: string[];
+  yesCount?: number;
+  totalSwipes?: number;
+};
+
+// A soft profile as stored under the sender (GET /connections).
+export type SoftConnection = {
+  userId: string;
+  connectionId: string;
+  soft?: boolean;
+  kind?: string;
+  guestName: string;
+  guestHandle?: string;
+  birthday?: string;
+  vibes?: string[];
+  seeds?: string[];
+  interests?: string[];
+  yesCount?: number;
+  totalSwipes?: number;
+  seen?: boolean;
+  createdAt?: number;
+};
+
+// Called by the (anonymous) guest's browser on challenge completion.
+export async function createConnection(
+  senderId: string,
+  guest: GuestSoftProfile
+): Promise<boolean> {
+  if (!isApiConfigured() || !senderId || !guest?.name) return false;
+  try {
+    const res = await fetch(`${API_BASE}/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ senderId, guest }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Called by the sender's app to list collected soft profiles (newest first).
+export async function fetchConnections(
+  userId: string,
+  opts: { unseenOnly?: boolean } = {}
+): Promise<{ items: SoftConnection[]; unseen: number }> {
+  if (!isApiConfigured() || !userId) return { items: [], unseen: 0 };
+  try {
+    const q = new URLSearchParams({ userId });
+    if (opts.unseenOnly) q.set("unseenOnly", "1");
+    const res = await fetch(`${API_BASE}/connections?${q.toString()}`, {
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return { items: [], unseen: 0 };
+    const data = (await res.json()) as { items?: SoftConnection[]; unseen?: number };
+    return { items: data.items ?? [], unseen: data.unseen ?? 0 };
+  } catch {
+    return { items: [], unseen: 0 };
+  }
+}
+
+// Clear the sender's notification state. Omit ids to mark all unseen as seen.
+export async function markConnectionsSeen(
+  userId: string,
+  connectionIds?: string[]
+): Promise<boolean> {
+  if (!isApiConfigured() || !userId) return false;
+  try {
+    const res = await fetch(`${API_BASE}/connections/seen`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ userId, connectionIds }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

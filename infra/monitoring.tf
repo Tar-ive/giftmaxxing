@@ -1,10 +1,11 @@
-# ── CloudWatch dashboard ──────────────────────────────────────────────────────
+# ── CloudWatch usage dashboard ────────────────────────────────────────────────
 # A single pane of glass over every runtime AWS resource Giftmaxxing uses:
-# API Gateway (HTTP API), the API Lambda, all four DynamoDB tables, the media
-# S3 bucket, and Bedrock (Titan Multimodal, used by visual search). S3 Vectors
-# queries flow through the Lambda, so their health/latency is observable via the
-# Lambda + Bedrock panels. Apply with `terraform apply`; the console URL is
-# emitted as the `dashboard_url` output.
+# API Gateway (HTTP API), the API + reminders Lambdas, all six DynamoDB tables,
+# the media S3 bucket, the reminders SNS topic, and Bedrock (Titan Multimodal,
+# used by visual search). S3 Vectors queries flow through the Lambda, so their
+# health/latency is observable via the Lambda + Bedrock panels. Cost lives on a
+# separate free dashboard (cost.tf) so each stays under the 50-metric free tier.
+# Apply with `terraform apply`; the console URL is emitted as `dashboard_url`.
 
 locals {
   bedrock_embed_model_id = "amazon.titan-embed-image-v1"
@@ -27,7 +28,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
           markdown = <<-EOT
             # Giftmaxxing (${var.env}) — AWS resource monitor
             **Region** `${var.region}` · **API** `${aws_apigatewayv2_api.http.id}` · **Lambda** `${aws_lambda_function.api.function_name}` · **Bedrock** `${local.bedrock_embed_model_id}`
-            **DynamoDB** users · posts · interactions · knowledge   |   **S3** `${aws_s3_bucket.media.bucket}`   |   **S3 Vectors** `${local.prefix}-vectors` (index `pins`)
+            **DynamoDB** users·posts·interactions·knowledge·milestones·connections   |   **S3** `${aws_s3_bucket.media.bucket}`   |   **S3 Vectors** `${local.prefix}-vectors` · **SNS** `${aws_sns_topic.reminders.name}`
+            **Cost** → `${local.prefix}-cost` dashboard   |   **All resources** → Resource Group `${local.prefix}-resources`
           EOT
         }
       },
@@ -177,6 +179,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.posts.name, { stat = "Sum", label = "posts" }],
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.interactions.name, { stat = "Sum", label = "interactions" }],
             ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge" }],
+            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones" }],
+            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections" }],
           ]
         }
       },
@@ -199,6 +203,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.posts.name, { stat = "Sum", label = "posts" }],
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.interactions.name, { stat = "Sum", label = "interactions" }],
             ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge" }],
+            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones" }],
+            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections" }],
           ]
         }
       },
@@ -225,6 +231,10 @@ resource "aws_cloudwatch_dashboard" "overview" {
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.interactions.name, { stat = "Sum", label = "interactions write" }],
             ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge read" }],
             ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.knowledge.name, { stat = "Sum", label = "knowledge write" }],
+            ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones read" }],
+            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.milestones.name, { stat = "Sum", label = "milestones write" }],
+            ["AWS/DynamoDB", "ReadThrottleEvents", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections read" }],
+            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", aws_dynamodb_table.connections.name, { stat = "Sum", label = "connections write" }],
           ]
         }
       },
@@ -244,84 +254,44 @@ resource "aws_cloudwatch_dashboard" "overview" {
         }
       },
 
-      # ── Cost: section header ──────────────────────────────────────────────
-      # AWS/Billing EstimatedCharges is a monotonic month-to-date total (resets
-      # on the 1st), published only in us-east-1 and ONLY after "Receive billing
-      # alerts" is enabled once in Billing preferences. stat=Maximum = latest MTD.
+      # ── Reminders Lambda (daily cron) ─────────────────────────────────────
       {
-        type   = "text"
+        type   = "metric"
         x      = 0
         y      = 27
-        width  = 24
-        height = 2
-        properties = {
-          markdown = <<-EOT
-            ## Cost — estimated charges (USD, month-to-date)
-            Source `AWS/Billing` (us-east-1). One-time setup: **Billing & Cost Management → Billing preferences → enable "Receive CloudWatch billing alerts"**. Data refreshes every ~6h.
-          EOT
-        }
-      },
-
-      # ── Cost: total month-to-date (number) ────────────────────────────────
-      {
-        type   = "metric"
-        x      = 0
-        y      = 29
-        width  = 6
+        width  = 12
         height = 6
         properties = {
-          title                = "Total est. charges (USD)"
-          view                 = "singleValue"
-          region               = "us-east-1" # AWS/Billing only exists in us-east-1
-          period               = 21600
-          sparkline            = true
-          setPeriodToTimeRange = true
+          title   = "Reminders Lambda — daily cron"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.region
+          period  = 86400
           metrics = [
-            ["AWS/Billing", "EstimatedCharges", "Currency", "USD", { stat = "Maximum", label = "Total" }],
+            ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.reminders.function_name, { stat = "Sum", label = "Invocations" }],
+            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.reminders.function_name, { stat = "Sum", label = "Errors", color = "#d62728" }],
+            ["AWS/Lambda", "Duration", "FunctionName", aws_lambda_function.reminders.function_name, { stat = "Average", label = "Duration avg (ms)", yAxis = "right" }],
           ]
         }
       },
 
-      # ── Cost: total over time ─────────────────────────────────────────────
+      # ── SNS — reminders topic ─────────────────────────────────────────────
       {
         type   = "metric"
-        x      = 6
-        y      = 29
-        width  = 9
+        x      = 12
+        y      = 27
+        width  = 12
         height = 6
         properties = {
-          title   = "Estimated charges — total (USD)"
+          title   = "SNS — reminders topic"
           view    = "timeSeries"
           stacked = false
-          region  = "us-east-1"
-          period  = 21600
+          region  = var.region
+          period  = 86400
           metrics = [
-            ["AWS/Billing", "EstimatedCharges", "Currency", "USD", { stat = "Maximum", label = "Total" }],
-          ]
-        }
-      },
-
-      # ── Cost: by service ──────────────────────────────────────────────────
-      {
-        type   = "metric"
-        x      = 15
-        y      = 29
-        width  = 9
-        height = 6
-        properties = {
-          title   = "Estimated charges — by service (USD)"
-          view    = "timeSeries"
-          stacked = false
-          region  = "us-east-1"
-          period  = 21600
-          metrics = [
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AWSLambda", "Currency", "USD", { stat = "Maximum", label = "Lambda" }],
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonDynamoDB", "Currency", "USD", { stat = "Maximum", label = "DynamoDB" }],
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonS3", "Currency", "USD", { stat = "Maximum", label = "S3" }],
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonApiGateway", "Currency", "USD", { stat = "Maximum", label = "API Gateway" }],
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonCloudWatch", "Currency", "USD", { stat = "Maximum", label = "CloudWatch" }],
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonBedrock", "Currency", "USD", { stat = "Maximum", label = "Bedrock" }],
-            ["AWS/Billing", "EstimatedCharges", "ServiceName", "AWSDataTransfer", "Currency", "USD", { stat = "Maximum", label = "Data transfer" }],
+            ["AWS/SNS", "NumberOfMessagesPublished", "TopicName", aws_sns_topic.reminders.name, { stat = "Sum", label = "Published" }],
+            ["AWS/SNS", "NumberOfNotificationsDelivered", "TopicName", aws_sns_topic.reminders.name, { stat = "Sum", label = "Delivered" }],
+            ["AWS/SNS", "NumberOfNotificationsFailed", "TopicName", aws_sns_topic.reminders.name, { stat = "Sum", label = "Failed", color = "#d62728" }],
           ]
         }
       },

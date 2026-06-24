@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { loadProfile, saveProfile, type UserProfile } from "@/lib/onboarding";
-import { fetchMe, saveMe } from "@/lib/api";
+import { fetchMe, saveMe, setMyUserId } from "@/lib/api";
+import { markProfileSyncSettled } from "@/lib/profile-status";
 
 // Bridges Clerk auth → our profile store ("start storing this data").
 // When a user is signed in:
@@ -13,15 +14,42 @@ import { fetchMe, saveMe } from "@/lib/api";
 // It also re-pushes whenever onboarding saves a profile (the
 // "giftmaxxing:profile" event), so newly-logged dates sync immediately.
 //
+// Once the restore attempt settles it calls markProfileSyncSettled(), which is
+// what lets OnboardingGate stop waiting and either show the feed or redirect —
+// so a returning user is never bounced into onboarding mid-restore.
+//
 // Mounted once in app/layout.tsx inside <ClerkProvider>. Renders nothing.
 // Only rendered when Clerk is enabled (layout.tsx guards this).
 export function AccountSync() {
   const { isLoaded, isSignedIn, user } = useUser();
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !user) return;
-    const userId = user.id;
+    // Wait for Clerk to resolve the auth state before settling the gate.
+    if (!isLoaded) return;
+
     let cancelled = false;
+    // Safety net: never leave the gate spinning if Clerk/the network hangs.
+    const safety = setTimeout(markProfileSyncSettled, 6000);
+    const settle = () => {
+      if (cancelled) return;
+      clearTimeout(safety);
+      markProfileSyncSettled();
+    };
+
+    if (!isSignedIn || !user) {
+      // Signed out: nothing to restore — let the gate decide immediately.
+      setMyUserId(null);
+      settle();
+      return () => {
+        cancelled = true;
+        clearTimeout(safety);
+      };
+    }
+
+    const userId = user.id;
+    // Stash the Clerk userId so non-Clerk client code (e.g. the swipe share
+    // link) can attribute a shared challenge back to this sender.
+    setMyUserId(userId);
 
     // Push the current local profile to the cloud (no-op if none yet).
     const push = () => {
@@ -41,11 +69,13 @@ export function AccountSync() {
           window.dispatchEvent(new Event("giftmaxxing:profile"));
         }
       }
+      settle();
     })();
 
     window.addEventListener("giftmaxxing:profile", push);
     return () => {
       cancelled = true;
+      clearTimeout(safety);
       window.removeEventListener("giftmaxxing:profile", push);
     };
   }, [isLoaded, isSignedIn, user]);

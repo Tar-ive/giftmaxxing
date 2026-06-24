@@ -6,6 +6,7 @@ import { Maxi, Icons } from "@/components/ui";
 import { SwipeDeck } from "@/components/app/swipe-deck";
 import { decodeInvite, saveInviteSession, clearInviteSession } from "@/lib/invite";
 import { saveProfile, type UserProfile } from "@/lib/onboarding";
+import { createConnection } from "@/lib/api";
 import {
   type Recipient,
   type ImportantEvent,
@@ -137,12 +138,28 @@ export default function InvitePage() {
     saveProfile(profile);
     clearInviteSession();
     window.dispatchEvent(new Event("giftmaxxing:profile"));
+
+    // Viral loop: report completion back to the sender (best-effort). Creates a
+    // soft profile on the sender's account + an unseen notification. No-op when
+    // the link carried no senderId (the sender was signed out when sharing).
+    if (invite?.senderId) {
+      void createConnection(invite.senderId, {
+        name: finalName,
+        birthday: birthday || undefined,
+        vibes,
+        seeds,
+        interests: derivedInterests,
+        yesCount,
+        totalSwipes: swipes.length,
+      });
+    }
+
     setPhase("done");
 
     // Small delay so the "done" screen flashes, then redirect to feed.
     window.setTimeout(() => router.push("/feed"), 1200);
     setSaving(false);
-  }, [guestName, birthday, inviterName, router]);
+  }, [guestName, birthday, inviterName, router, invite]);
 
   // ── Invalid invite code ─────────────────────────────────────────────────
   if (!invite) {
@@ -184,6 +201,14 @@ export default function InvitePage() {
           <Icons.heartFill size={20} /> Start swiping
         </button>
         <p className="mt-4 text-xs text-ink-faint">Takes less than a minute</p>
+        <p className="mx-auto mt-3 max-w-xs text-center text-[11px] leading-relaxed text-ink-faint">
+          By continuing, you let {inviterName} save your gift preferences to help them
+          gift you.{" "}
+          <a href="/privacy" className="underline hover:text-ink">
+            Privacy
+          </a>
+          .
+        </p>
       </div>
     );
   }

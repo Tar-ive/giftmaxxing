@@ -12,6 +12,10 @@ export type InvitePayload = {
   name: string;
   /** Optional handle (derived from name for now). */
   handle?: string;
+  /** Clerk userId of the inviter, so a completed challenge can notify them and
+   *  attach the resulting soft profile to their account. Absent when the sender
+   *  is signed out (the link still works, it just can't report back). */
+  senderId?: string;
 };
 
 // ── Encoding / decoding ──────────────────────────────────────────────────────
@@ -58,9 +62,14 @@ export function decodeInvite(code: string): InvitePayload | null {
 
 // ── Invite-link builder (used in the share button) ───────────────────────────
 
-export function buildInviteUrl(inviterName: string, origin?: string): string {
-  const base = origin ?? (typeof window !== "undefined" ? window.location.origin : "");
-  const code = encodeInvite({ name: inviterName.trim() });
+export function buildInviteUrl(
+  inviterName: string,
+  opts: { senderId?: string; origin?: string } = {}
+): string {
+  const base = opts.origin ?? (typeof window !== "undefined" ? window.location.origin : "");
+  const payload: InvitePayload = { name: inviterName.trim() };
+  if (opts.senderId) payload.senderId = opts.senderId;
+  const code = encodeInvite(payload);
   return `${base}/invite/${code}`;
 }
 

@@ -8,6 +8,7 @@ import {
   QueryCommand,
   ScanCommand,
   BatchWriteCommand,
+  UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import {
   S3VectorsClient,
@@ -25,6 +26,7 @@ const USERS = process.env.USERS_TABLE;
 const POSTS = process.env.POSTS_TABLE;
 const INTERACTIONS = process.env.INTERACTIONS_TABLE;
 const KNOWLEDGE = process.env.KNOWLEDGE_TABLE;
+const CONNECTIONS = process.env.CONNECTIONS_TABLE;
 
 // S3 Vectors (the vector store powering similarity-based recommendations).
 const VECTOR_BUCKET = process.env.VECTOR_BUCKET;
@@ -192,6 +194,23 @@ export const handler = async (event) => {
   const method = event.requestContext?.http?.method ?? "GET";
   const path = event.requestContext?.http?.path ?? "/";
   const qs = event.queryStringParameters ?? {};
+
+  // CORS preflight: API Gateway's catch-all ($default) route forwards OPTIONS to
+  // this Lambda instead of auto-answering it, so reply 204 with the preflight
+  // headers. access-control-allow-origin is added by the API's CORS config, so
+  // we omit it here to avoid emitting a duplicate header.
+  if (method === "OPTIONS") {
+    return {
+      statusCode: 204,
+      headers: {
+        "access-control-allow-methods": "GET,POST,OPTIONS",
+        "access-control-allow-headers": "content-type,authorization",
+        "access-control-max-age": "3600",
+      },
+      body: "",
+    };
+  }
+
   let body = {};
   try {
     body = event.body ? JSON.parse(event.body) : {};
@@ -470,6 +489,99 @@ export const handler = async (event) => {
         recipient: byId[u.recipientId] ?? null,
       }));
       return json(200, { items });
+    }
+
+    // ── Soft profiles (viral swipe challenge) ────────────────────────────────
+    // POST /connections  { senderId, guest:{ name, handle?, birthday?, vibes?,
+    //   seeds?, interests?, yesCount?, totalSwipes? } }
+    // Created when an invited guest finishes the swipe challenge. The sender
+    // (senderId, embedded in the invite link) "owns" the resulting soft profile;
+    // consent is implied by the guest completing a link the sender shared.
+    if (method === "POST" && path === "/connections") {
+      const senderId = body.senderId;
+      const guest = body.guest ?? {};
+      if (!senderId || typeof guest !== "object" || !String(guest.name || "").trim()) {
+        return json(400, { error: "senderId and guest.name required" });
+      }
+      const rid =
+        globalThis.crypto?.randomUUID?.() ??
+        `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+      const birthday =
+        typeof guest.birthday === "string" && /^\d{4}-\d{2}-\d{2}$/.test(guest.birthday)
+          ? guest.birthday
+          : undefined;
+      const item = {
+        userId: senderId,
+        connectionId: `conn_${rid}`,
+        soft: true,
+        kind: "challenge",
+        guestName: String(guest.name).trim().slice(0, 80),
+        guestHandle: guest.handle ? String(guest.handle).slice(0, 40) : undefined,
+        birthday,
+        vibes: Array.isArray(guest.vibes) ? guest.vibes.slice(0, 12).map(String) : [],
+        seeds: Array.isArray(guest.seeds) ? guest.seeds.slice(0, 20).map(String) : [],
+        interests: Array.isArray(guest.interests) ? guest.interests.slice(0, 12).map(String) : [],
+        yesCount: Number(guest.yesCount) || 0,
+        totalSwipes: Number(guest.totalSwipes) || 0,
+        seen: false,
+        createdAt: Date.now(),
+      };
+      await ddb.send(new PutCommand({ TableName: CONNECTIONS, Item: item }));
+      return json(200, { ok: true, connectionId: item.connectionId });
+    }
+
+    // GET /connections?userId=&unseenOnly=  — soft profiles the sender collected,
+    // newest first. `unseen` is the notification badge count.
+    if (method === "GET" && path === "/connections") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: CONNECTIONS,
+          KeyConditionExpression: "userId = :u",
+          ExpressionAttributeValues: { ":u": userId },
+        })
+      );
+      let items = (out.Items ?? []).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+      const unseen = items.filter((i) => !i.seen).length;
+      if (qs.unseenOnly === "1" || qs.unseenOnly === "true") {
+        items = items.filter((i) => !i.seen);
+      }
+      return json(200, { items, unseen });
+    }
+
+    // POST /connections/seen  { userId, connectionIds? }  — clear notification
+    // state. Omit connectionIds to mark every unseen connection as seen.
+    if (method === "POST" && path === "/connections/seen") {
+      const { userId, connectionIds } = body;
+      if (!userId) return json(400, { error: "userId required" });
+      let ids = Array.isArray(connectionIds) ? connectionIds : null;
+      if (!ids) {
+        const out = await ddb.send(
+          new QueryCommand({
+            TableName: CONNECTIONS,
+            KeyConditionExpression: "userId = :u",
+            FilterExpression: "#seen = :f",
+            ExpressionAttributeNames: { "#seen": "seen" },
+            ExpressionAttributeValues: { ":u": userId, ":f": false },
+          })
+        );
+        ids = (out.Items ?? []).map((i) => i.connectionId);
+      }
+      await Promise.all(
+        ids.map((connectionId) =>
+          ddb.send(
+            new UpdateCommand({
+              TableName: CONNECTIONS,
+              Key: { userId, connectionId },
+              UpdateExpression: "SET #seen = :t",
+              ExpressionAttributeNames: { "#seen": "seen" },
+              ExpressionAttributeValues: { ":t": true },
+            })
+          )
+        )
+      );
+      return json(200, { ok: true, updated: ids.length });
     }
 
     return json(404, { error: `no route for ${method} ${path}` });
