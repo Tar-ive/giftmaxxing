@@ -137,10 +137,10 @@ export default function EventsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-6 flex items-end justify-between gap-3">
+    <div className="mx-auto max-w-3xl px-4 py-5 sm:py-8">
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-3 sm:mb-6">
         <div>
-          <h1 className="font-display text-3xl font-extrabold text-ink">Events</h1>
+          <h1 className="font-display text-2xl font-extrabold text-ink sm:text-3xl">Events</h1>
           <p className="mt-1 text-ink-soft">
             Your milestones, upcoming occasions, and shared dates.
           </p>
@@ -335,7 +335,7 @@ export default function EventsPage() {
                         </div>
                         <Link
                           href={`/feed/ideas?cid=${encodeURIComponent(c.connectionId)}`}
-                          className="shrink-0 rounded-full bg-coral px-4 py-2 text-xs font-bold text-white transition-opacity hover:opacity-90"
+                          className="shrink-0 rounded-full bg-coral px-3 py-1.5 text-[11px] font-bold text-white transition-opacity hover:opacity-90 sm:px-4 sm:py-2 sm:text-xs"
                         >
                           Gift {c.guestName.split(/\s+/)[0]}
                         </Link>
@@ -604,7 +604,7 @@ function CreateMilestone({ onCreate }: { onCreate: (ms: Milestone) => void }) {
           className="w-full resize-none rounded-xl border border-line bg-cream px-4 py-2.5 text-sm text-ink outline-none focus:border-coral"
         />
 
-        <div className="flex gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as MilestoneCategory)}
@@ -628,7 +628,7 @@ function CreateMilestone({ onCreate }: { onCreate: (ms: Milestone) => void }) {
 
         <div className="rounded-xl border border-line bg-cream p-3">
           <p className="mb-2 text-xs font-semibold text-ink-soft">Reward budget</p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-2">
               <span className="text-sm text-ink-faint">$</span>
               <input
@@ -638,7 +638,7 @@ function CreateMilestone({ onCreate }: { onCreate: (ms: Milestone) => void }) {
                 className="w-20 bg-transparent text-sm font-bold text-ink outline-none"
               />
             </div>
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {[25, 50, 100, 200].map((amt) => (
                 <button
                   key={amt}

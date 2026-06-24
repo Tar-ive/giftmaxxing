@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { Icons } from "@/components/ui";
 import { GRADIENTS, type Grad } from "@/lib/data";
 import { PINS, type Pin } from "@/lib/pins";
@@ -451,15 +450,9 @@ function ResultsView({
         >
           Keep swiping
         </button>
-        <Link
-          href="/feed/recommendations"
-          className="rounded-full border border-line bg-surface px-5 py-2.5 text-sm font-bold text-ink hover:bg-coral-soft"
-        >
-          Open Recs Lab
-        </Link>
         <button
           onClick={onStartOver}
-          className="rounded-full px-3 py-2.5 text-sm font-semibold text-ink-faint hover:text-ink"
+          className="rounded-full border border-line bg-surface px-5 py-2.5 text-sm font-bold text-ink hover:bg-coral-soft"
         >
           Start over
         </button>
