@@ -1,11 +1,25 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-// Giftmaxxing keeps the marketing landing + demo feed publicly browsable, so we
-// intentionally do NOT call a global auth.protect() here. Clerk context is
-// available app-wide; sign-in/up is surfaced via nav controls, and user data is
-// persisted only once a user is signed in. To gate specific routes later, use
-// `createRouteMatcher([...])` + `auth.protect()` inside the callback.
-export default clerkMiddleware();
+// Clerk requires CLERK_SECRET_KEY at runtime. When the key is absent (e.g. the
+// Vercel project hasn't had Clerk env vars configured yet), fall back to a
+// pass-through proxy so the site still renders instead of crashing.
+const hasClerkKeys = !!(
+  process.env.CLERK_SECRET_KEY &&
+  process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+);
+
+function passthrough(req: NextRequest) {
+  // Redirect auth routes to /feed when Clerk is not configured — the sign-in
+  // and sign-up pages render <SignIn/>/<SignUp/> which require ClerkProvider.
+  if (req.nextUrl.pathname.startsWith("/sign-in") || req.nextUrl.pathname.startsWith("/sign-up")) {
+    return NextResponse.redirect(new URL("/feed", req.url));
+  }
+  return NextResponse.next();
+}
+
+export default hasClerkKeys ? clerkMiddleware() : passthrough;
 
 export const config = {
   matcher: [
