@@ -8,6 +8,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 import type { ImportantEvent, Recipient } from "@/lib/events";
+import { ADMIN_BYPASS, ADMIN_PROFILE } from "@/lib/admin";
 
 export type GiftRole = "giver" | "taker" | "both";
 export type GiftDifficulty = "easy" | "moderate" | "hard";
@@ -123,12 +124,16 @@ export function loadProfile(): UserProfile | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    return isUserProfile(parsed) ? parsed : null;
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (isUserProfile(parsed)) return parsed;
+    }
   } catch {
-    return null;
+    // fall through to the bypass / null below
   }
+  // Local dev-only admin session: synthesize a valid profile so the gates pass
+  // without onboarding. ADMIN_BYPASS is a compile-time `false` in production.
+  return ADMIN_BYPASS ? ADMIN_PROFILE : null;
 }
 
 export function saveProfile(profile: UserProfile): boolean {
@@ -147,7 +152,7 @@ export function clearProfile(): void {
 }
 
 export function isOnboardingComplete(): boolean {
-  return loadProfile() !== null;
+  return ADMIN_BYPASS || loadProfile() !== null;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

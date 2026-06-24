@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { loadProfile, saveProfile, type UserProfile } from "@/lib/onboarding";
 import { fetchMe, saveMe, setMyUserId, identifyMe } from "@/lib/api";
 import { markProfileSyncSettled } from "@/lib/profile-status";
+import { ADMIN_BYPASS, ADMIN_USER_ID } from "@/lib/admin";
 
 // Bridges Clerk auth → our profile store ("start storing this data").
 // When a user is signed in:
@@ -24,6 +25,14 @@ export function AccountSync() {
   const { isLoaded, isSignedIn, user } = useUser();
 
   useEffect(() => {
+    // Local dev-only admin session: pin the fake admin id, settle the gate, and
+    // skip all Clerk-driven sync. Inert (and erased) in production.
+    if (ADMIN_BYPASS) {
+      setMyUserId(ADMIN_USER_ID);
+      markProfileSyncSettled();
+      return;
+    }
+
     // Wait for Clerk to resolve the auth state before settling the gate.
     if (!isLoaded) return;
 

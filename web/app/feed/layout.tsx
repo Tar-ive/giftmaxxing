@@ -5,6 +5,7 @@ import { PostModal } from "@/components/app/post-modal";
 import { OnboardingGate } from "@/components/app/onboarding-gate";
 import { AuthGate } from "@/components/app/auth-gate";
 import { MaxiProvider } from "@/components/app/maxi-provider";
+import { AdminSession } from "@/components/app/admin-session";
 
 // When Clerk is configured, every /feed/* route requires a real signed-in
 // session (AuthGate). A local onboarding profile alone no longer grants access,
@@ -17,6 +18,7 @@ export default function FeedLayout({ children }: { children: React.ReactNode }) 
     <OnboardingGate>
       <AppStore>
         <MaxiProvider>
+          <AdminSession />
           <div className="flex min-h-screen">
             <Sidebar />
             <div className="flex-1">
