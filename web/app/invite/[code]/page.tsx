@@ -1,20 +1,19 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { Maxi, Icons } from "@/components/ui";
 import { SwipeDeck } from "@/components/app/swipe-deck";
 import { decodeInvite, saveInviteSession, clearInviteSession } from "@/lib/invite";
-import { saveProfile, type UserProfile } from "@/lib/onboarding";
 import { createConnection } from "@/lib/api";
-import {
-  EVENT_TYPE_META,
-  type EventType,
-  type Recipient,
-  type ImportantEvent,
-  genId,
-} from "@/lib/events";
-import { swipeVibes, seedKeysFromSwipes, loadSwipes } from "@/lib/swipes";
+import { swipeVibes, seedKeysFromSwipes, loadSwipes, localMatchesFromSwipes } from "@/lib/swipes";
+import { GRADIENTS } from "@/lib/data";
+import { shortTitle } from "@/lib/feed-builder";
+import { type Pin } from "@/lib/pins";
+import { GuestClaimCard } from "@/components/app/guest-claim-card";
+
+const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 // ── Phases ──────────────────────────────────────────────────────────────────
 type Phase = "welcome" | "swipe" | "reveal";
@@ -28,10 +27,11 @@ export default function InvitePage() {
   const inviterName = invite?.name ?? "Someone";
 
   const [phase, setPhase] = useState<Phase>("welcome");
-  const [saving, setSaving] = useState(false);
+  const [results, setResults] = useState<Pin[]>([]);
+  const reportedRef = useRef(false);
 
-  // The sender can pre-set who the gift set is for (and the event), so the guest
-  // never types a name or picks a birthday.
+  // The sender can pre-set who the gift set is for, so the guest never types a
+  // name or picks a birthday. Used only for a friendly greeting on the reveal.
   const guestName = invite?.to?.trim() || "Friend";
   const guestFirst = guestName.split(/\s+/)[0];
 
@@ -41,129 +41,28 @@ export default function InvitePage() {
     setPhase("swipe");
   }, [inviterName, code]);
 
-  // Called when the user finishes swiping (or the deck runs out). Go straight to
-  // the reveal — no name/birthday step; the sender already set those.
+  // Finishing the swipes reveals the gift set. We deliberately do NOT create a
+  // local profile or "log the guest in" — entering the app requires real auth
+  // (the reveal's sign-in card + AuthGate on /feed). We only (a) build the
+  // preview gift set and (b) report a soft profile to the sender, once.
   const onSwipeDone = useCallback(() => {
     setPhase("reveal");
-  }, []);
+    setResults(localMatchesFromSwipes(9));
 
-  const handleFinish = useCallback(() => {
-    setSaving(true);
-    const finalName = guestName;
-
-    // Build a minimal onboarding profile from the swipe preferences so the
-    // user can browse the feed afterwards without hitting the OnboardingGate.
-    const vibes = swipeVibes(5);
-    const seeds = seedKeysFromSwipes(8);
-    const swipes = loadSwipes();
-    const yesCount = swipes.filter((s) => s.dir === "yes").length;
-
-    // Derive rough interest tags from swipe vibes (map category → interest tag).
-    const vibeToInterest: Record<string, string> = {
-      tech: "minimalist",
-      fashion: "luxury",
-      beauty: "wellness",
-      home: "cozy",
-      kitchen: "foodie",
-      fitness: "outdoors",
-      travel: "outdoors",
-      gaming: "pop-culture",
-      jewelry: "luxury",
-      books: "cozy",
-      music: "vintage",
-      art: "diy",
-      plants: "plants",
-      candles: "candles",
-      coffee: "coffee-tea",
-      pets: "pets",
-      stationery: "stationery",
-      photography: "photography",
-    };
-    const derivedInterests = vibes
-      .map((v) => vibeToInterest[v])
-      .filter((v): v is string => Boolean(v));
-    // Ensure at least 3 interests (the validator requires it).
-    while (derivedInterests.length < 3) {
-      const fallback = ["cozy", "foodie", "pop-culture"];
-      for (const f of fallback) {
-        if (!derivedInterests.includes(f)) {
-          derivedInterests.push(f);
-          if (derivedInterests.length >= 3) break;
-        }
-      }
-    }
-
-    // Create a Recipient for the inviter (they show up as the guest's friend).
-    const inviterRecipient: Recipient = {
-      id: genId("rcp"),
-      name: inviterName,
-      relation: "friend",
-      pinSeeds: seeds,
-      interests: vibes,
-    };
-
-    // The event is decided by the SENDER (carried in the invite link), so the
-    // guest never enters a birthday. Only log one if the sender set a date.
-    const recipients: Recipient[] = [inviterRecipient];
-    const events: ImportantEvent[] = [];
-
-    const occasion: EventType =
-      invite?.occasion && invite.occasion in EVENT_TYPE_META
-        ? (invite.occasion as EventType)
-        : "birthday";
-    if (invite?.date) {
-      events.push({
-        id: genId("evt"),
-        recipientId: inviterRecipient.id,
-        type: occasion,
-        date: invite.date,
-        recurrence: "annual",
-        reminderLeadDays: 7,
-      });
-    }
-
-    const profile: UserProfile = {
-      name: finalName,
-      role: "both",
-      difficulty: yesCount > 8 ? "easy" : "moderate",
-      style: "mix",
-      materialisticCategories: [],
-      interests: derivedInterests as UserProfile["interests"],
-      dealPreferences: {
-        sensitivity: "value-conscious",
-        budgetRange: "mid",
-        dealTypes: [],
-        priceAlerts: false,
-      },
-      pinterestLinks: [],
-      eventLoggingEnabled: events.length > 0,
-      recipients,
-      events,
-      completedAt: Date.now(),
-    };
-
-    saveProfile(profile);
-    clearInviteSession();
-    window.dispatchEvent(new Event("giftmaxxing:profile"));
-
-    // Viral loop: report completion back to the sender (best-effort). Creates a
-    // soft profile on the sender's account + an unseen notification. No-op when
-    // the link carried no senderId (the sender was signed out when sharing).
-    if (invite?.senderId) {
+    if (!reportedRef.current && invite?.senderId) {
+      reportedRef.current = true;
+      const swipes = loadSwipes();
       void createConnection(invite.senderId, {
-        name: finalName,
+        name: invite.to?.trim() || "Friend",
         birthday: invite.date || undefined,
-        vibes,
-        seeds,
-        interests: derivedInterests,
-        yesCount,
+        vibes: swipeVibes(5),
+        seeds: seedKeysFromSwipes(8),
+        yesCount: swipes.filter((s) => s.dir === "yes").length,
         totalSwipes: swipes.length,
       });
     }
-
-    // Reveal == "log me in": drop them straight into their gift set (the feed).
-    router.push("/feed");
-  }, [guestName, inviterName, router, invite]);
+    clearInviteSession();
+  }, [invite]);
 
   // ── Invalid invite code ─────────────────────────────────────────────────
   if (!invite) {
@@ -195,8 +94,8 @@ export default function InvitePage() {
           {inviterName} wants to find<br />your perfect gift
         </h1>
         <p className="mx-auto mt-3 max-w-md text-center text-ink-soft">
-          Swipe on gift ideas so {inviterName} knows exactly what you&apos;d love.
-          No sign-up, no forms — just swipe!
+          Swipe on gift ideas so {inviterName} knows exactly what you&apos;d love. No
+          sign-up, no forms &mdash; just swipe!
         </p>
         <button
           onClick={startSwiping}
@@ -206,7 +105,7 @@ export default function InvitePage() {
         </button>
         <p className="mt-4 text-xs text-ink-faint">Takes less than a minute</p>
         <p className="mx-auto mt-3 max-w-xs text-center text-[11px] leading-relaxed text-ink-faint">
-          Swiping shares your gift taste with {inviterName} so they can gift you — no
+          Swiping shares your gift taste with {inviterName} so they can gift you &mdash; no
           account or personal details needed.{" "}
           <a href="/privacy#recipient" className="underline hover:text-ink">
             How we use this
@@ -242,24 +141,77 @@ export default function InvitePage() {
     );
   }
 
-  // ── Reveal phase — show the gift set + drop them into the app ──────────────
+  // ── Reveal phase — show the gift set; claiming it requires real auth ───────
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-cream px-4">
-      <span className="text-5xl">�</span>
-      <h2 className="mt-4 text-center font-display text-3xl font-extrabold leading-tight text-ink">
-        Your gift set is ready{guestFirst !== "Friend" ? `, ${guestFirst}` : ""}!
-      </h2>
-      <p className="mx-auto mt-2 max-w-sm text-center text-ink-soft">
-        Based on your swipes, we built a gift set {inviterName} can shop from. Tap below
-        to see it.
-      </p>
-      <button
-        onClick={handleFinish}
-        disabled={saving}
-        className="mt-8 inline-flex items-center gap-2 rounded-full bg-coral px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90 disabled:opacity-50"
-      >
-        <Icons.gift size={20} /> {saving ? "Loading\u2026" : "See your gift set"}
-      </button>
+    <div className="min-h-screen bg-cream">
+      <div className="mx-auto max-w-2xl px-4 py-10">
+        <div className="text-center">
+          <div className="flex justify-center text-coral">
+            <Icons.gift size={44} />
+          </div>
+          <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-ink">
+            {guestFirst !== "Friend" ? `${guestFirst}, your` : "Your"} gift set is ready
+          </h2>
+          <p className="mx-auto mt-2 max-w-sm text-ink-soft">
+            Based on your swipes, here&apos;s what {inviterName} can shop from.
+          </p>
+        </div>
+
+        <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {results.map((p) => (
+            <div
+              key={p.id}
+              className="overflow-hidden rounded-2xl border border-line bg-surface"
+            >
+              <div
+                className="relative aspect-square w-full"
+                style={{ background: GRADIENTS[p.grad] }}
+              >
+                <span className="absolute inset-0 grid place-items-center text-4xl">
+                  {p.emoji}
+                </span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.image}
+                  alt={p.title}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                />
+              </div>
+              <div className="p-2.5">
+                <p className="line-clamp-1 text-xs font-semibold text-ink">
+                  {shortTitle(p.title)}
+                </p>
+                <p className="mt-0.5 text-xs text-ink-faint">
+                  {p.price ? `$${p.price}` : p.brand}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {clerkEnabled ? (
+          <GuestClaimCard inviterName={inviterName} />
+        ) : (
+          <div className="mt-8 rounded-3xl border border-coral/30 bg-coral-soft/60 p-6 text-center">
+            <h3 className="font-display text-xl font-extrabold text-ink">
+              Want your own gift set?
+            </h3>
+            <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-soft">
+              Get matches tailored to you and never miss a gift moment.
+            </p>
+            <Link
+              href="/"
+              className="mt-5 inline-flex rounded-full bg-coral px-7 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
+            >
+              Get Giftmaxxing
+            </Link>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
