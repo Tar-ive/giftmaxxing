@@ -3,6 +3,7 @@
 import { useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
 import { Maxi } from "@/components/ui";
 import { AuthConsent } from "@/components/app/auth-consent";
+import { ADMIN_BYPASS } from "@/lib/admin";
 
 // Hard auth boundary for the app shell. When Clerk is configured, every /feed/*
 // route requires a real signed-in session — a local onboarding profile alone is
@@ -14,6 +15,10 @@ import { AuthConsent } from "@/components/app/auth-consent";
 // isSignedIn and re-renders the children in place — no redirect needed.
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useUser();
+
+  // Local dev-only admin session bypasses the Clerk sign-in wall. ADMIN_BYPASS
+  // is a compile-time `false` in production, so this line is dead-code-eliminated.
+  if (ADMIN_BYPASS) return <>{children}</>;
 
   if (!isLoaded) {
     return (
