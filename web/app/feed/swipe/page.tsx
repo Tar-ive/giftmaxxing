@@ -1,36 +1,32 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { SwipeDeck } from "@/components/app/swipe-deck";
+import { ShareSheet } from "@/components/app/share-sheet";
 import { Icons } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
+import { getMyUserId } from "@/lib/api";
 import { buildInviteUrl } from "@/lib/invite";
 
 export default function SwipePage() {
   const me = useCurrentUser();
   const firstName = me.name !== "You" ? me.name.split(/\s+/)[0] : null;
-  const [copied, setCopied] = useState(false);
+  const [senderId, setSenderId] = useState<string | null>(null);
 
-  const share = useCallback(async () => {
-    const url = buildInviteUrl(me.name !== "You" ? me.name : "A friend");
-    const text =
-      "Would you want this gifted to you? 👀 Swipe to find your gift taste on Giftmaxxing";
-    try {
-      if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ title: "Giftmaxxing", text, url });
-        return;
-      }
-    } catch {
-      // user dismissed the native sheet, or it's unsupported — fall back to copy
-    }
-    try {
-      await navigator.clipboard.writeText(`${text} ${url}`);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // clipboard blocked — nothing else to do
-    }
-  }, [me.name]);
+  useEffect(() => {
+    // Read the stashed Clerk userId after mount (SSR-safe).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSenderId(getMyUserId());
+  }, []);
+
+  const inviterName = me.name !== "You" ? me.name : "A friend";
+  const url = useMemo(
+    () => buildInviteUrl(inviterName, senderId ? { senderId } : {}),
+    [inviterName, senderId]
+  );
+  const text =
+    "Would you want this gifted to you? 👀 Swipe to find your gift taste on Giftmaxxing";
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
@@ -45,12 +41,36 @@ export default function SwipePage() {
           {firstName ? `${firstName}, swipe` : "Swipe"} right for yes, left for no. Every swipe
           trains your gift recommendations.
         </p>
-        <button
-          onClick={share}
-          className="mt-4 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-4 py-2 text-sm font-semibold text-ink transition-colors hover:bg-coral-soft"
-        >
-          <Icons.share size={16} /> {copied ? "Link copied!" : "Share the challenge"}
-        </button>
+        <div className="mt-4 flex justify-center">
+          <ShareSheet
+            url={url}
+            text={text}
+            subject={`${inviterName} wants to find you the perfect gift`}
+            note={
+              senderId ? (
+                <>
+                  When a friend completes your challenge, we save a{" "}
+                  <strong className="font-semibold text-ink-soft">soft profile</strong> (their
+                  name, birthday &amp; taste) to your account so you can gift them — no sign-up
+                  needed for them. By sharing, you take responsibility for it.{" "}
+                  <Link href="/privacy" className="underline hover:text-ink">
+                    Privacy
+                  </Link>
+                  .
+                </>
+              ) : (
+                <>
+                  Sign in so we can tell you when a friend finishes your challenge and save
+                  their gift taste to your account.{" "}
+                  <Link href="/privacy" className="underline hover:text-ink">
+                    Privacy
+                  </Link>
+                  .
+                </>
+              )
+            }
+          />
+        </div>
       </div>
 
       <div className="mt-8">

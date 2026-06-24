@@ -6,6 +6,7 @@
 import { PINS, type Pin } from "@/lib/pins";
 import type { Comment, Post } from "@/lib/social";
 import type { Product } from "@/lib/data";
+import { type Taste, scorePinForTaste, tasteMatchesPin } from "@/lib/taste";
 
 const AUTHORS = ["maya", "theo", "jules", "noor", "ivy", "sam", "remy"];
 
@@ -59,7 +60,7 @@ export function pinToProduct(pin: Pin): Product {
   };
 }
 
-export function pinToPost(pin: Pin, idx: number): Post {
+export function pinToPost(pin: Pin, idx: number, taste?: Taste): Post {
   const h = hash(pin.id);
   const author = AUTHORS[h % AUTHORS.length];
   const likes = 40 + (h % 1860);
@@ -68,7 +69,10 @@ export function pinToPost(pin: Pin, idx: number): Post {
     const cu = AUTHORS[(h + i + 1) % AUTHORS.length];
     return { id: `${pin.id}-c${i}`, user: cu, text: COMMENTS[(h + i) % COMMENTS.length] };
   });
-  const isRec = idx % 4 === 1;
+  // A pin is flagged as a personalized rec when its category matches the user's
+  // onboarding taste; otherwise keep the original cosmetic every-4th cadence.
+  const matched = taste ? tasteMatchesPin(pin, taste) : false;
+  const isRec = matched || idx % 4 === 1;
   return {
     id: pin.id,
     user: author,
@@ -84,32 +88,44 @@ export function pinToPost(pin: Pin, idx: number): Post {
     url: pin.url,
     productUrl: pin.url,
     rec: isRec,
-    reason: isRec ? "matches your saved taste" : undefined,
+    reason: matched
+      ? `matches your ${pin.category} taste`
+      : isRec
+        ? "matches your saved taste"
+        : undefined,
   };
 }
 
 // Deterministic per-cycle shuffle so repeated passes over the 72 pins feel
 // fresh without RNG nondeterminism across renders.
-function cycleOrder(cycle: number): Pin[] {
+function cycleOrder(cycle: number, taste?: Taste): Pin[] {
   const arr = [...PINS];
   const seed = (cycle + 1) * 2654435761;
   return arr
-    .map((p, i) => ({ p, k: hash(p.id + ":" + ((seed + i) >>> 0)) }))
+    .map((p, i) => {
+      const base = hash(p.id + ":" + ((seed + i) >>> 0));
+      // No taste signal → original deterministic shuffle (key = hash).
+      if (!taste || !taste.hasSignal) return { p, k: base };
+      // Taste signal → pins matching the user's categories sort first; per-cycle
+      // noise keeps each pass varied. Lower key = earlier, so negate affinity.
+      const noise = (base % 1000) / 1000;
+      return { p, k: -(scorePinForTaste(p, taste) * 2 + noise * 0.6) };
+    })
     .sort((a, b) => a.k - b.k)
     .map((x) => x.p);
 }
 
 // Return `limit` feed posts starting at a flat offset, cycling (and reshuffling)
 // through the pin set so the feed scrolls effectively forever.
-export function buildPinFeed(offset: number, limit: number): Post[] {
+export function buildPinFeed(offset: number, limit: number, taste?: Taste): Post[] {
   const out: Post[] = [];
   const n = PINS.length;
   for (let i = 0; i < limit; i++) {
     const flat = offset + i;
     const cycle = Math.floor(flat / n);
-    const order = cycleOrder(cycle);
+    const order = cycleOrder(cycle, taste);
     const pin = order[flat % n];
-    out.push(pinToPost(pin, flat));
+    out.push(pinToPost(pin, flat, taste));
   }
   return out;
 }

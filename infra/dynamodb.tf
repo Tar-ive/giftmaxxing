@@ -121,3 +121,28 @@ resource "aws_dynamodb_table" "interactions" {
     enabled = true
   }
 }
+
+# ── Connections (soft profiles) ───────────────────────────────────────────────
+# Soft profiles collected when an invited guest finishes the swipe challenge.
+# PK: userId (the SENDER's Clerk userId), SK: connectionId. Unseen rows double as
+# the sender's "X completed your challenge" notifications. Consent is implied by
+# the guest completing a link the sender shared (see the web app's /privacy).
+resource "aws_dynamodb_table" "connections" {
+  name         = "${local.prefix}-connections"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "userId"
+  range_key    = "connectionId"
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+  attribute {
+    name = "connectionId"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}

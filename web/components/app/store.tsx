@@ -10,6 +10,8 @@ import {
 } from "react";
 import { type Post } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
+import { loadProfile } from "@/lib/onboarding";
+import { tasteFromProfile } from "@/lib/taste";
 
 const FEED_CAP = 216; // soft cap (~3 passes over the pin set) for the cycling feed
 
@@ -42,9 +44,14 @@ export function useStore() {
 }
 
 export function AppStore({ children }: { children: React.ReactNode }) {
-  // Feed is built from the bundled Pinterest pins (real photos). Initialize
-  // synchronously so the feed is never blank on first paint.
-  const [posts, setPosts] = useState<Post[]>(() => buildPinFeed(0, 12));
+  // Taste derived from the onboarding profile, read once on mount. The feed tree
+  // is client-only (it renders behind OnboardingGate, which shows a spinner on
+  // the server), so localStorage is available here and there's no SSR/CSR
+  // hydration mismatch. This biases the bundled feed toward what the user picked.
+  const [taste] = useState(() => tasteFromProfile(loadProfile()));
+  // Feed is built from the bundled Pinterest pins (real photos), ordered by the
+  // user's taste. Initialize synchronously so it's never blank on first paint.
+  const [posts, setPosts] = useState<Post[]>(() => buildPinFeed(0, 12, taste));
   const [follows, setFollows] = useState<Set<string>>(new Set());
   const [openPostId, setOpenPostId] = useState<string | null>(null);
   const [storyIndex, setStoryIndex] = useState<number | null>(null);
@@ -121,14 +128,14 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           setHasMore(false);
           return prev;
         }
-        const next = appendUnique(buildPinFeed(offsetRef.current, 8));
+        const next = appendUnique(buildPinFeed(offsetRef.current, 8, taste));
         offsetRef.current += 8;
         return [...prev, ...next];
       });
       setLoadingMore(false);
       loadingRef.current = false;
     }, 450);
-  }, [hasMore, appendUnique]);
+  }, [hasMore, appendUnique, taste]);
 
   const value = useMemo<Store>(
     () => ({

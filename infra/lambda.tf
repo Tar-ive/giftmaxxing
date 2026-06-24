@@ -28,6 +28,7 @@ resource "aws_lambda_function" "api" {
       POSTS_TABLE        = aws_dynamodb_table.posts.name
       INTERACTIONS_TABLE = aws_dynamodb_table.interactions.name
       KNOWLEDGE_TABLE    = aws_dynamodb_table.knowledge.name
+      CONNECTIONS_TABLE  = aws_dynamodb_table.connections.name
       VECTOR_BUCKET      = "${local.prefix}-vectors"
       VECTOR_INDEX       = "pins"
       # Visual search: Titan Multimodal embedding model + vector dimensionality.

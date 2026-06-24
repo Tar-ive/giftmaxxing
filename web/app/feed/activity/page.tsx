@@ -1,9 +1,17 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { USERS } from "@/lib/social";
 import { Avatar, Icons } from "@/components/ui";
 import { useStore } from "@/components/app/store";
+import {
+  getMyUserId,
+  fetchConnections,
+  markConnectionsSeen,
+  relativeTime,
+  type SoftConnection,
+} from "@/lib/api";
 
 type Item =
   | { type: "maxi"; text: string; time: string }
@@ -23,9 +31,56 @@ const ITEMS: Item[] = [
 
 export default function ActivityPage() {
   const { toggleFollow, isFollowing } = useStore();
+  const [conns, setConns] = useState<SoftConnection[]>([]);
+
+  useEffect(() => {
+    const uid = getMyUserId();
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      const { items } = await fetchConnections(uid);
+      if (cancelled) return;
+      setConns(items);
+      // Clear the unseen badge once the sender has viewed them.
+      if (items.some((c) => !c.seen)) void markConnectionsSeen(uid);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="mx-auto max-w-xl px-4 py-6">
       <h1 className="mb-2 font-display text-2xl font-extrabold text-ink">Activity</h1>
+
+      {conns.length > 0 && (
+        <div className="mb-5">
+          <p className="mb-1 px-0.5 text-xs font-bold uppercase tracking-wider text-ink-faint">
+            Your challenges
+          </p>
+          <div className="divide-y divide-line">
+            {conns.map((c) => (
+              <div key={c.connectionId} className="flex items-center gap-3 py-3.5">
+                <span
+                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-full text-lg ${
+                    c.seen ? "bg-coral-soft" : "bg-coral text-white"
+                  }`}
+                >
+                  🎁
+                </span>
+                <p className="flex-1 text-sm text-ink">
+                  <span className="font-bold">{c.guestName}</span> completed your gift
+                  challenge{c.birthday ? " — birthday & taste saved" : " — taste saved"}.
+                  <span className="ml-1 text-xs text-ink-faint">
+                    {relativeTime(c.createdAt)}
+                  </span>
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="divide-y divide-line">
         {ITEMS.map((it, i) => (
           <div key={i} className="flex items-center gap-3 py-3.5">

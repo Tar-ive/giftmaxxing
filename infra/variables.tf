@@ -22,6 +22,12 @@ variable "cors_allow_origins" {
   default     = ["*"]
 }
 
+variable "enable_cost_allocation_tags" {
+  description = "Activate Project/Env as Cost Allocation Tags for Cost Explorer (see cost.tf). Requires the management/payer account AND the tag key to already be visible in Billing (~24h after first use); leave false otherwise to avoid apply errors."
+  type        = bool
+  default     = false
+}
+
 locals {
   prefix = "${var.project}-${var.env}"
 }
