@@ -515,6 +515,13 @@ const MAXI_SYSTEM = `You are Maxi, the gift concierge inside Giftmaxxing. You he
 
 Voice: warm, concise, a little playful — 1 to 3 sentences. You may be read aloud, so avoid markdown tables and long lists; at most one tasteful emoji.
 
+IMPORTANT — identity rules:
+- The user's first name is provided in the system prompt below (if known). ALWAYS use that name when addressing the user.
+- get_profile returns the user's OWN profile. The "yourName" field is the user's own name. The "recipients" list contains OTHER people the user shops for — never confuse a recipient's name with the user's name.
+- list_connections returns friends/contacts ("soft profiles") — these are OTHER people, NOT the user. Their "friendName" field is the friend's name.
+- relationship_graph returns "otherPeople" — these are OTHER people in the user's gifting network, NOT the user themselves.
+- If the user asks "what is my name?" or similar, respond with the name from the system prompt or from get_profile's "yourName" field. NEVER return a connection's or recipient's name as the user's name.
+
 Use tools, don't guess:
 - Find gifts by budget / vibe / recipient / category with find_gifts.
 - Look up Reddit-mined ideas for a recipient with gift_ideas, or list types with list_recipients.
@@ -621,7 +628,8 @@ async function toolGetProfile(userId) {
   if (!it) return { exists: false };
   return {
     exists: true,
-    name: it.identity?.name || it.name || it.profile?.name || null,
+    yourName: it.identity?.name || it.name || it.profile?.name || null,
+    note: "yourName is the user's OWN name. recipients below are OTHER people they shop for.",
     interests: (it.interests || it.profile?.interests || []).slice(0, 12),
     recipients: (it.recipients || []).slice(0, 12).map((r) => ({ id: r.id, name: r.name, relation: r.relation })),
     events: (it.events || []).slice(0, 12).map((e) => ({ type: e.type || e.title, date: e.date, recipientId: e.recipientId })),
@@ -656,13 +664,13 @@ async function toolListConnections(userId) {
     .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
     .slice(0, 15)
     .map((c) => ({
-      name: c.guestName,
+      friendName: c.guestName,
       birthday: c.birthday || null,
       interests: (c.interests || []).slice(0, 6),
       vibes: (c.vibes || []).slice(0, 6),
       connectionId: c.connectionId,
     }));
-  return { items };
+  return { items, note: "These are the user's FRIENDS/CONNECTIONS (other people), not the user. friendName is the friend's name." };
 }
 
 async function toolRelationshipGraph(userId) {
@@ -679,12 +687,16 @@ async function toolRelationshipGraph(userId) {
   const edges = all.filter((i) => i.kind === "edge");
   const byType = {};
   for (const n of nodes) byType[n.type] = (byType[n.type] || 0) + 1;
-  const people = nodes
+  const otherPeople = nodes
     .filter((n) => n.type === "recipient" || n.type === "soft")
     .map((n) => n.label)
     .filter(Boolean)
     .slice(0, 12);
-  return { counts: { nodes: nodes.length, edges: edges.length, byType }, people };
+  return {
+    counts: { nodes: nodes.length, edges: edges.length, byType },
+    otherPeople,
+    note: "otherPeople are people in the user's gifting NETWORK — friends, family, recipients. They are NOT the user themselves.",
+  };
 }
 
 async function toolSaveEvent(userId, { title, date, recipientName }) {
@@ -743,7 +755,7 @@ const MAXI_TOOLS = [
   },
   {
     name: "get_profile",
-    description: "The signed-in user's saved profile: their name, interests, the recipients they shop for, and their saved events.",
+    description: "The signed-in user's OWN profile. 'yourName' = the user's own name. 'recipients' = OTHER people the user shops for (not the user). Never confuse a recipient name with the user's name.",
     schema: { type: "object", properties: {} },
   },
   {
@@ -753,12 +765,12 @@ const MAXI_TOOLS = [
   },
   {
     name: "list_connections",
-    description: "Soft profiles the user collected from swipe challenges — friends' names, birthdays, and taste.",
+    description: "Friends the user collected from swipe challenges. 'friendName' = the friend's name (NOT the user). These are OTHER people in the user's network.",
     schema: { type: "object", properties: {} },
   },
   {
     name: "relationship_graph",
-    description: "A compact summary of the user's gifting network graph: node/edge counts by type and the people in it.",
+    description: "A compact summary of the user's gifting network graph. 'otherPeople' = friends/family/recipients in the network (NOT the user themselves).",
     schema: { type: "object", properties: {} },
   },
   {
@@ -1496,9 +1508,9 @@ export const handler = async (event) => {
 
       const memories = await recallMemories(userId, 8);
       const memBlock = memories.length
-        ? `\n\nWhat you remember about this user:\n- ${memories.map(scrubPII).join("\n- ")}`
+        ? `\n\nWhat you remember about this user (these are facts ABOUT the user, not about other people):\n- ${memories.map(scrubPII).join("\n- ")}`
         : "";
-      const nameLine = typeof body.name === "string" && body.name ? `\n\nThe user's first name is ${body.name}.` : "";
+      const nameLine = typeof body.name === "string" && body.name ? `\n\nThe user's first name is ${body.name}. Always address them by this name. Do NOT confuse this with names from connections, recipients, or the relationship graph — those are other people.` : "";
       const signedOut = userId
         ? ""
         : "\n\nThe user is signed out: get_profile, upcoming_events, list_connections, relationship_graph, save_event, and remember_fact are unavailable — help with catalog search only and gently suggest signing in to unlock memory.";
