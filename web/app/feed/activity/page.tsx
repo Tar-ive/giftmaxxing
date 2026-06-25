@@ -12,6 +12,11 @@ import {
   relativeTime,
   type SoftConnection,
 } from "@/lib/api";
+import {
+  loadLocalConnections,
+  markLocalConnectionsSeen,
+  LOCAL_CONN_EVENT,
+} from "@/lib/local-connections";
 
 const ACTIVITY_SEEN_KEY = "giftmaxxing_activity_seen";
 
@@ -130,16 +135,45 @@ export default function ActivityPage() {
 
   useEffect(() => {
     const uid = getMyUserId();
-    if (!uid) return;
     let cancelled = false;
-    (async () => {
-      const { items } = await fetchConnections(uid);
-      if (cancelled) return;
-      setConns(items);
-      if (items.some((c) => !c.seen)) void markConnectionsSeen(uid);
-    })();
+
+    const load = async () => {
+      // Merge API connections (if backend is deployed) with local ones.
+      let apiConns: SoftConnection[] = [];
+      if (uid) {
+        try {
+          const { items } = await fetchConnections(uid);
+          apiConns = items;
+          if (items.some((c) => !c.seen)) void markConnectionsSeen(uid);
+        } catch {
+          // backend not available
+        }
+      }
+      const localConns = loadLocalConnections();
+
+      // Merge: local connections that aren't already in API results.
+      const apiIds = new Set(apiConns.map((c) => c.connectionId));
+      const merged = [
+        ...apiConns,
+        ...localConns.filter((c) => !apiIds.has(c.connectionId)),
+      ].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+      if (!cancelled) {
+        setConns(merged);
+        // Mark local connections as seen.
+        if (localConns.some((c) => !c.seen)) markLocalConnectionsSeen();
+      }
+    };
+
+    void load();
+
+    // Re-load when a new local connection arrives (e.g. if same browser).
+    const onLocal = () => void load();
+    window.addEventListener(LOCAL_CONN_EVENT, onLocal);
+
     return () => {
       cancelled = true;
+      window.removeEventListener(LOCAL_CONN_EVENT, onLocal);
     };
   }, []);
 

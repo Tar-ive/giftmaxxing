@@ -115,6 +115,7 @@ function SwipeInner() {
             url={url}
             text={text}
             subject={`${inviterName} wants to find you the perfect gift`}
+            recipientName={to.trim() || "someone"}
             note={
               senderId ? (
                 <>
