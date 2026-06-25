@@ -43,12 +43,30 @@ function saveUserPosts(posts: Post[]): void {
     localStorage.setItem(USER_POSTS_KEY, JSON.stringify(posts));
   } catch { /* quota */ }
 }
+type ClaimState = Record<string, { claimedBy: string; claimedAt: number }>;
+const CLAIMS_KEY = "giftmaxxing_claims";
+function loadClaims(): ClaimState {
+  try {
+    const raw = localStorage.getItem(CLAIMS_KEY);
+    return raw ? (JSON.parse(raw) as ClaimState) : {};
+  } catch {
+    return {};
+  }
+}
+function saveClaims(state: ClaimState): void {
+  try {
+    localStorage.setItem(CLAIMS_KEY, JSON.stringify(state));
+  } catch { /* quota */ }
+}
 
 type Store = {
   posts: Post[];
   follows: Set<string>;
   toggleLike: (postId: string) => void;
   toggleSave: (postId: string) => void;
+  claimItem: (postId: string) => void;
+  unclaimItem: (postId: string) => void;
+  claims: ClaimState;
   reportSeen: (postId: string) => void;
   addComment: (postId: string, text: string) => void;
   addPost: (post: Post) => void;
@@ -267,6 +285,25 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const [claims, setClaims] = useState<ClaimState>(() => loadClaims());
+
+  const claimItem = useCallback((postId: string) => {
+    setClaims((prev) => {
+      const next = { ...prev, [postId]: { claimedBy: "You", claimedAt: Date.now() } };
+      saveClaims(next);
+      return next;
+    });
+  }, []);
+
+  const unclaimItem = useCallback((postId: string) => {
+    setClaims((prev) => {
+      const next = { ...prev };
+      delete next[postId];
+      saveClaims(next);
+      return next;
+    });
+  }, []);
+
   // Mark a post seen once it's dwelled in view (called by PostCard's observer).
   // API mode only — bundled-pin ids aren't real backend postIds. recordInteraction
   // de-dupes per session, so repeated observer fires are cheap. This is what makes
@@ -407,6 +444,9 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       follows,
       toggleLike,
       toggleSave,
+      claimItem,
+      unclaimItem,
+      claims,
       reportSeen,
       addComment,
       addPost,
@@ -426,7 +466,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       togglePinChat,
       togglePinMessage,
     }),
-    [posts, follows, toggleLike, toggleSave, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
+    [posts, follows, toggleLike, toggleSave, claimItem, unclaimItem, claims, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
