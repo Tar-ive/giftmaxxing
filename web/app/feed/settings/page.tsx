@@ -82,6 +82,8 @@ export default function SettingsPage() {
     for (const key of ALL_STORAGE_KEYS) {
       try { localStorage.removeItem(key); } catch { /* skip */ }
     }
+    // Clear in-memory profile state so the UI updates immediately
+    setProfile(null);
     // If API is configured, call the delete endpoint
     if (isApiConfigured() && userId) {
       try {

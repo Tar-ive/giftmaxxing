@@ -121,9 +121,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong className="text-ink">Delete all my data</strong> — permanently remove
-            everything: your taste profile, saved items, interaction history, cart, and any
-            other locally stored information. If you have a cloud account, the server-side
-            record is also deleted.
+            the locally stored profile, saved items, interaction history, cart, and related
+            information. If you&apos;re signed in and the server is available, we also
+            request server-side deletion.
           </li>
         </ul>
         <p>
