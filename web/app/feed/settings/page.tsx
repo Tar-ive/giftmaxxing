@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { useCurrentUser, getClerkImageUrl } from "@/lib/identity";
-import { clearProfile, loadProfile } from "@/lib/onboarding";
+import { clearProfile, loadProfile, type UserProfile } from "@/lib/onboarding";
 import { Icons } from "@/components/ui";
 
 const ChevronRight = Icons.chevronR;
@@ -13,8 +14,13 @@ export default function SettingsPage() {
   const { isLoaded, isSignedIn, user: clerkUser } = useUser();
   const { signOut } = useClerk();
   const me = useCurrentUser();
-  const profile = typeof window !== "undefined" ? loadProfile() : null;
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const imageUrl = getClerkImageUrl() ?? clerkUser?.imageUrl ?? null;
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setProfile(loadProfile());
+  }, []);
 
   const handleSignOut = async () => {
     clearProfile();
