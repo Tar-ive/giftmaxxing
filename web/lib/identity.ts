@@ -1,9 +1,14 @@
 "use client";
 
-// Lightweight identity layer. The onboarding name (localStorage) becomes the
-// signed-in user that shows up across every interaction — comments, posts,
-// profile, Maxi. When a real auth backend exists, swap getCurrentUser() to read
-// from the session/users table instead of the onboarding profile.
+// ────────────────────────────────────────────────────────────────────────────
+// Identity layer — resolves the signed-in user's display identity.
+//
+// Priority: Clerk auth user > localStorage fallback.
+// The Clerk user's fullName / imageUrl is the canonical identity shown on the
+// profile page, comments, posts, etc. The onboarding profile is taste data
+// (interests, budget, style) NOT identity — its `name` field is a legacy
+// artefact that is no longer used when Clerk is active.
+// ────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
 import { loadProfile } from "@/lib/onboarding";
 import { USERS, type User } from "@/lib/social";
@@ -17,13 +22,37 @@ export function handleFromName(name: string): string {
   return h || "you";
 }
 
-// The current signed-in user, derived from the onboarding profile. Always has
-// id "you" so existing like/save/comment plumbing keyed on "you" keeps working.
+// Module-level identity cache — set by AccountSync (which has access to Clerk
+// user data) so the rest of the app can read identity without Clerk hooks.
+let _cachedClerkName: string | null = null;
+let _cachedClerkImage: string | null = null;
+
+export function setClerkIdentityCache(name: string | null, imageUrl: string | null): void {
+  _cachedClerkName = name;
+  _cachedClerkImage = imageUrl;
+  // Notify subscribers (useCurrentUser hook) of the identity change.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("giftmaxxing:identity"));
+  }
+}
+
 export function getCurrentUser(): User {
   if (typeof window === "undefined") return USERS.you;
+  // Prefer Clerk identity when available
+  if (_cachedClerkName) {
+    return {
+      ...USERS.you,
+      name: _cachedClerkName,
+      handle: handleFromName(_cachedClerkName),
+    };
+  }
   const p = loadProfile();
   if (!p || !p.name.trim()) return USERS.you;
   return { ...USERS.you, name: p.name.trim(), handle: handleFromName(p.name) };
+}
+
+export function getClerkImageUrl(): string | null {
+  return _cachedClerkImage;
 }
 
 // Resolve any userId to a displayable User, using the live current user for "you".
@@ -34,21 +63,21 @@ export function displayUser(userId: string, me: User): User {
   );
 }
 
-// React hook: current user, kept in sync across tabs via the storage event.
-// Starts from the SSR-safe default and hydrates on mount to avoid mismatches.
+// React hook: current user, derived from Clerk identity (via cache) or
+// localStorage (fallback for demo/no-auth mode). Always id "you".
 export function useCurrentUser(): User {
   const [user, setUser] = useState<User>(USERS.you);
   useEffect(() => {
-    // Intentional: hydrate from localStorage after mount (SSR-safe; reading
-    // during render would cause hydration mismatches).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setUser(getCurrentUser());
     const sync = () => setUser(getCurrentUser());
     window.addEventListener("storage", sync);
     window.addEventListener("giftmaxxing:profile", sync as EventListener);
+    window.addEventListener("giftmaxxing:identity", sync as EventListener);
     return () => {
       window.removeEventListener("storage", sync);
       window.removeEventListener("giftmaxxing:profile", sync as EventListener);
+      window.removeEventListener("giftmaxxing:identity", sync as EventListener);
     };
   }, []);
   return user;

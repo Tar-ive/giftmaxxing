@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { loadProfile, saveProfile, type UserProfile } from "@/lib/onboarding";
 import { fetchMe, saveMe, setMyUserId, identifyMe } from "@/lib/api";
 import { markProfileSyncSettled } from "@/lib/profile-status";
+import { setClerkIdentityCache } from "@/lib/identity";
 import { ADMIN_BYPASS, ADMIN_USER_ID } from "@/lib/admin";
 
 // Bridges Clerk auth → our profile store ("start storing this data").
@@ -48,6 +49,7 @@ export function AccountSync() {
     if (!isSignedIn || !user) {
       // Signed out: nothing to restore — let the gate decide immediately.
       setMyUserId(null);
+      setClerkIdentityCache(null, null);
       settle();
       return () => {
         cancelled = true;
@@ -59,6 +61,13 @@ export function AccountSync() {
     // Stash the Clerk userId so non-Clerk client code (e.g. the swipe share
     // link) can attribute a shared challenge back to this sender.
     setMyUserId(userId);
+
+    // Cache Clerk identity (name + avatar) so the identity layer can resolve
+    // the display name from Clerk rather than the onboarding profile.
+    setClerkIdentityCache(
+      user.fullName ?? user.firstName ?? null,
+      user.imageUrl ?? null,
+    );
 
     // Ensure a users row (+ graph user node) exists from the very first sign-in,
     // even before onboarding — so every authenticated user is persisted.

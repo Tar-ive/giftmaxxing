@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Maxi } from "@/components/ui";
+import { getCurrentUser } from "@/lib/identity";
 import {
   type GiftRole,
   type GiftDifficulty,
@@ -50,8 +51,21 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
 
-  // Form state
+  // Form state — when Clerk is active, pre-fill name from the Clerk identity
+  // and skip the welcome step entirely (the user's name comes from auth).
   const [name, setName] = useState("");
+  const clerkName = typeof window !== "undefined" ? getCurrentUser().name : "";
+  const hasClerkName = clerkName !== "You" && clerkName.trim().length > 0;
+
+  // Auto-fill name from Clerk on mount and skip welcome step
+  useEffect(() => {
+    if (hasClerkName) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setName(clerkName);
+      setStep((s) => (s === 0 ? 1 : s));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [role, setRole] = useState<GiftRole | null>(null);
   const [difficulty, setDifficulty] = useState<GiftDifficulty | null>(null);
   const [style, setStyle] = useState<GiftStyle | null>(null);
