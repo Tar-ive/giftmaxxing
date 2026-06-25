@@ -7,6 +7,7 @@ import { fetchMe, saveMe, setMyUserId, identifyMe } from "@/lib/api";
 import { markProfileSyncSettled } from "@/lib/profile-status";
 import { setClerkIdentityCache } from "@/lib/identity";
 import { ADMIN_BYPASS, ADMIN_USER_ID } from "@/lib/admin";
+import { buildCloudPayload, restoreInteractionData, syncToCloud } from "@/lib/sync";
 
 // Bridges Clerk auth → our profile store ("start storing this data").
 // When a user is signed in:
@@ -77,32 +78,35 @@ export function AccountSync() {
       imageUrl: user.imageUrl ?? null,
     });
 
-    // Push the current local profile to the cloud (no-op if none yet).
-    const push = () => {
-      const local = loadProfile();
-      if (local) void saveMe(userId, local);
-    };
+    // Push the full payload (profile + interactions) to the cloud.
+    const push = () => syncToCloud();
 
     (async () => {
       const local = loadProfile();
       if (local) {
-        await saveMe(userId, local);
+        // Push full payload (profile + likes/saves/follows) on sign-in.
+        const payload = buildCloudPayload();
+        if (payload) await saveMe(userId, payload);
       } else {
         // First sign-in on a fresh device: restore from the cloud if present.
-        const remote = await fetchMe<UserProfile>(userId);
+        const remote = await fetchMe<UserProfile & Record<string, unknown>>(userId);
         if (!cancelled && remote) {
-          saveProfile(remote);
+          saveProfile(remote as UserProfile);
+          restoreInteractionData(remote);
           window.dispatchEvent(new Event("giftmaxxing:profile"));
+          window.dispatchEvent(new Event("giftmaxxing:interactions-restored"));
         }
       }
       settle();
     })();
 
     window.addEventListener("giftmaxxing:profile", push);
+    window.addEventListener("giftmaxxing:interaction", push);
     return () => {
       cancelled = true;
       clearTimeout(safety);
       window.removeEventListener("giftmaxxing:profile", push);
+      window.removeEventListener("giftmaxxing:interaction", push);
     };
   }, [isLoaded, isSignedIn, user]);
 

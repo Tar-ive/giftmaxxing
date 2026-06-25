@@ -14,16 +14,22 @@ import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
 import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
+import {
+  loadPostState,
+  savePostState,
+  loadFollows,
+  saveFollows,
+  syncToCloud,
+} from "@/lib/sync";
 
 const FEED_CAP = 216; // soft cap (~3 passes over the pin set) for the cycling feed
 const USER_POSTS_KEY = "giftmaxxing_user_posts";
-const USER_STATE_KEY = "giftmaxxing_post_state";
 
 // Only surface posts with a real, hotlinkable photo. Drops Reddit preview.redd.it
 // images (they 403 cross-origin), matching the bundled feed's photo-only quality.
 const isPhoto = (p: Post) => !!p.product.image && !p.product.image.includes("redd.it");
 
-// Persistence helpers for user-created posts and interaction state (likes/saves).
+// Persistence helpers for user-created posts.
 function loadUserPosts(): Post[] {
   try {
     const raw = localStorage.getItem(USER_POSTS_KEY);
@@ -35,20 +41,6 @@ function loadUserPosts(): Post[] {
 function saveUserPosts(posts: Post[]): void {
   try {
     localStorage.setItem(USER_POSTS_KEY, JSON.stringify(posts));
-  } catch { /* quota */ }
-}
-type PostState = Record<string, { liked?: boolean; saved?: boolean }>;
-function loadPostState(): PostState {
-  try {
-    const raw = localStorage.getItem(USER_STATE_KEY);
-    return raw ? (JSON.parse(raw) as PostState) : {};
-  } catch {
-    return {};
-  }
-}
-function savePostState(state: PostState): void {
-  try {
-    localStorage.setItem(USER_STATE_KEY, JSON.stringify(state));
   } catch { /* quota */ }
 }
 
@@ -108,7 +100,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       return { ...p, liked: s.liked ?? p.liked, saved: s.saved ?? p.saved };
     });
   });
-  const [follows, setFollows] = useState<Set<string>>(new Set());
+  const [follows, setFollows] = useState<Set<string>>(() => new Set(loadFollows()));
   const [openPostId, setOpenPostId] = useState<string | null>(null);
   const [storyIndex, setStoryIndex] = useState<number | null>(null);
   const [groupChats, setGroupChats] = useState<GroupChat[]>(GROUP_CHATS);
@@ -127,6 +119,23 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     (list: Post[]) => list.map((p) => ({ ...p, id: `${p.id}~${seqRef.current++}` })),
     []
   );
+
+  // Hydrate post state + follows when cloud data is restored by AccountSync.
+  useEffect(() => {
+    const restore = () => {
+      const state = loadPostState();
+      setPosts((prev) =>
+        prev.map((p) => {
+          const s = state[p.id];
+          if (!s) return p;
+          return { ...p, liked: s.liked ?? p.liked, saved: s.saved ?? p.saved };
+        }),
+      );
+      setFollows(new Set(loadFollows()));
+    };
+    window.addEventListener("giftmaxxing:interactions-restored", restore);
+    return () => window.removeEventListener("giftmaxxing:interactions-restored", restore);
+  }, []);
 
   // On mount, try the live API feed (real, scalable — paginated from DynamoDB via
   // the byFeed GSI). If it returns enough real-photo posts, it takes over from the
@@ -165,10 +174,13 @@ export function AppStore({ children }: { children: React.ReactNode }) {
         if (liked && apiModeRef.current) recordInteraction(getMyUserId(), postId, "like");
         return { ...p, liked, likes: p.likes + (liked ? 1 : -1) };
       });
-      // Persist the interaction state
       const state = loadPostState();
       const target = next.find((p) => p.id === postId);
-      if (target) { state[postId] = { ...state[postId], liked: target.liked }; savePostState(state); }
+      if (target) {
+        state[postId] = { ...state[postId], liked: target.liked };
+        savePostState(state);
+        syncToCloud();
+      }
       return next;
     });
   }, []);
@@ -183,7 +195,11 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       });
       const state = loadPostState();
       const target = next.find((p) => p.id === postId);
-      if (target) { state[postId] = { ...state[postId], saved: target.saved }; savePostState(state); }
+      if (target) {
+        state[postId] = { ...state[postId], saved: target.saved };
+        savePostState(state);
+        syncToCloud();
+      }
       return next;
     });
   }, []);
@@ -227,6 +243,8 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       const next = new Set(prev);
       if (next.has(userId)) next.delete(userId);
       else next.add(userId);
+      saveFollows([...next]);
+      syncToCloud();
       return next;
     });
   }, []);
