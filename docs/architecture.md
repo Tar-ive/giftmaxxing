@@ -160,6 +160,6 @@ sequenceDiagram
 
 - Public API base: `https://tvyu8gqmki.execute-api.us-east-1.amazonaws.com` (set as `NEXT_PUBLIC_API_URL`).
 - Lambda reads table names from env vars (`USERS_TABLE`, `POSTS_TABLE`, etc.).
-- `/feed` and `/recommendations` use cursor pagination with base64url-encoded DynamoDB `LastEvaluatedKey`.
+- `/feed` and `/recommendations` use opaque base64url cursors; `/feed` may encode a DynamoDB `LastEvaluatedKey` or an `_offset` fallback depending on the code path.
 - Cost kill-switch: breaker Lambda sets `{ paused: true }` in the config table when spend exceeds threshold; expensive routes (Bedrock, S3 Vectors) short-circuit while basic feed/auth keeps serving.
 - Vector recommendations fall back to a facet-based ranker over DynamoDB when S3 Vectors is unavailable or has no seed data.
