@@ -17,6 +17,10 @@ resource "aws_dynamodb_table" "config" {
     name = "key"
     type = "S"
   }
+
+  point_in_time_recovery {
+    enabled = true
+  }
 }
 
 # ── Kill-switch trigger topic (the $1,000 budget + CloudWatch alarms publish) ──
