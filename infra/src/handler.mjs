@@ -19,6 +19,7 @@ import {
 } from "@aws-sdk/client-s3vectors";
 import { BedrockRuntimeClient, InvokeModelCommand, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { classifyPin } from "./quality.mjs";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
@@ -32,6 +33,72 @@ const CONNECTIONS = process.env.CONNECTIONS_TABLE;
 const EVENTS = process.env.EVENTS_TABLE;
 const GRAPH = process.env.GRAPH_TABLE;
 const CONFIG = process.env.CONFIG_TABLE;
+
+// ── API authentication ───────────────────────────────────────────────────────
+// Protects the API so the live data store isn't world-readable/writable. A
+// request is authorized if it carries EITHER a valid Clerk session JWT (real
+// signed-in users) OR the x-admin-token shared secret (the local admin-dev
+// bypass + server-side ingest). Enforcement is gated by AUTH_ENFORCE so the code
+// can ship dark, then be switched on (and instantly rolled back) via one env
+// flip — no code change needed.
+const AUTH_ENFORCE = process.env.AUTH_ENFORCE === "1";
+const ADMIN_API_SECRET = process.env.ADMIN_API_SECRET || "";
+const CLERK_ISSUER = process.env.CLERK_ISSUER || "";
+const _clerkJwks = CLERK_ISSUER
+  ? createRemoteJWKSet(new URL(`${CLERK_ISSUER}/.well-known/jwks.json`))
+  : null;
+
+// Open routes (no token): public product catalog + the anonymous guest viral
+// write (POST /connections). Default-deny: anything not listed is protected.
+function isPublicRoute(method, path) {
+  if (method === "OPTIONS") return true;
+  if (method === "GET") {
+    if (path === "/feed" || path === "/recommendations" || path === "/pins") return true;
+    if (path === "/recipients" || path === "/ideas") return true;
+    if (path.startsWith("/posts/")) return true;
+  }
+  if (method === "POST" && (path === "/visual-search" || path === "/connections")) return true;
+  return false;
+}
+
+// Constant-time compare so the admin secret can't be guessed via timing.
+function timingSafeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+
+function hasAdminToken(event) {
+  if (!ADMIN_API_SECRET) return false;
+  const h = event.headers || {};
+  const tok = h["x-admin-token"] || h["X-Admin-Token"] || "";
+  return timingSafeEqual(tok, ADMIN_API_SECRET);
+}
+
+async function verifyClerkJwt(event) {
+  if (!_clerkJwks || !CLERK_ISSUER) return null;
+  const h = event.headers || {};
+  const auth = h.authorization || h.Authorization || "";
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  if (!m) return null;
+  try {
+    const { payload } = await jwtVerify(m[1], _clerkJwks, { issuer: CLERK_ISSUER });
+    return payload?.sub ? String(payload.sub) : null;
+  } catch {
+    return null;
+  }
+}
+
+// /seed is admin-only (ingest). Other protected routes accept a Clerk JWT OR the
+// admin token.
+async function authorizeRequest(event, method, path) {
+  if (hasAdminToken(event)) return { ok: true, sub: "admin", via: "admin" };
+  if (method === "POST" && path === "/seed") return { ok: false };
+  const sub = await verifyClerkJwt(event);
+  if (sub) return { ok: true, sub, via: "clerk" };
+  return { ok: false };
+}
 
 // ── Cost kill-switch feature flag (DynamoDB config table) ────────────────────
 // The breaker Lambda sets { paused: true } when spend trips $1,000 or a real-time
@@ -1049,11 +1116,24 @@ export const handler = async (event) => {
       statusCode: 204,
       headers: {
         "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
-        "access-control-allow-headers": "content-type,authorization",
+        "access-control-allow-headers": "content-type,authorization,x-admin-token",
         "access-control-max-age": "3600",
       },
       body: "",
     };
+  }
+
+  // ── Auth gate ────────────────────────────────────────────────────────────
+  // Default-deny for protected routes when enforcement is on. Public catalog +
+  // the anonymous guest write stay open; /seed is admin-only.
+  if (AUTH_ENFORCE && !isPublicRoute(method, path)) {
+    const auth = await authorizeRequest(event, method, path);
+    if (!auth.ok) {
+      return json(401, {
+        error: "unauthorized",
+        hint: "Sign in (Clerk) or send a valid x-admin-token.",
+      });
+    }
   }
 
   let body = {};
