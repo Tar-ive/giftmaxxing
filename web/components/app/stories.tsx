@@ -92,9 +92,11 @@ export function StoryViewer() {
 
   const chat = openChatId ? groupChats.find((c) => c.id === openChatId) : null;
 
-  useEffect(() => {
+  const [prevChatId, setPrevChatId] = useState(openChatId);
+  if (openChatId !== prevChatId) {
+    setPrevChatId(openChatId);
     setInput("");
-  }, [openChatId]);
+  }
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
