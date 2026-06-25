@@ -22,7 +22,7 @@ const footerLinks = {
     { name: "Contact", href: "#" },
   ],
   Legal: [
-    { name: "Privacy", href: "#" },
+    { name: "Privacy", href: "/privacy" },
     { name: "Terms", href: "#" },
     { name: "Cookies", href: "#" },
   ],
@@ -43,12 +43,12 @@ export function FooterSection() {
         style={{ background: "radial-gradient(120% 120% at 50% 0%, rgba(251,111,82,0.18), #fbf7f1 60%)" }}
       >
         <img
-          src="https://cdn.midjourney.com/4262b272-bbea-46a1-b9fc-b436daa101fe/0_0.jpeg"
-          alt="Wrapped gifts"
+          src="/shots/shop-desktop.jpg"
+          alt="Hand-picked gifts in the Giftmaxxing shop"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.display = "none";
           }}
-          className="w-full h-full object-cover object-center"
+          className="w-full h-full object-cover object-top"
         />
         {/* Gradient fade to cream at bottom */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#fbf7f1]" />

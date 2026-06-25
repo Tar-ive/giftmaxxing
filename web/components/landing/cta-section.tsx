@@ -103,8 +103,8 @@ export function CtaSection() {
               {/* Right image */}
               <div className="hidden lg:flex items-center justify-center w-[480px] h-[420px] shrink-0 overflow-hidden rounded-2xl border border-foreground/10">
                 <img
-                  src="https://cdn.midjourney.com/b0e3eeff-f2f1-48a3-8d82-e530b3d96337/0_0.jpeg"
-                  alt="Curated thoughtful gifts"
+                  src="/shots/feed-desktop.jpg"
+                  alt="The Giftmaxxing feed of real, shoppable finds"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display = "none";
                   }}

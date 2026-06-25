@@ -121,7 +121,7 @@ export function HeroSection() {
 
   return (
     <section className="relative min-h-screen flex flex-col justify-center items-start overflow-hidden bg-background">
-      {/* Background image (Midjourney) with warm gradient fallback */}
+      {/* Background image (self-hosted app screenshot) with warm gradient fallback */}
       <div
         className="absolute inset-0 z-0"
         style={{
@@ -130,7 +130,7 @@ export function HeroSection() {
         }}
       >
         <img
-          src="https://cdn.midjourney.com/b0e3eeff-f2f1-48a3-8d82-e530b3d96337/0_0.jpeg"
+          src="/shots/feed-desktop.jpg"
           alt=""
           aria-hidden="true"
           onError={(e) => {
