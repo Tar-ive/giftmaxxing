@@ -21,7 +21,9 @@ import { useStore } from "@/components/app/store";
 import {
   getMyUserId,
   fetchConnections,
+  fetchSavedIds,
   relativeTime,
+  isApiConfigured,
   type SoftConnection,
 } from "@/lib/api";
 
@@ -53,6 +55,7 @@ export default function ProfilePage() {
   // social graph and never expose the current user's connections.
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [friends, setFriends] = useState<SoftConnection[]>([]);
+  const [ownerSavedIds, setOwnerSavedIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     if (!isMe) return;
@@ -74,6 +77,18 @@ export default function ProfilePage() {
     };
   }, [isMe]);
 
+  // For non-self profiles: fetch the profile owner's saved item IDs from the API
+  // so the Wishlist tab shows their saves (not the viewer's).
+  useEffect(() => {
+    if (isMe || !isApiConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      const ids = await fetchSavedIds(userId);
+      if (!cancelled) setOwnerSavedIds(ids);
+    })();
+    return () => { cancelled = true; };
+  }, [isMe, userId]);
+
   if (!baseU && !isMe) return notFound();
   const u = isMe ? me : baseU;
   // For the current user, merge user-created posts (from store) with the static
@@ -92,7 +107,13 @@ export default function ProfilePage() {
         ].filter(Boolean)
       : [];
 
-  const savedPosts = storePosts.filter((p) => p.saved);
+  // For self: saved posts from the store. For others: posts matching IDs fetched
+  // from the API (the owner's saves). Falls back to empty until the API responds.
+  const savedPosts = isMe
+    ? storePosts.filter((p) => p.saved)
+    : ownerSavedIds
+      ? storePosts.filter((p) => ownerSavedIds.has(p.id))
+      : [];
 
   const tabs = isMe
     ? ([
