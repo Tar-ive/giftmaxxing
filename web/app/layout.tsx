@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { AccountSync } from "@/components/app/account-sync";
+import { AmazonOneLink } from "@/components/amazon-onelink";
 import { Hanken_Grotesk, Instrument_Serif, Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -65,6 +66,7 @@ export default function RootLayout({
         ) : (
           children
         )}
+        <AmazonOneLink />
       </body>
     </html>
   );
