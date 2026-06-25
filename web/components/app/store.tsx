@@ -142,7 +142,11 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           apiModeRef.current = true;
           cursorRef.current = cursor;
           setHasMore(cursor != null);
-          setPosts(photos);
+          // Preserve user-created posts when the API feed takes over
+          setPosts((prev) => {
+            const userPosts = prev.filter((p) => p.user === "you");
+            return [...userPosts, ...photos];
+          });
         }
       } catch {
         // keep the bundled feed on any error

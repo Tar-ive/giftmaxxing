@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GRADIENTS } from "@/lib/data";
 import type { Pin } from "@/lib/pins";
 import { Icons } from "@/components/ui";
@@ -18,6 +18,9 @@ export function ItemDetailModal({
 }) {
   const { addPinToCart } = useMaxi();
   const [added, setAdded] = useState(false);
+
+  // Reset confirmation when a different item is shown (component never unmounts)
+  useEffect(() => { setAdded(false); }, [pin]);
 
   if (!pin) return null;
 
