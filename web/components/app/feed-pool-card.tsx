@@ -8,7 +8,7 @@ import { type Fundraiser, raisedOf, progressOf } from "@/lib/fundraisers";
 import { USERS } from "@/lib/social";
 import { Icons } from "@/components/ui";
 
-export function FeedPoolCard({ f, onChip }: { f: Fundraiser; onChip: (id: string, amount: number) => void }) {
+export function FeedPoolCard({ f }: { f: Fundraiser }) {
   const raised = raisedOf(f);
   const pct = Math.round(progressOf(f) * 100);
   const funded = raised >= f.goal;
@@ -60,17 +60,20 @@ export function FeedPoolCard({ f, onChip }: { f: Fundraiser; onChip: (id: string
               <Icons.check size={16} /> Fully funded
             </span>
           ) : (
-            <button
-              onClick={() => onChip(f.id, 25)}
-              className="flex-1 rounded-full bg-coral py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
+            <Link
+              href="/feed/pools"
+              className="flex-1 rounded-full bg-coral py-2.5 text-center text-sm font-bold text-white transition-opacity hover:opacity-90"
             >
-              Chip in $25
-            </button>
+              Chip in
+            </Link>
           )}
           <Link href="/feed/pools" className="flex items-center gap-1.5 rounded-full border border-line bg-cream px-4 py-2.5 text-sm font-bold text-ink hover:bg-coral-soft">
             <Icons.users size={16} /> View
           </Link>
         </div>
+        {!funded && (
+          <p className="mt-2 text-center text-[10px] text-ink-faint">🧪 Demo Mode</p>
+        )}
       </div>
     </article>
   );

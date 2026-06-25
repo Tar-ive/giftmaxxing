@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 
 const words = ["figured out", "effortless", "personal", "together"];
 
@@ -24,6 +26,7 @@ function BlurWord({ word, trigger }: { word: string; trigger: number }) {
     framesRef.current = [];
     timersRef.current = [];
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- animation reset requires imperative state init
     setLetterStates(letters.map(() => ({ opacity: 0, blur: 20 })));
     setShowGradient(true);
 
@@ -109,6 +112,7 @@ export function HeroSection() {
   const [wordIndex, setWordIndex] = useState(0);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration animation trigger
     setIsVisible(true);
   }, []);
 
@@ -197,6 +201,27 @@ export function HeroSection() {
               </span>
             </span>
           </h1>
+        </div>
+
+        {/* Dual CTA */}
+        <div
+          className={`flex flex-col sm:flex-row items-start gap-4 transition-all duration-700 delay-300 ${
+            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <Link
+            href="/feed"
+            className="inline-flex items-center gap-2 bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white font-semibold px-8 h-14 rounded-full text-base transition-colors group"
+          >
+            Try it now
+            <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+          </Link>
+          <a
+            href="#waitlist"
+            className="inline-flex items-center gap-2 border border-foreground/20 hover:border-foreground/40 bg-background/60 backdrop-blur-sm text-foreground font-semibold px-8 h-14 rounded-full text-base transition-colors"
+          >
+            Join the waitlist
+          </a>
         </div>
         </div>
       </div>

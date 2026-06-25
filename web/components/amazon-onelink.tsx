@@ -8,14 +8,25 @@ import Script from "next/script";
 // Our shop links already carry the US `-20` tag (see lib/affiliate.ts); OneLink
 // swaps the store + tag client-side, so no link-building changes are needed.
 //
-// Prerequisites (one-time, in Associates Central):
+// ── Environment variables ────────────────────────────────────────────────────
+//
+//   NEXT_PUBLIC_AMAZON_ONELINK_INSTANCE_ID   (required to activate)
+//     The adInstanceId GUID from your OneLink snippet in Associates Central.
+//     Without this var the component renders nothing and no third-party script
+//     is loaded.
+//
+//   NEXT_PUBLIC_AMAZON_ONELINK_MARKETPLACE   (optional, default "US")
+//     The *home* marketplace code (e.g. "US", "UK", "DE"). OneLink uses this
+//     to know which store's links to rewrite. Set it to whichever marketplace
+//     your associate account is primarily registered in.
+//
+// ── Prerequisites (one-time, in Associates Central) ─────────────────────────
 //   1. Be an approved Associate in each target marketplace
 //      (e.g. join Amazon India at affiliate-program.amazon.in → `-21` tag).
 //   2. Link your tracking IDs across stores under Tools → OneLink.
 //   3. Copy the adInstanceId GUID from the snippet it generates.
+//   4. Set NEXT_PUBLIC_AMAZON_ONELINK_INSTANCE_ID in your Vercel env / .env.
 //
-// Stays OFF until NEXT_PUBLIC_AMAZON_ONELINK_INSTANCE_ID is set (renders null),
-// so it never loads a third-party script or affects anything before setup.
 const INSTANCE_ID = process.env.NEXT_PUBLIC_AMAZON_ONELINK_INSTANCE_ID;
 const HOME_MARKETPLACE = process.env.NEXT_PUBLIC_AMAZON_ONELINK_MARKETPLACE || "US";
 
