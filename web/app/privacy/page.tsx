@@ -103,6 +103,34 @@ export default function PrivacyPage() {
           disputes between participants.
         </p>
 
+        <h2 id="your-data" className="scroll-mt-24 pt-4 font-display text-xl font-bold text-ink">
+          Export &amp; delete your data
+        </h2>
+        <p>
+          You have full control over your data at any time. From your{" "}
+          <Link href="/feed/settings" className="font-semibold text-coral hover:underline">
+            Settings
+          </Link>{" "}
+          page you can:
+        </p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <strong className="text-ink">Download my data</strong> — export all your
+            preferences, taste profile, saves, interactions, and other stored data as a
+            JSON file.
+          </li>
+          <li>
+            <strong className="text-ink">Delete all my data</strong> — permanently remove
+            everything: your taste profile, saved items, interaction history, cart, and any
+            other locally stored information. If you have a cloud account, the server-side
+            record is also deleted.
+          </li>
+        </ul>
+        <p>
+          No waiting period, no hoops — your data is yours and you can take it or remove
+          it whenever you choose.
+        </p>
+
         <h2 className="pt-4 font-display text-xl font-bold text-ink">Your choices</h2>
         <p>
           You can edit or delete your profile, recipients, events, and connections from
