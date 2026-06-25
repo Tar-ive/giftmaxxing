@@ -76,12 +76,13 @@ export default function SettingsPage() {
   const [deleteSuccess, setDeleteSuccess] = useState(false);
 
   const handleDeleteData = useCallback(async () => {
+    // Read the userId BEFORE clearing localStorage (it's stored there)
+    const userId = getMyUserId();
     // Clear all localStorage data
     for (const key of ALL_STORAGE_KEYS) {
       try { localStorage.removeItem(key); } catch { /* skip */ }
     }
     // If API is configured, call the delete endpoint
-    const userId = getMyUserId();
     if (isApiConfigured() && userId) {
       try {
         await fetch(`${API_BASE}/me/delete`, {
