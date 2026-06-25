@@ -103,11 +103,13 @@ export function Sidebar() {
       )}
 
       <Link
-        href="/"
-        className="flex items-center gap-4 rounded-xl px-3 py-3 font-medium text-ink-soft transition-colors hover:bg-ink/5"
+        href="/feed/settings"
+        className={`flex items-center gap-4 rounded-xl px-3 py-3 transition-colors hover:bg-ink/5 ${
+          pathname === "/feed/settings" ? "font-bold text-ink" : "font-medium text-ink-soft"
+        }`}
       >
         <Icons.menu size={26} />
-        <span className="hidden xl:block">More</span>
+        <span className="hidden xl:block">Settings</span>
       </Link>
     </aside>
   );

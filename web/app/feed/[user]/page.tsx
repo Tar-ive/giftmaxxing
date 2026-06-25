@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, notFound } from "next/navigation";
+import { useParams, useRouter, notFound } from "next/navigation";
 import { GRADIENTS } from "@/lib/data";
 import { USERS, profilePosts } from "@/lib/social";
-import { useCurrentUser } from "@/lib/identity";
+import { useCurrentUser, getClerkImageUrl } from "@/lib/identity";
 import {
   loadProfile,
   setProfileVisibility,
@@ -39,6 +39,7 @@ const STYLE_META: Record<GiftStyle, { label: string; emoji: string }> = {
 
 export default function ProfilePage() {
   const params = useParams<{ user: string }>();
+  const router = useRouter();
   const userId = params.user;
   const { toggleFollow, isFollowing, openPost } = useStore();
   const me = useCurrentUser();
@@ -100,16 +101,26 @@ export default function ProfilePage() {
     setProfile((prev) => (prev ? { ...prev, visibility: next } : prev));
   };
 
+  const clerkImageUrl = isMe ? getClerkImageUrl() : null;
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:py-10">
       {/* header */}
       <header className="flex flex-col items-center gap-6 sm:flex-row sm:items-start sm:gap-12">
-        <div
-          className="grid h-24 w-24 shrink-0 place-items-center rounded-full text-4xl font-bold text-white shadow-md sm:h-36 sm:w-36"
-          style={{ background: GRADIENTS[u.grad] }}
-        >
-          {u.name.charAt(0)}
-        </div>
+        {isMe && clerkImageUrl ? (
+          <img
+            src={clerkImageUrl}
+            alt={u.name}
+            className="h-24 w-24 shrink-0 rounded-full object-cover shadow-md sm:h-36 sm:w-36"
+          />
+        ) : (
+          <div
+            className="grid h-24 w-24 shrink-0 place-items-center rounded-full text-4xl font-bold text-white shadow-md sm:h-36 sm:w-36"
+            style={{ background: GRADIENTS[u.grad] }}
+          >
+            {u.name.charAt(0)}
+          </div>
+        )}
 
         <div className="flex-1 text-center sm:text-left">
           <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
@@ -117,7 +128,10 @@ export default function ProfilePage() {
             <div className="flex gap-2">
               {isMe ? (
                 <>
-                  <button className="rounded-lg bg-ink/5 px-4 py-1.5 text-sm font-bold text-ink">
+                  <button
+                    onClick={() => router.push("/feed/settings")}
+                    className="rounded-lg bg-ink/5 px-4 py-1.5 text-sm font-bold text-ink"
+                  >
                     Edit profile
                   </button>
                   <button className="rounded-lg bg-ink/5 px-4 py-1.5 text-sm font-bold text-ink">
