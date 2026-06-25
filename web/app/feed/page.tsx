@@ -6,6 +6,7 @@ import { PostCard } from "@/components/app/post-card";
 import { RightRail } from "@/components/app/right-rail";
 import { FeedPoolCard } from "@/components/app/feed-pool-card";
 import { EventBanner } from "@/components/app/event-banner";
+import { GiftPromptCards } from "@/components/app/gift-prompt-card";
 import { MilestoneBanner } from "@/components/app/milestone-banner";
 import { useStore } from "@/components/app/store";
 import { useCurrentUser } from "@/lib/identity";
@@ -49,6 +50,7 @@ export default function FeedPage() {
     <div className="mx-auto flex max-w-5xl justify-center gap-12 px-3 py-6 sm:px-5">
       <div className="w-full max-w-[470px] space-y-5">
         <EventBanner />
+        <GiftPromptCards />
         <MilestoneBanner />
         <StoriesTray />
 

@@ -42,6 +42,7 @@ import {
   deleteEvent,
 } from "@/lib/api";
 import { loadProfile } from "@/lib/onboarding";
+import { GiftPromptCards } from "@/components/app/gift-prompt-card";
 import { Maxi } from "@/components/ui";
 import Link from "next/link";
 
@@ -174,6 +175,9 @@ export default function EventsPage() {
 
       {topTab === "personal" && (
         <>
+          {/* Gift-prompt reminders for events within their lead window */}
+          <GiftPromptCards />
+
           {/* Reward bank summary */}
           {unclaimed.length > 0 && (
             <div className="mb-6 rounded-2xl border border-coral/20 bg-coral-soft p-4">
