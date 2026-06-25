@@ -108,6 +108,18 @@ export default function PrivacyPage() {
           You can edit or delete your profile, recipients, events, and connections from
           within the app. Questions? Reach out and we&apos;ll help.
         </p>
+
+        <h2 className="pt-4 font-display text-xl font-bold text-ink">Contact</h2>
+        <p>
+          Questions about your privacy, or want to access or delete your data? Email us at{" "}
+          <a
+            href="mailto:adhsaksham27@gmail.com"
+            className="font-semibold text-coral hover:underline"
+          >
+            adhsaksham27@gmail.com
+          </a>{" "}
+          and we&apos;ll help.
+        </p>
       </section>
     </main>
   );
