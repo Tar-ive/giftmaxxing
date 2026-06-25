@@ -100,3 +100,96 @@ export function visualForPick(pick: {
     pick.emoji ?? (pick.category ? emojiForCategory(pick.category) : null) ?? emojiForAsin(pick.asin);
   return { grad, emoji };
 }
+
+// ── International locale fallback (9.3) ─────────────────────────────────────
+//
+// When Amazon OneLink is NOT configured (NEXT_PUBLIC_AMAZON_ONELINK_INSTANCE_ID
+// is unset), we detect the user's locale from `navigator.language` and suggest
+// the closest Amazon marketplace. This is a client-side-only helper.
+
+export type AmazonMarketplace = {
+  code: string;
+  domain: string;
+  label: string;
+};
+
+const AMAZON_MARKETPLACES: AmazonMarketplace[] = [
+  { code: "US", domain: "amazon.com", label: "Amazon.com (US)" },
+  { code: "UK", domain: "amazon.co.uk", label: "Amazon.co.uk (UK)" },
+  { code: "DE", domain: "amazon.de", label: "Amazon.de (Germany)" },
+  { code: "FR", domain: "amazon.fr", label: "Amazon.fr (France)" },
+  { code: "ES", domain: "amazon.es", label: "Amazon.es (Spain)" },
+  { code: "IT", domain: "amazon.it", label: "Amazon.it (Italy)" },
+  { code: "IN", domain: "amazon.in", label: "Amazon.in (India)" },
+  { code: "JP", domain: "amazon.co.jp", label: "Amazon.co.jp (Japan)" },
+  { code: "CA", domain: "amazon.ca", label: "Amazon.ca (Canada)" },
+  { code: "AU", domain: "amazon.com.au", label: "Amazon.com.au (Australia)" },
+  { code: "BR", domain: "amazon.com.br", label: "Amazon.com.br (Brazil)" },
+  { code: "MX", domain: "amazon.com.mx", label: "Amazon.com.mx (Mexico)" },
+  { code: "NL", domain: "amazon.nl", label: "Amazon.nl (Netherlands)" },
+  { code: "SG", domain: "amazon.sg", label: "Amazon.sg (Singapore)" },
+  { code: "AE", domain: "amazon.ae", label: "Amazon.ae (UAE)" },
+  { code: "SA", domain: "amazon.sa", label: "Amazon.sa (Saudi Arabia)" },
+  { code: "SE", domain: "amazon.se", label: "Amazon.se (Sweden)" },
+  { code: "PL", domain: "amazon.pl", label: "Amazon.pl (Poland)" },
+];
+
+// Language-tag region → marketplace code map for common locales.
+const REGION_TO_MARKETPLACE: Record<string, string> = {
+  US: "US", GB: "UK", UK: "UK",
+  DE: "DE", AT: "DE", CH: "DE",
+  FR: "FR", BE: "FR",
+  ES: "ES",
+  IT: "IT",
+  IN: "IN",
+  JP: "JP",
+  CA: "CA",
+  AU: "AU",
+  BR: "BR",
+  MX: "MX",
+  NL: "NL",
+  SG: "SG",
+  AE: "AE",
+  SA: "SA",
+  SE: "SE",
+  PL: "PL",
+};
+
+// Language subtag fallback (when region is absent, e.g. "ja" → JP).
+const LANG_TO_MARKETPLACE: Record<string, string> = {
+  ja: "JP",
+  hi: "IN",
+  pt: "BR",
+  de: "DE",
+  fr: "FR",
+  es: "ES",
+  it: "IT",
+  nl: "NL",
+  sv: "SE",
+  pl: "PL",
+  ar: "AE",
+};
+
+export function detectMarketplace(): AmazonMarketplace {
+  const fallback = AMAZON_MARKETPLACES[0]; // US
+  if (typeof navigator === "undefined") return fallback;
+  const lang = navigator.language || "";
+  const parts = lang.split("-");
+  const region = (parts[1] ?? "").toUpperCase();
+  const langBase = parts[0].toLowerCase();
+  const code =
+    REGION_TO_MARKETPLACE[region] ??
+    LANG_TO_MARKETPLACE[langBase] ??
+    "US";
+  return AMAZON_MARKETPLACES.find((m) => m.code === code) ?? fallback;
+}
+
+export function amazonUrlForMarketplace(asin: string, marketplace: AmazonMarketplace): string {
+  const normalized = asin.trim().toUpperCase();
+  if (!isValidAsin(normalized)) {
+    return `https://www.${marketplace.domain}/s?k=${encodeURIComponent(asin)}&tag=${AMAZON_ASSOC_TAG}`;
+  }
+  return `https://www.${marketplace.domain}/dp/${normalized}?tag=${AMAZON_ASSOC_TAG}`;
+}
+
+export const ONELINK_CONFIGURED = !!process.env.NEXT_PUBLIC_AMAZON_ONELINK_INSTANCE_ID;
