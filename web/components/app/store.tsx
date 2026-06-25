@@ -13,7 +13,7 @@ import { type Post, type GroupChat, GROUP_CHATS } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
-import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
+import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction, fetchInteractions } from "@/lib/api";
 import {
   loadPostState,
   savePostState,
@@ -166,12 +166,67 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // On mount, fetch persisted interactions (likes/saves/comments) from the API to
+  // restore cross-device state. Merges into posts AND into localStorage so the
+  // local cache stays current. When the API isn't configured or unreachable, the
+  // localStorage fallback (loadPostState) already handled state in the initializer.
+  useEffect(() => {
+    const userId = getMyUserId();
+    if (!isApiConfigured() || !userId) return;
+    let cancelled = false;
+    (async () => {
+      const items = await fetchInteractions(userId, ["like", "save", "comment"]);
+      if (cancelled || !items || items.length === 0) return;
+
+      // Build lookup maps from API interactions
+      const likedSet = new Set<string>();
+      const savedSet = new Set<string>();
+      const commentsMap = new Map<string, { id: string; user: string; text: string }[]>();
+      for (const it of items) {
+        if (it.type === "like") likedSet.add(it.targetId);
+        else if (it.type === "save") savedSet.add(it.targetId);
+        else if (it.type === "comment" && it.data?.text) {
+          const list = commentsMap.get(it.targetId) ?? [];
+          list.push({ id: `c-api-${it.createdAt ?? Date.now()}`, user: "you", text: it.data.text });
+          commentsMap.set(it.targetId, list);
+        }
+      }
+
+      // Merge API state into posts
+      setPosts((prev) =>
+        prev.map((p) => {
+          const isLiked = likedSet.has(p.id);
+          const isSaved = savedSet.has(p.id);
+          const apiComments = commentsMap.get(p.id);
+          if (!isLiked && !isSaved && !apiComments) return p;
+          const merged = { ...p };
+          if (isLiked && !p.liked) { merged.liked = true; merged.likes = p.likes + 1; }
+          if (isSaved && !p.saved) { merged.saved = true; }
+          if (apiComments) {
+            // Dedupe: only add API comments not already present locally
+            const existingTexts = new Set(p.comments.map((c) => c.text));
+            const newComments = apiComments.filter((c) => !existingTexts.has(c.text));
+            if (newComments.length) merged.comments = [...p.comments, ...newComments];
+          }
+          return merged;
+        })
+      );
+
+      // Sync to localStorage so it stays up-to-date with API state
+      const state = loadPostState();
+      for (const id of likedSet) state[id] = { ...state[id], liked: true };
+      for (const id of savedSet) state[id] = { ...state[id], saved: true };
+      savePostState(state);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const toggleLike = useCallback((postId: string) => {
     setPosts((prev) => {
       const next = prev.map((p) => {
         if (p.id !== postId) return p;
         const liked = !p.liked;
-        if (liked && apiModeRef.current) recordInteraction(getMyUserId(), postId, "like");
+        if (liked) recordInteraction(getMyUserId(), postId, "like");
         return { ...p, liked, likes: p.likes + (liked ? 1 : -1) };
       });
       const state = loadPostState();
@@ -190,7 +245,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       const next = prev.map((p) => {
         if (p.id !== postId) return p;
         const saved = !p.saved;
-        if (saved && apiModeRef.current) recordInteraction(getMyUserId(), postId, "save");
+        if (saved) recordInteraction(getMyUserId(), postId, "save");
         return { ...p, saved };
       });
       const state = loadPostState();
@@ -229,6 +284,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           : p
       )
     );
+    recordInteraction(getMyUserId(), postId, "comment", { text: clean });
   }, []);
 
   const addPost = useCallback((post: Post) => {

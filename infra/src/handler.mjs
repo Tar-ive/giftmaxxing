@@ -1276,25 +1276,48 @@ export const handler = async (event) => {
       return json(200, { items, source: "visual" });
     }
 
-    // POST /interactions  { userId, targetId, type }
+    // GET /interactions?userId=&types=like,save,comment
+    // Returns the user's persisted interactions filtered by type(s).
+    if (method === "GET" && path === "/interactions") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      const types = parseList(qs.types);
+      const inter = await ddb.send(
+        new QueryCommand({
+          TableName: INTERACTIONS,
+          KeyConditionExpression: "userId = :u",
+          ExpressionAttributeValues: { ":u": userId },
+        })
+      );
+      let items = (inter.Items ?? []).map((i) => ({
+        targetId: i.target,
+        type: i.type,
+        createdAt: i.createdAt,
+        data: i.data ?? undefined,
+      }));
+      if (types.length) items = items.filter((i) => types.includes(i.type));
+      return json(200, { items });
+    }
+
+    // POST /interactions  { userId, targetId, type, data? }
     if (method === "POST" && path === "/interactions") {
-      const { userId, targetId, type } = body;
+      const { userId, targetId, type, data } = body;
       if (!userId || !targetId || !type) {
         return json(400, { error: "userId, targetId, type required" });
       }
-      // One row per (user, target, type) → idempotent like/save.
-      await ddb.send(
-        new PutCommand({
-          TableName: INTERACTIONS,
-          Item: {
-            userId,
-            targetId: `${type}#${targetId}`,
-            type,
-            target: targetId,
-            createdAt: Date.now(),
-          },
-        })
-      );
+      // Comments are NOT idempotent (many per post), so they get a unique sort key.
+      const sk = type === "comment"
+        ? `${type}#${targetId}#${Date.now()}`
+        : `${type}#${targetId}`;
+      const item = {
+        userId,
+        targetId: sk,
+        type,
+        target: targetId,
+        createdAt: Date.now(),
+      };
+      if (data) item.data = data;
+      await ddb.send(new PutCommand({ TableName: INTERACTIONS, Item: item }));
       return json(200, { ok: true });
     }
 

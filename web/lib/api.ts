@@ -131,23 +131,64 @@ export const fetchRecommendations = (opts: FeedOpts = {}) =>
 //  2. Personalized recs — likes/saves become vector seeds for /recommendations.
 // Idempotent per session: each (user,type,target) is sent at most once, so the
 // impression observer can call this freely without spamming the API.
+// Comments are NOT de-duped (many per post).
 const _sentInteractions = new Set<string>();
 export function recordInteraction(
   userId: string | null | undefined,
   targetId: string,
-  type: "seen" | "like" | "save"
+  type: "seen" | "like" | "save" | "comment",
+  data?: { text?: string }
 ): void {
   if (!isApiConfigured() || !userId || !targetId) return;
-  const key = `${userId}#${type}#${targetId}`;
-  if (_sentInteractions.has(key)) return;
-  _sentInteractions.add(key);
-  void fetch(`${API_BASE}/interactions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userId, targetId, type }),
-  }).catch(() => {
-    _sentInteractions.delete(key); // allow a retry after a transient failure
-  });
+  // Comments are never de-duped; likes/saves/seen are idempotent.
+  if (type !== "comment") {
+    const key = `${userId}#${type}#${targetId}`;
+    if (_sentInteractions.has(key)) return;
+    _sentInteractions.add(key);
+    void fetch(`${API_BASE}/interactions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId, targetId, type }),
+    }).catch(() => {
+      _sentInteractions.delete(key);
+    });
+  } else {
+    void fetch(`${API_BASE}/interactions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId, targetId, type, data }),
+    }).catch(() => {});
+  }
+}
+
+// ── Fetch persisted interactions (GET /interactions) ──────────────────────────
+// Returns the user's likes, saves, and comments from the backend so state can be
+// restored on page load (cross-device sync). Falls back gracefully to null when
+// the API is unreachable so callers use localStorage instead.
+export type PersistedInteraction = {
+  targetId: string;
+  type: "like" | "save" | "comment" | "seen";
+  createdAt?: number;
+  data?: { text?: string };
+};
+
+export async function fetchInteractions(
+  userId: string,
+  types?: string[]
+): Promise<PersistedInteraction[] | null> {
+  if (!isApiConfigured() || !userId) return null;
+  try {
+    const q = new URLSearchParams({ userId });
+    if (types?.length) q.set("types", types.join(","));
+    const res = await fetch(`${API_BASE}/interactions?${q.toString()}`, {
+      headers: { accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { items?: PersistedInteraction[] };
+    return data.items ?? [];
+  } catch {
+    return null;
+  }
 }
 
 // ── Vector recommendations (S3 Vectors) ──────────────────────────────────────
