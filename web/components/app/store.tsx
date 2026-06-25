@@ -151,10 +151,18 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           apiModeRef.current = true;
           cursorRef.current = cursor;
           setHasMore(cursor != null);
-          // Preserve user-created posts when the API feed takes over
+          // Preserve user-created posts when the API feed takes over.
+          // Re-apply persisted interaction state so likes/saves aren't lost
+          // if the interaction-sync effect resolved before this one.
           setPosts((prev) => {
             const userPosts = prev.filter((p) => p.user === "you");
-            return [...userPosts, ...photos];
+            const state = loadPostState();
+            const merged = photos.map((p) => {
+              const s = state[p.id];
+              if (!s) return p;
+              return { ...p, liked: s.liked ?? p.liked, saved: s.saved ?? p.saved };
+            });
+            return [...userPosts, ...merged];
           });
         }
       } catch {
