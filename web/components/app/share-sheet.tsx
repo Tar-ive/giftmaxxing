@@ -93,7 +93,11 @@ export function ShareSheet({
   };
 
   const instagram = async () => {
-    await copy();
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch { /* clipboard blocked */ }
     track("instagram");
     window.open("https://www.instagram.com/", "_blank", "noopener,noreferrer");
   };

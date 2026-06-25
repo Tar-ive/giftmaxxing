@@ -47,6 +47,7 @@ export function markLocalConnectionsSeen(): void {
     const list = loadLocalConnections();
     const updated = list.map((c) => ({ ...c, seen: true }));
     localStorage.setItem(KEY, JSON.stringify(updated));
+    window.dispatchEvent(new Event(LOCAL_CONN_EVENT));
   } catch {
     // ignore
   }
