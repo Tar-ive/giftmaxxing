@@ -24,6 +24,7 @@ function BlurWord({ word, trigger }: { word: string; trigger: number }) {
     framesRef.current = [];
     timersRef.current = [];
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- animation reset requires imperative state init
     setLetterStates(letters.map(() => ({ opacity: 0, blur: 20 })));
     setShowGradient(true);
 
@@ -109,6 +110,7 @@ export function HeroSection() {
   const [wordIndex, setWordIndex] = useState(0);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydration animation trigger
     setIsVisible(true);
   }, []);
 

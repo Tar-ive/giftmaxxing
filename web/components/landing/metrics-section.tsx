@@ -164,9 +164,10 @@ function DotGraph({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
-  const timeRef = useRef(Math.random() * 100);
+  const timeRef = useRef(0);
 
   useEffect(() => {
+    if (!timeRef.current) timeRef.current = Math.random() * 100;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -222,6 +223,7 @@ export function MetricsSection() {
   const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only clock avoids hydration mismatch
     setTime(new Date());
     const interval = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(interval);
