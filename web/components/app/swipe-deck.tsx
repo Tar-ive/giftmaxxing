@@ -20,6 +20,8 @@ import {
 import {
   fetchVectorRecommendations,
   isApiConfigured,
+  recordInteraction,
+  getMyUserId,
   type VectorItem,
 } from "@/lib/api";
 
@@ -114,6 +116,12 @@ export function SwipeDeck({
       if (!pin || fly) return;
       setFly(dir);
       recordSwipe(pin.id, dir);
+      // Persist the swipe to the DynamoDB interactions table (fire-and-forget,
+      // no-ops when the API isn't configured). A "yes" is a positive taste
+      // signal -> `like` (seeds the vector recommender + excludes from feed);
+      // a "no" is recorded as `seen` so it stops reappearing without becoming a
+      // positive seed.
+      recordInteraction(getMyUserId(), pin.id, dir === "yes" ? "like" : "seen");
       setStats(swipeStats());
       window.setTimeout(() => {
         setIdx((i) => i + 1);
