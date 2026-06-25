@@ -39,6 +39,8 @@ type Msg = {
   source?: string;
 };
 
+type Order = { id: string; items: CartItem[]; total: number };
+
 type MaxiStore = {
   open: boolean;
   setOpen: (v: boolean) => void;
@@ -54,6 +56,10 @@ type MaxiStore = {
   addPinToCart: (pin: Pin) => void;
   removeItem: (id: string) => void;
   clearCart: () => void;
+  cartOpen: boolean;
+  setCartOpen: (v: boolean) => void;
+  lastOrder: Order | null;
+  checkout: () => void;
 };
 
 const Ctx = createContext<MaxiStore | null>(null);
@@ -134,6 +140,8 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   ]);
   const [sending, setSending] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const lastShownRef = useRef<Pin[]>([]);
   const profileRef = useRef<{ vibes: string[]; name?: string }>({ vibes: [] });
   const messagesRef = useRef<Msg[]>([]);
@@ -155,11 +163,21 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
 
   const addPinToCart = useCallback((pin: Pin) => {
     setCart((prev) => addPinToCartArr(prev, pin));
+    setLastOrder(null);
   }, []);
   const removeItem = useCallback((id: string) => {
     setCart((prev) => removeFromCart(prev, id));
   }, []);
   const clearCart = useCallback(() => setCart([]), []);
+  const checkout = useCallback(() => {
+    if (cart.length === 0) return;
+    setLastOrder({
+      id: `GM${Date.now().toString(36).toUpperCase()}`,
+      items: cart,
+      total: calcTotal(cart),
+    });
+    setCart([]);
+  }, [cart]);
 
   const send = useCallback(
     (text: string) => {
@@ -325,8 +343,12 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       addPinToCart,
       removeItem,
       clearCart,
+      cartOpen,
+      setCartOpen,
+      lastOrder,
+      checkout,
     }),
-    [open, messages, sending, send, ask, searchByImage, cart, addPinToCart, removeItem, clearCart]
+    [open, messages, sending, send, ask, searchByImage, cart, addPinToCart, removeItem, clearCart, cartOpen, lastOrder, checkout]
   );
 
   return (
