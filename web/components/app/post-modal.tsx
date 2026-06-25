@@ -132,7 +132,20 @@ export function PostModal() {
                 {post.liked ? <Icons.heartFill size={26} /> : <Icons.heart size={26} />}
               </button>
               <Icons.comment size={25} />
-              <Icons.share size={24} />
+              <button
+                onClick={() => {
+                  const url = `${window.location.origin}/feed`;
+                  const text = `Check out this find: ${post.product.name} ($${post.product.price}) on Giftmaxxing`;
+                  if (typeof navigator !== "undefined" && navigator.share) {
+                    navigator.share({ title: "Giftmaxxing", text, url }).catch(() => {});
+                  } else if (typeof navigator !== "undefined" && navigator.clipboard) {
+                    navigator.clipboard.writeText(`${text} — ${url}`).catch(() => {});
+                  }
+                }}
+                aria-label="Share"
+              >
+                <Icons.share size={24} />
+              </button>
               <button
                 onClick={() => toggleSave(post.id)}
                 className="ml-auto"
@@ -159,8 +172,10 @@ export function PostModal() {
               const text = draft.trim();
               if (!text) return;
               addComment(post.id, text);
-              if (/^@maxi\b/i.test(text))
-                ask(text.replace(/^@maxi\b/i, "").trim() || `gift ideas like ${post.product.name}`);
+              if (/@maxi\b/i.test(text)) {
+                const query = text.replace(/@maxi\b/i, "").trim() || `gift ideas like ${post.product.name}`;
+                ask(query);
+              }
               setDraft("");
             }}
             className="flex items-center gap-2 border-t border-line px-4 py-3"
