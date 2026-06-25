@@ -1,11 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, Icons, Maxi } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+
+const ACTIVITY_SEEN_KEY = "giftmaxxing_activity_seen";
+const ACTIVITY_UNSEEN_COUNT = 3; // demo unseen count
+
+function useUnseenActivity(): number {
+  const [count, setCount] = useState(0);
+  const pathname = usePathname();
+  useEffect(() => {
+    const check = () => {
+      try {
+        const seen = localStorage.getItem(ACTIVITY_SEEN_KEY);
+        if (!seen) {
+          setCount(ACTIVITY_UNSEEN_COUNT);
+        } else {
+          setCount(0);
+        }
+      } catch {
+        setCount(0);
+      }
+    };
+    check();
+    window.addEventListener("giftmaxxing:activity-seen", check);
+    window.addEventListener("storage", check);
+    return () => {
+      window.removeEventListener("giftmaxxing:activity-seen", check);
+      window.removeEventListener("storage", check);
+    };
+  }, [pathname]);
+  return count;
+}
 
 const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -32,6 +62,7 @@ const ITEMS: Item[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const me = useCurrentUser();
+  const unseenActivity = useUnseenActivity();
 
   return (
     <aside className="sticky top-0 hidden h-screen shrink-0 flex-col border-r border-line bg-cream/80 px-3 py-6 backdrop-blur-xl md:flex md:w-[76px] xl:w-64 xl:px-4">
@@ -46,6 +77,7 @@ export function Sidebar() {
         {ITEMS.map((it) => {
           const active = pathname === it.href;
           const Ico = Icons[active && it.activeIcon ? it.activeIcon : it.icon];
+          const badge = it.href === "/feed/activity" ? unseenActivity : 0;
           return (
             <Link
               key={it.label}
@@ -54,7 +86,14 @@ export function Sidebar() {
                 active ? "font-bold text-ink" : "font-medium text-ink"
               }`}
             >
-              <Ico size={26} />
+              <span className="relative">
+                <Ico size={26} />
+                {badge > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-coral px-1 text-[10px] font-bold text-white">
+                    {badge}
+                  </span>
+                )}
+              </span>
               <span className="hidden xl:block">{it.label}</span>
             </Link>
           );
@@ -129,6 +168,7 @@ export function MobileBars() {
   const pathname = usePathname();
   const me = useCurrentUser();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const unseenActivity = useUnseenActivity();
 
   const tabs: Item[] = [
     { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
@@ -147,7 +187,14 @@ export function MobileBars() {
           <span className="font-display text-lg font-extrabold text-ink">Giftmaxxing</span>
         </Link>
         <div className="flex items-center gap-4 text-ink">
-          <Link href="/feed/activity"><Icons.heart size={24} /></Link>
+          <Link href="/feed/activity" className="relative">
+            <Icons.heart size={24} />
+            {unseenActivity > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-coral px-1 text-[9px] font-bold text-white">
+                {unseenActivity}
+              </span>
+            )}
+          </Link>
           <Link href="/feed/messages"><Icons.message size={24} /></Link>
           {clerkEnabled && (
             <>
