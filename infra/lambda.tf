@@ -37,6 +37,13 @@ resource "aws_lambda_function" "api" {
       EVENTS_TABLE       = aws_dynamodb_table.events.name
       GRAPH_TABLE        = aws_dynamodb_table.graph.name
       CONFIG_TABLE       = aws_dynamodb_table.config.name
+      # API auth (in-handler Clerk-JWT / x-admin-token gate; see handler.mjs).
+      # AUTH_ENFORCE ships false so the code is dark until flipped on; flip back
+      # to false for an instant rollback. ADMIN_API_SECRET is the admin/ingest
+      # "password"; CLERK_ISSUER verifies real users' session JWTs.
+      AUTH_ENFORCE     = var.auth_enforce ? "1" : "0"
+      ADMIN_API_SECRET = var.admin_api_secret
+      CLERK_ISSUER     = var.clerk_issuer
       VECTOR_BUCKET      = "${local.prefix}-vectors"
       VECTOR_INDEX       = "pins"
       # Visual search: Titan Multimodal embedding model + vector dimensionality.
