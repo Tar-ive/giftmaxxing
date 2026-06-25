@@ -21,6 +21,8 @@ import { useCurrentUser } from "@/lib/identity";
 import { getMyUserId } from "@/lib/api";
 import { buildPoolInviteUrl, type PoolInviteSnapshot } from "@/lib/invite";
 import { InvitePeopleSheet } from "@/components/app/invite-people-sheet";
+import { PaymentMethodSheet, type PaymentMethod } from "@/components/app/payment-method-sheet";
+import { PaymentConfirmDialog } from "@/components/app/payment-confirm-dialog";
 import { Icons } from "@/components/ui";
 
 const QUICK = [10, 25, 50, 100];
@@ -107,6 +109,10 @@ function PoolCard({
   const [open, setOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [custom, setCustom] = useState("");
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingAmount, setPendingAmount] = useState(0);
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const raised = raisedOf(f);
   const pct = Math.round(progressOf(f) * 100);
   const recipient = USERS[f.recipient];
@@ -128,12 +134,38 @@ function PoolCard({
     senderId: getMyUserId() ?? undefined,
   });
 
-  const give = (amount: number) => {
+  const startPayment = (amount: number) => {
     if (amount > 0) {
-      onContribute(f.id, amount);
-      setCustom("");
-      setOpen(false);
+      setPendingAmount(amount);
+      setPaymentOpen(true);
     }
+  };
+
+  const handleMethodSelect = (method: PaymentMethod) => {
+    setSelectedMethod(method);
+    setPaymentOpen(false);
+    setConfirmOpen(true);
+  };
+
+  const handlePaymentConfirm = () => {
+    onContribute(f.id, pendingAmount);
+    setConfirmOpen(false);
+    setCustom("");
+    setOpen(false);
+    setPendingAmount(0);
+    setSelectedMethod(null);
+  };
+
+  const handlePaymentBack = () => {
+    setConfirmOpen(false);
+    setPaymentOpen(true);
+  };
+
+  const closePaymentFlow = () => {
+    setPaymentOpen(false);
+    setConfirmOpen(false);
+    setPendingAmount(0);
+    setSelectedMethod(null);
   };
 
   return (
@@ -218,7 +250,7 @@ function PoolCard({
             <p className="mb-2 text-xs font-semibold text-ink-soft">How much would you like to chip in?</p>
             <div className="flex flex-wrap gap-2">
               {QUICK.map((a) => (
-                <button key={a} onClick={() => give(a)} className="rounded-full border border-line bg-surface px-4 py-1.5 text-sm font-bold text-ink hover:bg-coral-soft">
+                <button key={a} onClick={() => startPayment(a)} className="rounded-full border border-line bg-surface px-4 py-1.5 text-sm font-bold text-ink hover:bg-coral-soft">
                   ${a}
                 </button>
               ))}
@@ -231,12 +263,12 @@ function PoolCard({
                   inputMode="numeric"
                   className="w-16 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
                 />
-                <button onClick={() => give(parseInt(custom || "0", 10))} disabled={!custom} className="text-sm font-bold text-coral disabled:opacity-30">
+                <button onClick={() => startPayment(parseInt(custom || "0", 10))} disabled={!custom} className="text-sm font-bold text-coral disabled:opacity-30">
                   Give
                 </button>
               </div>
             </div>
-            <p className="mt-2 text-[11px] text-ink-faint">Simulated — no real payment is processed.</p>
+            <p className="mt-2 text-[11px] text-ink-faint">🧪 Demo Mode — choose a payment method, then confirm. No real charge.</p>
           </div>
         )}
 
@@ -249,6 +281,25 @@ function PoolCard({
           contributorIds={f.contributions.map((c) => c.name)}
           onInviteFriend={(userId) => onInviteFriend(f.id, userId)}
         />
+
+        <PaymentMethodSheet
+          open={paymentOpen}
+          amount={pendingAmount}
+          onSelect={handleMethodSelect}
+          onClose={closePaymentFlow}
+        />
+
+        {selectedMethod && (
+          <PaymentConfirmDialog
+            open={confirmOpen}
+            amount={pendingAmount}
+            method={selectedMethod}
+            poolTitle={f.title}
+            onConfirm={handlePaymentConfirm}
+            onBack={handlePaymentBack}
+            onClose={closePaymentFlow}
+          />
+        )}
       </div>
     </div>
   );
