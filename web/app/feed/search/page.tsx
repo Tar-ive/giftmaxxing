@@ -4,107 +4,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { USERS } from "@/lib/social";
 import { PINS, type Pin } from "@/lib/pins";
-import { GRADIENTS, type Grad } from "@/lib/data";
-import { shortTitle } from "@/lib/feed-builder";
 import { isApiConfigured } from "@/lib/api";
-import { visualSearch, type VisualSearchResult } from "@/lib/visual-search";
+import { visualSearch } from "@/lib/visual-search";
 import { enrichBrand } from "@/lib/brand-enrichment";
 import { Avatar, Icons } from "@/components/ui";
 import { ItemDetailModal } from "@/components/app/item-detail-modal";
+import {
+  type SearchCard,
+  PIN_BY_ID,
+  pinToCard,
+  visualToCard,
+  CardGrid,
+  EmptyNote,
+} from "@/components/app/explore-search";
 
-type SearchTab = "people" | "items" | "brands" | "visual";
-
-type Card = {
-  id: string;
-  title: string;
-  image: string;
-  grad: Grad;
-  emoji: string;
-  price?: number;
-  brand?: string;
-  url?: string;
-  badge?: string;
-};
-
-const BY_ID = new Map<string, Pin>(PINS.map((p) => [p.id, p]));
-
-function pinToCard(p: Pin): Card {
-  return {
-    id: p.id,
-    title: shortTitle(p.title),
-    image: p.image,
-    grad: p.grad,
-    emoji: p.emoji,
-    price: p.price,
-    brand: p.brand,
-    url: p.url,
-  };
-}
-
-function visualToCard(r: VisualSearchResult): Card {
-  const pin = BY_ID.get(r.id);
-  return {
-    id: r.id,
-    title: shortTitle(r.title || pin?.title || "Gift find"),
-    image: r.imageUrl || pin?.image || "",
-    grad: pin?.grad ?? "peach",
-    emoji: pin?.emoji ?? "🎁",
-    price: r.price ?? pin?.price,
-    brand: r.brand || pin?.brand,
-    url: pin?.url,
-    badge: r.similarity ? `${Math.round(r.similarity * 100)}% match` : undefined,
-  };
-}
-
-function CardGrid({ cards, onSelect }: { cards: Card[]; onSelect: (id: string) => void }) {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {cards.map((c) => (
-        <button
-          key={c.id}
-          onClick={() => onSelect(c.id)}
-          className="group overflow-hidden rounded-2xl border border-line bg-surface text-left transition-shadow hover:shadow-md"
-        >
-          <div className="relative aspect-square w-full" style={{ background: GRADIENTS[c.grad] }}>
-            <span className="absolute inset-0 grid place-items-center text-4xl">{c.emoji}</span>
-            {c.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={c.image}
-                alt={c.title}
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover transition-transform group-hover:scale-105"
-                onError={(e) => { e.currentTarget.style.display = "none"; }}
-              />
-            )}
-            {c.badge && (
-              <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-bold text-white backdrop-blur">
-                {c.badge}
-              </span>
-            )}
-          </div>
-          <div className="p-2.5">
-            <p className="line-clamp-1 text-xs font-semibold text-ink">{c.title}</p>
-            <p className="mt-0.5 text-xs text-ink-faint">{c.price ? `$${c.price}` : c.brand}</p>
-          </div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function EmptyNote({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="rounded-2xl border border-dashed border-line bg-surface/60 px-6 py-10 text-center text-sm text-ink-soft">
-      {children}
-    </p>
-  );
-}
+type SearchTab = "people" | "products" | "brands" | "visual";
 
 export default function SearchPage() {
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<SearchTab>("people");
-  const [vResults, setVResults] = useState<Card[] | null>(null);
+  const [vResults, setVResults] = useState<SearchCard[] | null>(null);
   const [vLoading, setVLoading] = useState(false);
   const [vError, setVError] = useState<string | null>(null);
   const [queryImage, setQueryImage] = useState<string | null>(null);
@@ -112,7 +31,7 @@ export default function SearchPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectItem = (id: string) => {
-    const pin = BY_ID.get(id);
+    const pin = PIN_BY_ID.get(id);
     if (pin) setSelectedPin(pin);
   };
 
@@ -132,7 +51,7 @@ export default function SearchPage() {
     [q]
   );
 
-  const items = useMemo(() => {
+  const products = useMemo(() => {
     const t = q.trim().toLowerCase();
     if (!t) return PINS.slice(0, 18).map(pinToCard);
     return PINS.filter(
@@ -145,7 +64,7 @@ export default function SearchPage() {
 
   const brands = useMemo(() => {
     const t = q.trim().toLowerCase();
-    const brandMap = new Map<string, Card[]>();
+    const brandMap = new Map<string, SearchCard[]>();
     for (const p of PINS) {
       const brand = enrichBrand(p);
       if (t && !brand.toLowerCase().includes(t)) continue;
@@ -191,7 +110,7 @@ export default function SearchPage() {
   const TABS: { key: SearchTab; label: string }[] = [
     { key: "people", label: "People" },
     { key: "brands", label: "Brands" },
-    { key: "items", label: "Items" },
+    { key: "products", label: "Products" },
     { key: "visual", label: "Visual" },
   ];
 
@@ -204,7 +123,7 @@ export default function SearchPage() {
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search people, brands, items…"
+          placeholder="Search people, brands, products…"
           className="min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-ink-faint outline-none"
         />
         {(q || queryImage) && (
@@ -269,15 +188,15 @@ export default function SearchPage() {
         </div>
       )}
 
-      {tab === "items" && (
+      {tab === "products" && (
         <section>
           <p className="mb-3 px-1 text-sm font-bold text-ink-soft">
-            {q ? `${items.length} result${items.length === 1 ? "" : "s"} for "${q.trim()}"` : "Trending items"}
+            {q ? `${products.length} result${products.length === 1 ? "" : "s"} for "${q.trim()}"` : "Trending products"}
           </p>
-          {items.length > 0 ? (
-            <CardGrid cards={items} onSelect={selectItem} />
+          {products.length > 0 ? (
+            <CardGrid cards={products} onSelect={selectItem} />
           ) : (
-            <EmptyNote>No items match &ldquo;{q.trim()}&rdquo;. Try a brand, category, or vibe.</EmptyNote>
+            <EmptyNote>No products match &ldquo;{q.trim()}&rdquo;. Try a brand, category, or vibe.</EmptyNote>
           )}
         </section>
       )}
