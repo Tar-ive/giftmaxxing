@@ -14,6 +14,8 @@ import { type Pin } from "@/lib/pins";
 import { GuestClaimCard } from "@/components/app/guest-claim-card";
 import { PoolInvite } from "@/components/app/pool-invite";
 import { EVENT_TYPE_META, type EventType, parseISODate } from "@/lib/events";
+import { saveLocalConnection } from "@/lib/local-connections";
+import { saveSoftProfile } from "@/lib/soft-profile";
 
 const clerkEnabled = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
@@ -27,7 +29,7 @@ function formatInviteDate(iso?: string): string | null {
 }
 
 // ── Phases ──────────────────────────────────────────────────────────────────
-type Phase = "welcome" | "swipe" | "reveal";
+type Phase = "welcome" | "consent" | "swipe" | "birthday" | "reveal";
 
 export default function InvitePage() {
   const params = useParams<{ code: string }>();
@@ -48,6 +50,8 @@ export default function InvitePage() {
 
   const [phase, setPhase] = useState<Phase>("welcome");
   const [results, setResults] = useState<Pin[]>([]);
+  const [birthday, setBirthday] = useState(invite?.date ?? "");
+  const [transitioning, setTransitioning] = useState(false);
   const reportedRef = useRef(false);
 
   // The sender can pre-set who the gift set is for, so the guest never types a
@@ -55,34 +59,86 @@ export default function InvitePage() {
   const guestName = invite?.to?.trim() || "Friend";
   const guestFirst = guestName.split(/\s+/)[0];
 
-  // Persist invite context on start so a page refresh doesn't lose the inviter.
+  const transition = useCallback((next: Phase) => {
+    setTransitioning(true);
+    setTimeout(() => {
+      setPhase(next);
+      setTransitioning(false);
+    }, 300);
+  }, []);
+
+  const goToConsent = useCallback(() => {
+    transition("consent");
+  }, [transition]);
+
   const startSwiping = useCallback(() => {
     saveInviteSession({ inviterName, code, startedAt: Date.now() });
-    setPhase("swipe");
-  }, [inviterName, code]);
+    transition("swipe");
+  }, [inviterName, code, transition]);
 
-  // Finishing the swipes reveals the gift set. We deliberately do NOT create a
-  // local profile or "log the guest in" — entering the app requires real auth
-  // (the reveal's sign-in card + AuthGate on /feed). We only (a) build the
-  // preview gift set and (b) report a soft profile to the sender, once.
-  const onSwipeDone = useCallback(() => {
-    setPhase("reveal");
-    setResults(localMatchesFromSwipes(9));
+  const reportConnection = useCallback(() => {
+    if (reportedRef.current) return;
+    reportedRef.current = true;
+    const swipes = loadSwipes();
+    const name = invite?.to?.trim() || "Friend";
+    const guestBirthday = birthday || invite?.date || undefined;
+    const vibes = swipeVibes(5);
+    const seeds = seedKeysFromSwipes(8);
 
-    if (!reportedRef.current && invite?.senderId) {
-      reportedRef.current = true;
-      const swipes = loadSwipes();
+    if (invite?.senderId) {
       void createConnection(invite.senderId, {
-        name: invite.to?.trim() || "Friend",
-        birthday: invite.date || undefined,
-        vibes: swipeVibes(5),
-        seeds: seedKeysFromSwipes(8),
+        name,
+        birthday: guestBirthday,
+        vibes,
+        seeds,
         yesCount: swipes.filter((s) => s.dir === "yes").length,
         totalSwipes: swipes.length,
       });
     }
+
+    const connId = `local_${Date.now().toString(36)}`;
+    saveLocalConnection({
+      userId: invite?.senderId ?? "unknown",
+      connectionId: connId,
+      soft: true,
+      kind: "invite",
+      guestName: name,
+      birthday: guestBirthday,
+      vibes,
+      seeds,
+      yesCount: swipes.filter((s) => s.dir === "yes").length,
+      totalSwipes: swipes.length,
+      seen: false,
+      createdAt: Date.now(),
+    });
+
+    saveSoftProfile({
+      name,
+      vibes,
+      seeds,
+      birthday: guestBirthday,
+      inviterName,
+      completedAt: Date.now(),
+    });
+
     clearInviteSession();
-  }, [invite]);
+  }, [invite, birthday, inviterName]);
+
+  const onSwipeDone = useCallback(() => {
+    setResults(localMatchesFromSwipes(9));
+    // If the sender pre-set a date, skip the birthday step.
+    if (invite?.date) {
+      reportConnection();
+      transition("reveal");
+    } else {
+      transition("birthday");
+    }
+  }, [invite, transition, reportConnection]);
+
+  const finishChallenge = useCallback(() => {
+    reportConnection();
+    transition("reveal");
+  }, [reportConnection, transition]);
 
   // ── Invalid invite code ─────────────────────────────────────────────────
   if (!invite) {
@@ -110,10 +166,15 @@ export default function InvitePage() {
     return <PoolInvite invite={invite} />;
   }
 
+  // ── Transition wrapper ─────────────────────────────────────────────────────
+  const transitionClass = transitioning
+    ? "opacity-0 translate-y-4 transition-all duration-300"
+    : "opacity-100 translate-y-0 transition-all duration-300";
+
   // ── Welcome phase ─────────────────────────────────────────────────────────
   if (phase === "welcome") {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-cream px-4">
+      <div className={`flex min-h-screen flex-col items-center justify-center bg-cream px-4 ${transitionClass}`}>
         <Maxi size={72} />
         <h1 className="mt-6 text-center font-display text-3xl font-extrabold leading-tight text-ink sm:text-4xl">
           {inviterName} wants to find<br />your perfect gift
@@ -133,7 +194,7 @@ export default function InvitePage() {
             : `Swipe on gift ideas so ${inviterName} knows exactly what you'd love. No sign-up, no forms, just swipe!`}
         </p>
         <button
-          onClick={startSwiping}
+          onClick={goToConsent}
           className="mt-8 inline-flex items-center gap-2 rounded-full bg-coral px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
         >
           <Icons.heartFill size={20} /> Start swiping
@@ -150,10 +211,54 @@ export default function InvitePage() {
     );
   }
 
+  // ── Consent phase ─────────────────────────────────────────────────────────
+  if (phase === "consent") {
+    return (
+      <div className={`flex min-h-screen flex-col items-center justify-center bg-cream px-4 ${transitionClass}`}>
+        <div className="mx-auto max-w-md rounded-3xl border border-line bg-surface p-6 text-center shadow-lg">
+          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-coral-soft text-2xl">🔒</span>
+          <h2 className="mt-4 font-display text-xl font-extrabold text-ink">
+            Before you swipe
+          </h2>
+          <p className="mt-2 text-sm text-ink-soft">
+            Your swipes help {inviterName} pick gifts you&apos;d love. Here&apos;s what happens:
+          </p>
+          <ul className="mt-4 space-y-2 text-left text-sm text-ink-soft">
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-coral">♥</span>
+              <span>Your <strong className="font-semibold text-ink">yes/no swipes</strong> are shared with {inviterName}</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-coral">🎁</span>
+              <span><strong className="font-semibold text-ink">No account needed</strong> — swipe and you&apos;re done</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-coral">🔒</span>
+              <span>We <strong className="font-semibold text-ink">never sell your data</strong> or share with third parties</span>
+            </li>
+          </ul>
+          <button
+            onClick={startSwiping}
+            className="mt-6 w-full rounded-full bg-coral px-6 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
+          >
+            I&apos;m in — let&apos;s swipe
+          </button>
+          <p className="mt-3 text-[11px] text-ink-faint">
+            By continuing, you agree to our{" "}
+            <a href="/privacy#recipient" className="underline hover:text-ink">
+              Privacy&nbsp;Policy
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   // ── Swipe phase ───────────────────────────────────────────────────────────
   if (phase === "swipe") {
     return (
-      <div className="min-h-screen bg-cream">
+      <div className={`min-h-screen bg-cream ${transitionClass}`}>
         <div className="mx-auto max-w-2xl px-4 py-8">
           <div className="text-center">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-coral-soft px-3 py-1 text-xs font-bold text-coral">
@@ -175,9 +280,40 @@ export default function InvitePage() {
     );
   }
 
+  // ── Birthday phase — ask for birthday if the sender didn't pre-set it ─────
+  if (phase === "birthday") {
+    return (
+      <div className={`flex min-h-screen flex-col items-center justify-center bg-cream px-4 ${transitionClass}`}>
+        <div className="mx-auto max-w-md rounded-3xl border border-line bg-surface p-6 text-center shadow-lg">
+          <span className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-coral-soft text-2xl">🎂</span>
+          <h2 className="mt-4 font-display text-xl font-extrabold text-ink">
+            One last thing!
+          </h2>
+          <p className="mt-2 text-sm text-ink-soft">
+            Share your birthday so {inviterName} never forgets it. Totally optional!
+          </p>
+          <label className="mt-4 block">
+            <input
+              type="date"
+              value={birthday}
+              onChange={(e) => setBirthday(e.target.value)}
+              className="w-full rounded-xl border border-line bg-cream px-4 py-3 text-center text-sm font-medium text-ink outline-none focus:border-coral focus:ring-2 focus:ring-coral/20"
+            />
+          </label>
+          <button
+            onClick={finishChallenge}
+            className="mt-5 w-full rounded-full bg-coral px-6 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
+          >
+            {birthday ? "Save & see my gifts" : "Skip & see my gifts"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Reveal phase — show the gift set; claiming it requires real auth ───────
   return (
-    <div className="min-h-screen bg-cream">
+    <div className={`min-h-screen bg-cream ${transitionClass}`}>
       <div className="mx-auto max-w-2xl px-4 py-10">
         <div className="text-center">
           <div className="flex justify-center text-coral">
@@ -241,10 +377,10 @@ export default function InvitePage() {
               Get matches tailored to you and never miss a gift moment.
             </p>
             <Link
-              href="/"
+              href="/feed"
               className="mt-5 inline-flex rounded-full bg-coral px-7 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
             >
-              Get Giftmaxxing
+              Explore the feed
             </Link>
           </div>
         )}

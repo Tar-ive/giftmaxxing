@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Avatar, Icons, Maxi } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import { localUnseenCount, LOCAL_CONN_EVENT } from "@/lib/local-connections";
 
 const ACTIVITY_SEEN_KEY = "giftmaxxing_activity_seen";
 const ACTIVITY_UNSEEN_COUNT = 3; // demo unseen count
@@ -17,11 +18,9 @@ function useUnseenActivity(): number {
     const check = () => {
       try {
         const seen = localStorage.getItem(ACTIVITY_SEEN_KEY);
-        if (!seen) {
-          setCount(ACTIVITY_UNSEEN_COUNT);
-        } else {
-          setCount(0);
-        }
+        const demoCount = seen ? 0 : ACTIVITY_UNSEEN_COUNT;
+        const connCount = localUnseenCount();
+        setCount(demoCount + connCount);
       } catch {
         setCount(0);
       }
@@ -29,9 +28,11 @@ function useUnseenActivity(): number {
     check();
     window.addEventListener("giftmaxxing:activity-seen", check);
     window.addEventListener("storage", check);
+    window.addEventListener(LOCAL_CONN_EVENT, check);
     return () => {
       window.removeEventListener("giftmaxxing:activity-seen", check);
       window.removeEventListener("storage", check);
+      window.removeEventListener(LOCAL_CONN_EVENT, check);
     };
   }, [pathname]);
   return count;
