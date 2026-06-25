@@ -35,15 +35,36 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://giftmaxxing.vercel.app"),
   title: "Giftmaxxing — gifting, finally figured out",
   description:
     "The social gifting app with an AI companion. Discover finds from friends, build wishlists nobody double-buys, pool money for group gifts, and let Maxi find the perfect gift in your budget.",
+  applicationName: "Giftmaxxing",
+  keywords: [
+    "gifting",
+    "gift ideas",
+    "social gifting",
+    "group gifting",
+    "AI gift assistant",
+    "wishlist",
+    "Giftmaxxing",
+  ],
   openGraph: {
     title: "Giftmaxxing — gifting, finally figured out",
     description:
       "Discover gift finds from friends, build shared wishlists, pool money for group gifts, and let Maxi—your AI gift companion—nail the perfect present every time.",
+    url: "https://giftmaxxing.vercel.app",
+    siteName: "Giftmaxxing",
     type: "website",
+    locale: "en_US",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "Giftmaxxing — gifting, finally figured out",
+    description:
+      "Social gifting with an AI companion. Discover finds, build shared wishlists, pool money for group gifts, and let Maxi nail the perfect present every time.",
+  },
+  icons: { icon: "/favicon.ico" },
 };
 
 export default function RootLayout({
