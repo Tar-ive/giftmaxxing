@@ -151,6 +151,26 @@ variable "alarm_api_concurrency" {
   default     = 40
 }
 
+# ── API authentication (see handler.mjs auth gate) ───────────────────────────
+variable "auth_enforce" {
+  description = "Enforce API auth in the handler (Clerk JWT or x-admin-token). Ship the auth code with this false, deploy the token-sending client, then flip true. Set false again for an INSTANT rollback (one apply, no code change)."
+  type        = bool
+  default     = false
+}
+
+variable "admin_api_secret" {
+  description = "Shared secret for the admin/ingest path (x-admin-token header) — the admin 'password'. Used by the local admin-dev bypass + ingest scripts; real users authenticate via Clerk JWT instead. Set in terraform.tfvars (gitignored). Empty disables the admin path."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "clerk_issuer" {
+  description = "Clerk Frontend API issuer URL used to verify session JWTs (token iss must match). Derived from NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY."
+  type        = string
+  default     = "https://usable-mammoth-92.clerk.accounts.dev"
+}
+
 locals {
   prefix = "${var.project}-${var.env}"
 }

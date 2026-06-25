@@ -175,7 +175,12 @@ async function main() {
   for (const batch of chunk(items, 25)) {
     const res = await fetch(`${apiBase}/seed`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        // /seed is admin-only when API auth is enforced. Send the shared secret
+        // (set ADMIN_API_SECRET in the gitignored repo-root .env before running).
+        ...(process.env.ADMIN_API_SECRET ? { "x-admin-token": process.env.ADMIN_API_SECRET } : {}),
+      },
       body: JSON.stringify({ posts: batch }),
     });
     if (!res.ok) {

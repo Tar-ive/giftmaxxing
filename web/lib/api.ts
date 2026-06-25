@@ -3,9 +3,42 @@
 import type { Grad } from "@/lib/data";
 import type { Post } from "@/lib/social";
 import { SEED_PINS } from "@/lib/seed-pins";
+import { ADMIN_BYPASS } from "@/lib/admin";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const isApiConfigured = () => API_BASE.length > 0;
+
+// Auth for the AWS API. Real users send a short-lived Clerk session JWT; the
+// local admin-dev bypass sends the x-admin-token shared secret (that whole
+// branch is tree-shaken out of production builds, so the token never ships to
+// prod). Public catalog endpoints work without either.
+async function authHeaders(): Promise<Record<string, string>> {
+  if (typeof window === "undefined") return {};
+  if (ADMIN_BYPASS) {
+    const t = process.env.NEXT_PUBLIC_ADMIN_API_TOKEN;
+    if (t) return { "x-admin-token": t };
+  }
+  try {
+    const clerk = (window as unknown as {
+      Clerk?: { session?: { getToken?: () => Promise<string | null> } };
+    }).Clerk;
+    const token = await clerk?.session?.getToken?.();
+    if (token) return { Authorization: `Bearer ${token}` };
+  } catch {
+    /* not signed in / Clerk not loaded yet */
+  }
+  return {};
+}
+
+// fetch() wrapper that targets the API and attaches auth headers. ALL API calls
+// go through this so a single place controls authentication.
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const auth = await authHeaders();
+  return fetch(API_BASE + path, {
+    ...init,
+    headers: { ...(init.headers as Record<string, string> | undefined), ...auth },
+  });
+}
 
 const GRADS: Grad[] = ["peach", "rose", "butter", "lilac", "sky", "sage", "coral"];
 const asGrad = (g: unknown): Grad =>
@@ -110,7 +143,7 @@ async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
   if (opts.eventBoost) q.set("eventBoost", String(opts.eventBoost));
   if (opts.userId) q.set("userId", opts.userId);
 
-  const res = await fetch(`${API_BASE}${path}?${q.toString()}`, {
+  const res = await apiFetch(`${path}?${q.toString()}`, {
     headers: { accept: "application/json" },
   });
   if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}`);
@@ -141,7 +174,7 @@ export function recordInteraction(
   const key = `${userId}#${type}#${targetId}`;
   if (_sentInteractions.has(key)) return;
   _sentInteractions.add(key);
-  void fetch(`${API_BASE}/interactions`, {
+  void apiFetch(`/interactions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ userId, targetId, type }),
@@ -171,7 +204,7 @@ export type VectorResponse = { items: VectorItem[]; source: string | null };
 export async function fetchPins(limit = 60): Promise<VectorItem[]> {
   if (isApiConfigured()) {
     try {
-      const res = await fetch(`${API_BASE}/pins?limit=${limit}`, {
+      const res = await apiFetch(`/pins?limit=${limit}`, {
         headers: { accept: "application/json" },
       });
       if (res.ok) {
@@ -200,7 +233,7 @@ export async function fetchVectorRecommendations(
   if (opts.sourceUser) q.set("sourceUser", opts.sourceUser);
   q.set("limit", String(opts.limit ?? 12));
 
-  const res = await fetch(`${API_BASE}/recommendations?${q.toString()}`, {
+  const res = await apiFetch(`/recommendations?${q.toString()}`, {
     headers: { accept: "application/json" },
   });
   if (!res.ok) throw new Error(`/recommendations -> HTTP ${res.status}`);
@@ -218,7 +251,7 @@ export async function fetchVisualSearch(opts: {
   sourceUser?: string;
 }): Promise<VectorResponse> {
   if (!isApiConfigured()) throw new Error("API not configured");
-  const res = await fetch(`${API_BASE}/visual-search`, {
+  const res = await apiFetch(`/visual-search`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({
@@ -252,7 +285,7 @@ export type UpcomingEvent = {
 export async function fetchMe<T = Record<string, unknown>>(userId: string): Promise<T | null> {
   if (!isApiConfigured() || !userId) return null;
   try {
-    const res = await fetch(`${API_BASE}/me?userId=${encodeURIComponent(userId)}`, {
+    const res = await apiFetch(`/me?userId=${encodeURIComponent(userId)}`, {
       headers: { accept: "application/json" },
     });
     if (!res.ok) return null;
@@ -266,7 +299,7 @@ export async function fetchMe<T = Record<string, unknown>>(userId: string): Prom
 export async function saveMe(userId: string, profile: unknown): Promise<boolean> {
   if (!isApiConfigured() || !userId) return false;
   try {
-    const res = await fetch(`${API_BASE}/me`, {
+    const res = await apiFetch(`/me`, {
       method: "PUT",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, profile }),
@@ -360,7 +393,7 @@ export async function createConnection(
 ): Promise<boolean> {
   if (!isApiConfigured() || !senderId || !guest?.name) return false;
   try {
-    const res = await fetch(`${API_BASE}/connections`, {
+    const res = await apiFetch(`/connections`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ senderId, guest }),
@@ -380,7 +413,7 @@ export async function fetchConnections(
   try {
     const q = new URLSearchParams({ userId });
     if (opts.unseenOnly) q.set("unseenOnly", "1");
-    const res = await fetch(`${API_BASE}/connections?${q.toString()}`, {
+    const res = await apiFetch(`/connections?${q.toString()}`, {
       headers: { accept: "application/json" },
     });
     if (!res.ok) return { items: [], unseen: 0 };
@@ -398,7 +431,7 @@ export async function markConnectionsSeen(
 ): Promise<boolean> {
   if (!isApiConfigured() || !userId) return false;
   try {
-    const res = await fetch(`${API_BASE}/connections/seen`, {
+    const res = await apiFetch(`/connections/seen`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, connectionIds }),
@@ -418,7 +451,7 @@ export async function identifyMe(
 ): Promise<boolean> {
   if (!isApiConfigured() || !userId) return false;
   try {
-    const res = await fetch(`${API_BASE}/me/identity`, {
+    const res = await apiFetch(`/me/identity`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, ...identity }),
@@ -449,7 +482,7 @@ export async function fetchEvents(userId: string, scope?: EventScope): Promise<A
   try {
     const q = new URLSearchParams({ userId });
     if (scope) q.set("scope", scope);
-    const res = await fetch(`${API_BASE}/events?${q.toString()}`, { headers: { accept: "application/json" } });
+    const res = await apiFetch(`/events?${q.toString()}`, { headers: { accept: "application/json" } });
     if (!res.ok) return [];
     const data = (await res.json()) as { items?: ApiEvent[] };
     return data.items ?? [];
@@ -461,7 +494,7 @@ export async function fetchEvents(userId: string, scope?: EventScope): Promise<A
 export async function saveEvent(userId: string, event: Record<string, unknown>): Promise<boolean> {
   if (!isApiConfigured() || !userId) return false;
   try {
-    const res = await fetch(`${API_BASE}/events`, {
+    const res = await apiFetch(`/events`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, event }),
@@ -479,7 +512,7 @@ export async function patchEvent(
 ): Promise<boolean> {
   if (!isApiConfigured() || !userId) return false;
   try {
-    const res = await fetch(`${API_BASE}/events`, {
+    const res = await apiFetch(`/events`, {
       method: "PUT",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, eventId, patch }),
@@ -493,7 +526,7 @@ export async function patchEvent(
 export async function deleteEvent(userId: string, eventId: string): Promise<boolean> {
   if (!isApiConfigured() || !userId) return false;
   try {
-    const res = await fetch(`${API_BASE}/events/delete`, {
+    const res = await apiFetch(`/events/delete`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, eventId }),
@@ -508,7 +541,7 @@ export async function deleteEvent(userId: string, eventId: string): Promise<bool
 export async function migrateEvents(userId: string, items: Record<string, unknown>[]): Promise<number> {
   if (!isApiConfigured() || !userId || items.length === 0) return 0;
   try {
-    const res = await fetch(`${API_BASE}/events/migrate`, {
+    const res = await apiFetch(`/events/migrate`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ userId, items }),
@@ -531,7 +564,7 @@ export async function fetchGraph(
   const empty = { nodes: [], edges: [], counts: { nodes: 0, edges: 0 } };
   if (!isApiConfigured() || !userId) return empty;
   try {
-    const res = await fetch(`${API_BASE}/graph?userId=${encodeURIComponent(userId)}`, {
+    const res = await apiFetch(`/graph?userId=${encodeURIComponent(userId)}`, {
       headers: { accept: "application/json" },
     });
     if (!res.ok) return empty;
@@ -569,7 +602,7 @@ export async function askMaxi(input: {
 }): Promise<MaxiAgentReply | null> {
   if (!isApiConfigured()) return null;
   try {
-    const res = await fetch(`${API_BASE}/maxi`, {
+    const res = await apiFetch(`/maxi`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
