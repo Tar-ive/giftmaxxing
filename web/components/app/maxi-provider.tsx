@@ -34,6 +34,7 @@ type Msg = {
   id: string;
   from: "maxi" | "you";
   text: string;
+  imageUrl?: string; // object-URL preview of an uploaded photo
   pins?: Pin[];
   chips?: string[];
   source?: string;
@@ -137,6 +138,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   const lastShownRef = useRef<Pin[]>([]);
   const profileRef = useRef<{ vibes: string[]; name?: string }>({ vibes: [] });
   const messagesRef = useRef<Msg[]>([]);
+  const objectUrlsRef = useRef<string[]>([]);
 
   // hydrate cart + profile on mount (SSR-safe localStorage read)
   useEffect(() => {
@@ -152,6 +154,12 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Revoke object URLs on unmount to free memory.
+  useEffect(() => {
+    const urls = objectUrlsRef.current;
+    return () => { urls.forEach((u) => URL.revokeObjectURL(u)); };
+  }, []);
 
   const addPinToCart = useCallback((pin: Pin) => {
     setCart((prev) => addPinToCartArr(prev, pin));
@@ -249,7 +257,9 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       if (!file || sending) return;
       setOpen(true);
       const label = file.name ? `Uploaded "${file.name.slice(0, 28)}"` : "Uploaded a photo";
-      setMessages((m) => [...m, { id: mkId(), from: "you", text: `\uD83D\uDCF7 ${label} — find similar gifts` }]);
+      const previewUrl = URL.createObjectURL(file);
+      objectUrlsRef.current.push(previewUrl);
+      setMessages((m) => [...m, { id: mkId(), from: "you", text: `\uD83D\uDCF7 ${label} — find similar gifts`, imageUrl: previewUrl }]);
       setSending(true);
       const who = profileRef.current.name ? `, ${profileRef.current.name}` : "";
       (async () => {
@@ -388,8 +398,10 @@ function MaxiPanel() {
   const [view, setView] = useState<"chat" | "cart">("chat");
   const [listening, setListening] = useState(false);
   const [speak, setSpeak] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const dragCounter = useRef(0);
 
   const supportsVoice =
     typeof window !== "undefined" &&
@@ -402,6 +414,58 @@ function MaxiPanel() {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, view, open]);
+
+  // Extract the first image File from a DataTransfer (drag or paste).
+  const extractImageFile = useCallback((dt: DataTransfer): File | null => {
+    for (let i = 0; i < dt.files.length; i++) {
+      if (dt.files[i].type.startsWith("image/")) return dt.files[i];
+    }
+    for (let i = 0; i < dt.items.length; i++) {
+      const item = dt.items[i];
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        return item.getAsFile();
+      }
+    }
+    return null;
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.types.includes("Files")) setDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragging(false); }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setDragging(false);
+    const file = extractImageFile(e.dataTransfer);
+    if (file) searchByImage(file);
+  }, [extractImageFile, searchByImage]);
+
+  // Paste image from clipboard (Ctrl+V).
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    if (!e.clipboardData) return;
+    const file = extractImageFile(e.clipboardData);
+    if (file) {
+      e.preventDefault();
+      searchByImage(file);
+    }
+  }, [extractImageFile, searchByImage]);
 
   const submit = (text: string) => {
     if (!text.trim()) return;
@@ -439,7 +503,20 @@ function MaxiPanel() {
       }`}
       role="dialog"
       aria-label="Maxi"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
+      {/* drag-and-drop overlay */}
+      {dragging && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-cream/90 backdrop-blur-sm">
+          <ImageIcon size={48} className="text-coral" />
+          <p className="mt-3 text-sm font-bold text-ink">Drop an image to visual search</p>
+          <p className="mt-1 text-xs text-ink-soft">Maxi will find gifts with a similar vibe</p>
+        </div>
+      )}
+
       {/* header */}
       <header className="flex items-center gap-3 border-b border-line bg-surface px-4 py-3">
         <Maxi size={36} />
@@ -532,6 +609,7 @@ function MaxiPanel() {
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                onPaste={handlePaste}
                 placeholder={listening ? "Listening…" : "Ask Maxi for a gift…"}
                 className="flex-1 bg-transparent text-sm text-ink placeholder:text-ink-faint outline-none"
               />
@@ -552,6 +630,12 @@ function MessageBubble({ m, onAdd, onChip }: { m: Msg; onAdd: (p: Pin) => void; 
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[88%]">
         <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-snug ${mine ? "bg-ink text-cream" : "border border-line bg-surface text-ink"}`}>
+          {m.imageUrl && (
+            <div className="mb-2 overflow-hidden rounded-xl">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={m.imageUrl} alt="Uploaded photo" className="max-h-48 w-full object-cover" />
+            </div>
+          )}
           {m.text}
           {m.source && !mine && (
             <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-coral">· {m.source}</span>
