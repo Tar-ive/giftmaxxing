@@ -13,7 +13,7 @@ import { type Post, type GroupChat, GROUP_CHATS } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
-import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
+import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction, fetchInteractions } from "@/lib/api";
 import {
   loadPostState,
   savePostState,
@@ -43,12 +43,30 @@ function saveUserPosts(posts: Post[]): void {
     localStorage.setItem(USER_POSTS_KEY, JSON.stringify(posts));
   } catch { /* quota */ }
 }
+type ClaimState = Record<string, { claimedBy: string; claimedAt: number }>;
+const CLAIMS_KEY = "giftmaxxing_claims";
+function loadClaims(): ClaimState {
+  try {
+    const raw = localStorage.getItem(CLAIMS_KEY);
+    return raw ? (JSON.parse(raw) as ClaimState) : {};
+  } catch {
+    return {};
+  }
+}
+function saveClaims(state: ClaimState): void {
+  try {
+    localStorage.setItem(CLAIMS_KEY, JSON.stringify(state));
+  } catch { /* quota */ }
+}
 
 type Store = {
   posts: Post[];
   follows: Set<string>;
   toggleLike: (postId: string) => void;
   toggleSave: (postId: string) => void;
+  claimItem: (postId: string) => void;
+  unclaimItem: (postId: string) => void;
+  claims: ClaimState;
   reportSeen: (postId: string) => void;
   addComment: (postId: string, text: string) => void;
   addPost: (post: Post) => void;
@@ -151,10 +169,18 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           apiModeRef.current = true;
           cursorRef.current = cursor;
           setHasMore(cursor != null);
-          // Preserve user-created posts when the API feed takes over
+          // Preserve user-created posts when the API feed takes over.
+          // Re-apply persisted interaction state so likes/saves aren't lost
+          // if the interaction-sync effect resolved before this one.
           setPosts((prev) => {
             const userPosts = prev.filter((p) => p.user === "you");
-            return [...userPosts, ...photos];
+            const state = loadPostState();
+            const merged = photos.map((p) => {
+              const s = state[p.id];
+              if (!s) return p;
+              return { ...p, liked: s.liked ?? p.liked, saved: s.saved ?? p.saved };
+            });
+            return [...userPosts, ...merged];
           });
         }
       } catch {
@@ -166,12 +192,67 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // On mount, fetch persisted interactions (likes/saves/comments) from the API to
+  // restore cross-device state. Merges into posts AND into localStorage so the
+  // local cache stays current. When the API isn't configured or unreachable, the
+  // localStorage fallback (loadPostState) already handled state in the initializer.
+  useEffect(() => {
+    const userId = getMyUserId();
+    if (!isApiConfigured() || !userId) return;
+    let cancelled = false;
+    (async () => {
+      const items = await fetchInteractions(userId, ["like", "save", "comment"]);
+      if (cancelled || !items || items.length === 0) return;
+
+      // Build lookup maps from API interactions
+      const likedSet = new Set<string>();
+      const savedSet = new Set<string>();
+      const commentsMap = new Map<string, { id: string; user: string; text: string }[]>();
+      for (const it of items) {
+        if (it.type === "like") likedSet.add(it.targetId);
+        else if (it.type === "save") savedSet.add(it.targetId);
+        else if (it.type === "comment" && it.data?.text) {
+          const list = commentsMap.get(it.targetId) ?? [];
+          list.push({ id: `c-api-${it.createdAt ?? Date.now()}`, user: "you", text: it.data.text });
+          commentsMap.set(it.targetId, list);
+        }
+      }
+
+      // Merge API state into posts
+      setPosts((prev) =>
+        prev.map((p) => {
+          const isLiked = likedSet.has(p.id);
+          const isSaved = savedSet.has(p.id);
+          const apiComments = commentsMap.get(p.id);
+          if (!isLiked && !isSaved && !apiComments) return p;
+          const merged = { ...p };
+          if (isLiked && !p.liked) { merged.liked = true; merged.likes = p.likes + 1; }
+          if (isSaved && !p.saved) { merged.saved = true; }
+          if (apiComments) {
+            // Dedupe: only add API comments not already present locally
+            const existingTexts = new Set(p.comments.map((c) => c.text));
+            const newComments = apiComments.filter((c) => !existingTexts.has(c.text));
+            if (newComments.length) merged.comments = [...p.comments, ...newComments];
+          }
+          return merged;
+        })
+      );
+
+      // Sync to localStorage so it stays up-to-date with API state
+      const state = loadPostState();
+      for (const id of likedSet) state[id] = { ...state[id], liked: true };
+      for (const id of savedSet) state[id] = { ...state[id], saved: true };
+      savePostState(state);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const toggleLike = useCallback((postId: string) => {
     setPosts((prev) => {
       const next = prev.map((p) => {
         if (p.id !== postId) return p;
         const liked = !p.liked;
-        if (liked && apiModeRef.current) recordInteraction(getMyUserId(), postId, "like");
+        if (liked) recordInteraction(getMyUserId(), postId, "like");
         return { ...p, liked, likes: p.likes + (liked ? 1 : -1) };
       });
       const state = loadPostState();
@@ -190,7 +271,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       const next = prev.map((p) => {
         if (p.id !== postId) return p;
         const saved = !p.saved;
-        if (saved && apiModeRef.current) recordInteraction(getMyUserId(), postId, "save");
+        if (saved) recordInteraction(getMyUserId(), postId, "save");
         return { ...p, saved };
       });
       const state = loadPostState();
@@ -200,6 +281,25 @@ export function AppStore({ children }: { children: React.ReactNode }) {
         savePostState(state);
         syncToCloud();
       }
+      return next;
+    });
+  }, []);
+
+  const [claims, setClaims] = useState<ClaimState>(() => loadClaims());
+
+  const claimItem = useCallback((postId: string) => {
+    setClaims((prev) => {
+      const next = { ...prev, [postId]: { claimedBy: "You", claimedAt: Date.now() } };
+      saveClaims(next);
+      return next;
+    });
+  }, []);
+
+  const unclaimItem = useCallback((postId: string) => {
+    setClaims((prev) => {
+      const next = { ...prev };
+      delete next[postId];
+      saveClaims(next);
       return next;
     });
   }, []);
@@ -229,6 +329,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           : p
       )
     );
+    recordInteraction(getMyUserId(), postId, "comment", { text: clean });
   }, []);
 
   const addPost = useCallback((post: Post) => {
@@ -343,6 +444,9 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       follows,
       toggleLike,
       toggleSave,
+      claimItem,
+      unclaimItem,
+      claims,
       reportSeen,
       addComment,
       addPost,
@@ -362,7 +466,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       togglePinChat,
       togglePinMessage,
     }),
-    [posts, follows, toggleLike, toggleSave, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
+    [posts, follows, toggleLike, toggleSave, claimItem, unclaimItem, claims, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

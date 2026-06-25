@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Avatar, Icons, Maxi } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
+import { useMaxi } from "@/components/app/maxi-provider";
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import { localUnseenCount, LOCAL_CONN_EVENT } from "@/lib/local-connections";
 
@@ -63,6 +64,7 @@ const ITEMS: Item[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const me = useCurrentUser();
+  const { setCartOpen, cartCount } = useMaxi();
   const unseenActivity = useUnseenActivity();
 
   return (
@@ -116,6 +118,22 @@ export function Sidebar() {
             </span>
           </span>
         </Link>
+
+        <button
+          type="button"
+          onClick={() => setCartOpen(true)}
+          className="flex items-center gap-4 rounded-xl px-3 py-3 text-left transition-colors hover:bg-ink/5 text-ink"
+        >
+          <span className="relative grid h-[26px] w-[26px] place-items-center">
+            <Icons.cart size={26} />
+            {cartCount > 0 && (
+              <span className="absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-coral px-1 text-[10px] font-bold text-white">
+                {cartCount}
+              </span>
+            )}
+          </span>
+          <span className="hidden xl:block">Cart</span>
+        </button>
       </nav>
 
       <Link
@@ -162,6 +180,7 @@ const DRAWER_ITEMS: Item[] = [
   { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Shop", href: "/feed/shop", icon: "gift" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
+  { label: "Cart", href: "/feed/cart", icon: "cart" },
 ];
 
 /* Mobile top + bottom bars (Instagram mobile web) */

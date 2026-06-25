@@ -21,7 +21,9 @@ import { useStore } from "@/components/app/store";
 import {
   getMyUserId,
   fetchConnections,
+  fetchSavedIds,
   relativeTime,
+  isApiConfigured,
   type SoftConnection,
 } from "@/lib/api";
 
@@ -41,7 +43,7 @@ export default function ProfilePage() {
   const params = useParams<{ user: string }>();
   const router = useRouter();
   const userId = params.user;
-  const { toggleFollow, isFollowing, openPost, posts: storePosts } = useStore();
+  const { toggleFollow, isFollowing, openPost, posts: storePosts, claimItem, unclaimItem, claims } = useStore();
   const me = useCurrentUser();
   const [tab, setTab] = useState<"posts" | "saved" | "friends">("posts");
 
@@ -53,6 +55,7 @@ export default function ProfilePage() {
   // social graph and never expose the current user's connections.
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [friends, setFriends] = useState<SoftConnection[]>([]);
+  const [ownerSavedIds, setOwnerSavedIds] = useState<Set<string> | null>(null);
 
   useEffect(() => {
     if (!isMe) return;
@@ -74,6 +77,18 @@ export default function ProfilePage() {
     };
   }, [isMe]);
 
+  // For non-self profiles: fetch the profile owner's saved item IDs from the API
+  // so the Wishlist tab shows their saves (not the viewer's).
+  useEffect(() => {
+    if (isMe || !isApiConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      const ids = await fetchSavedIds(userId);
+      if (!cancelled) setOwnerSavedIds(ids);
+    })();
+    return () => { cancelled = true; };
+  }, [isMe, userId]);
+
   if (!baseU && !isMe) return notFound();
   const u = isMe ? me : baseU;
   // For the current user, merge user-created posts (from store) with the static
@@ -92,15 +107,24 @@ export default function ProfilePage() {
         ].filter(Boolean)
       : [];
 
-  const savedPosts = isMe ? storePosts.filter((p) => p.saved) : [];
+  // For self: saved posts from the store. For others: posts matching IDs fetched
+  // from the API (the owner's saves). Falls back to empty until the API responds.
+  const savedPosts = isMe
+    ? storePosts.filter((p) => p.saved)
+    : ownerSavedIds
+      ? storePosts.filter((p) => ownerSavedIds.has(p.id))
+      : [];
 
   const tabs = isMe
     ? ([
         { id: "posts", label: "Finds", icon: "menu" },
-        { id: "saved", label: "Saved", icon: "bookmark" },
+        { id: "saved", label: "Wishlist", icon: "bookmark" },
         { id: "friends", label: "Tagged", icon: "users" },
       ] as const)
-    : ([{ id: "posts", label: "Finds", icon: "menu" }] as const);
+    : ([
+        { id: "posts", label: "Finds", icon: "menu" },
+        { id: "saved", label: "Wishlist", icon: "bookmark" },
+      ] as const);
 
   const toggleVisibility = () => {
     const next: ProfileVisibility = visibility === "public" ? "private" : "public";
@@ -257,31 +281,57 @@ export default function ProfilePage() {
         <FriendsList friends={friends} />
       ) : tab === "saved" ? (
         savedPosts.length === 0 ? (
-          <p className="py-20 text-center text-sm text-ink-faint">No saved posts yet. Bookmark finds from your feed.</p>
+          <p className="py-20 text-center text-sm text-ink-faint">
+            {isMe ? "No saved posts yet. Bookmark finds from your feed." : "No wishlist items yet."}
+          </p>
         ) : (
-          <div className="mt-1 grid grid-cols-3 gap-1 sm:gap-2">
-            {savedPosts.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => openPost(p.id)}
-                className="group relative grid aspect-square place-items-center overflow-hidden"
-                style={{ background: GRADIENTS[p.product.grad] }}
-              >
-                <span className="text-5xl sm:text-6xl">{p.product.emoji}</span>
-                {p.product.image && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.product.image} alt={p.product.name} className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
-                )}
-                <div className="absolute inset-0 flex items-center justify-center gap-5 bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
-                  <span className="flex items-center gap-1.5 font-bold">
-                    <Icons.heartFill size={20} /> {p.likes}
-                  </span>
-                  <span className="flex items-center gap-1.5 font-bold">
-                    <Icons.comment size={20} /> {p.comments.length}
-                  </span>
+          <div className="mt-2 space-y-2">
+            {savedPosts.map((p) => {
+              const claim = claims[p.id];
+              return (
+                <div key={p.id} className={`flex items-center gap-3 rounded-xl border border-line bg-surface p-3 transition-opacity ${claim ? "opacity-60" : ""}`}>
+                  <button
+                    onClick={() => openPost(p.id)}
+                    className="relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-lg"
+                    style={{ background: GRADIENTS[p.product.grad] }}
+                  >
+                    <span className="text-2xl">{p.product.emoji}</span>
+                    {p.product.image && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.product.image} alt={p.product.name} className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                    )}
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-bold text-ink ${claim ? "line-through" : ""}`}>
+                      {p.product.name}
+                    </p>
+                    <p className="text-xs text-ink-faint">
+                      {p.product.brand} · ${p.product.price}
+                    </p>
+                    {claim && (
+                      <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+                        <Icons.check size={12} /> Claimed by {claim.claimedBy}
+                      </span>
+                    )}
+                  </div>
+                  {claim ? (
+                    <button
+                      onClick={() => unclaimItem(p.id)}
+                      className="shrink-0 rounded-lg bg-ink/5 px-3 py-1.5 text-xs font-bold text-ink-soft hover:bg-ink/10"
+                    >
+                      Unclaim
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => claimItem(p.id)}
+                      className="shrink-0 rounded-lg bg-coral px-3 py-1.5 text-xs font-bold text-white hover:opacity-90"
+                    >
+                      Claim
+                    </button>
+                  )}
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )
       ) : grid.length === 0 ? (

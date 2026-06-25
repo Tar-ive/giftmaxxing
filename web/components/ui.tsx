@@ -237,4 +237,10 @@ export const Icons = {
       <circle cx="12" cy="13" r="3.2" />
     </svg>
   ),
+  cart: ({ size = 24, className }: IconProps) => (
+    <svg {...base(size, className)}>
+      <path d="M6 8h12l-1 11.5a1 1 0 0 1-1 .9H8a1 1 0 0 1-1-.9L6 8z" />
+      <path d="M9 8a3 3 0 0 1 6 0" />
+    </svg>
+  ),
 };

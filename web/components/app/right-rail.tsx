@@ -5,13 +5,22 @@ import { SUGGESTIONS, USERS } from "@/lib/social";
 import { useCurrentUser } from "@/lib/identity";
 import { Avatar } from "@/components/ui";
 import { useStore } from "@/components/app/store";
+import { useMaxi } from "@/components/app/maxi-provider";
 
 export function RightRail() {
   const { toggleFollow, isFollowing } = useStore();
+  const { open, cartOpen } = useMaxi();
   const me = useCurrentUser();
+  // With a right-hand pane open (Maxi chat or cart drawer) there's only room for
+  // the suggestions column on the widest screens, so show it from xl then.
+  const paneOpen = open || cartOpen;
 
   return (
-    <aside className="sticky top-6 hidden h-fit w-80 shrink-0 pt-2 lg:block">
+    <aside
+      className={`sticky top-6 hidden h-fit w-80 shrink-0 pt-2 ${
+        paneOpen ? "xl:block" : "lg:block"
+      }`}
+    >
       {/* current user */}
       <div className="flex items-center gap-4 px-2">
         <Link href="/feed/you">

@@ -7,6 +7,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",
     "@aws-sdk/client-s3vectors": "^3.700.0",
-    "@aws-sdk/client-sns": "^3.700.0"
+    "@aws-sdk/client-sns": "^3.700.0",
+    "jose": "^5.10.0"
   }
 }
