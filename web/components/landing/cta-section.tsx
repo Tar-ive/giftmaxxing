@@ -19,19 +19,19 @@ export function CtaSection() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [submitted, setSubmitted] = useState(() => {
-    if (typeof window === "undefined") return false;
+  const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(WAITLIST_STORAGE_KEY);
       if (stored) {
         const entries: WaitlistEntry[] = JSON.parse(stored);
-        return entries.length > 0;
+        if (entries.length > 0) setSubmitted(true);
       }
     } catch {
       // localStorage unavailable or corrupted — ignore
     }
-    return false;
-  });
+  }, []);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
