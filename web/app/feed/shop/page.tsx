@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { AMAZON_PICKS, type AmazonPick } from "@/lib/amazon-picks";
 import { GRADIENTS } from "@/lib/data";
 import { visualForPick } from "@/lib/affiliate";
 import { BuyOnAmazon, AmazonDisclosure } from "@/components/app/buy-on-amazon";
+import { AmazonPickDetailModal } from "@/components/app/amazon-pick-detail-modal";
+import { LocaleMarketplaceBanner } from "@/components/app/locale-marketplace-banner";
 import { Icons } from "@/components/ui";
 
 // Real, buyable Amazon affiliate picks (the only surface with real commerce —
@@ -27,10 +30,16 @@ function groupByCategory(picks: AmazonPick[]): { label: string; items: AmazonPic
     .map(([label, items]) => ({ label, items }));
 }
 
-function PickCard({ p }: { p: AmazonPick }) {
+function PickCard({ p, onSelect }: { p: AmazonPick; onSelect: () => void }) {
   const { grad, emoji } = visualForPick(p);
   return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-line bg-surface transition-shadow hover:shadow-md">
+    <div
+      className="flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-line bg-surface transition-shadow hover:shadow-md"
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelect(); }}
+    >
       <div className="relative aspect-square" style={{ background: GRADIENTS[grad] }}>
         <span className="absolute inset-0 grid place-items-center text-5xl">{emoji}</span>
         {p.category ? (
@@ -57,7 +66,7 @@ function PickCard({ p }: { p: AmazonPick }) {
         <p className="line-clamp-2 text-sm font-semibold text-ink">{p.title ?? "Amazon find"}</p>
         {p.brand ? <p className="mt-0.5 text-xs text-ink-faint">{p.brand}</p> : null}
         {p.blurb ? <p className="mt-1 line-clamp-2 text-xs text-ink-soft">{p.blurb}</p> : null}
-        <div className="mt-auto pt-3">
+        <div className="mt-auto pt-3" onClick={(e) => e.stopPropagation()}>
           <p className="mb-2 text-[11px] text-ink-faint">See price on Amazon</p>
           <BuyOnAmazon asin={p.asin} className="w-full" />
         </div>
@@ -69,6 +78,8 @@ function PickCard({ p }: { p: AmazonPick }) {
 export default function ShopPage() {
   const picks = AMAZON_PICKS;
   const groups = groupByCategory(picks);
+  const [selectedPick, setSelectedPick] = useState<AmazonPick | null>(null);
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <header className="mb-6">
@@ -84,6 +95,7 @@ export default function ShopPage() {
           </div>
         </div>
         <AmazonDisclosure className="mt-3" />
+        <LocaleMarketplaceBanner />
       </header>
 
       {picks.length === 0 ? (
@@ -101,13 +113,18 @@ export default function ShopPage() {
               ) : null}
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 {g.items.map((p) => (
-                  <PickCard key={p.asin} p={p} />
+                  <PickCard key={p.asin} p={p} onSelect={() => setSelectedPick(p)} />
                 ))}
               </div>
             </section>
           ))}
         </div>
       )}
+
+      <AmazonPickDetailModal
+        pick={selectedPick}
+        onClose={() => setSelectedPick(null)}
+      />
     </div>
   );
 }
