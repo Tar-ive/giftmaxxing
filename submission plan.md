@@ -21,9 +21,9 @@
 | **Supporting AWS** | Amazon S3, Amazon S3 Vectors, Amazon Bedrock (Titan Multimodal Embeddings), AWS Lambda, API Gateway HTTP API |
 | **Frontend / deploy** | **Vercel** — Next.js 16, React 19, Tailwind v4 (`web/`, Root Directory = `web`) |
 | **IaC / region** | Terraform · `us-east-1` |
-| **Vercel Project Link** | _**[TODO: paste published Vercel URL]**_ |
-| **Vercel Team ID** | _**[TODO: paste Team ID]**_ |
-| **Demo video (<3 min)** | _**[TODO: paste YouTube link]**_ |
+| **Vercel Project Link** | **https://giftmaxxing.vercel.app** (live, auto-deploys on push to `main`) |
+| **Vercel Team ID** | _**[HUMAN TODO: paste Team ID from Vercel dashboard → Settings → General → Team ID]**_ |
+| **Demo video (<3 min)** | _**[HUMAN TODO: record and paste YouTube link — see script in §11]**_ |
 
 ---
 
@@ -103,15 +103,20 @@ planning — i.e. **scale-to-zero economics today, scale-to-millions with no re-
 | Table | Keys | Purpose / access pattern |
 |---|---|---|
 | `users` | PK `userId` | Profiles / identity. |
-| `posts` | PK `postId`; **GSI `byAuthor`** (`author`, `createdAt`) | Feed items; GSI powers each user's profile grid and author feeds. |
-| `interactions` | PK `userId`, SK `type#targetId` | Likes / saves / comments — **idempotent** by design; the server-side taste signal. |
+| `posts` | PK `postId`; **GSI `byAuthor`** (`author`, `createdAt`); **GSI `byFeed`** (`feedPk`, `createdAt`) | Feed items; `byAuthor` powers profile grids; `byFeed` is the recency-ordered global feed index. |
+| `interactions` | PK `userId`, SK `targetId` | Likes / saves / comments — **idempotent** by design; the server-side taste signal. |
 | `knowledge` | PK `recipient` | Reddit-mined ranked gift ideas + co-occurrence bundles per recipient (mom, couple, coworker…). |
+| `events` | PK `userId`, SK `eventId`; **GSI `byScope`** | Unified event store: personal milestones + shared occasions. Drives the time-aware gift recommender. |
+| `graph` | PK `pk`, SK `sk`; **GSI `byEntity`** | Single-table adjacency model: hard onboarding data + soft swipe-derived taste as one connected graph. |
+| `connections` | PK `userId`, SK `connectionId` | Soft profiles from invited guests who complete swipe challenges. |
+| `config` | PK `key` | Feature flags + kill-switch state for cost controls. |
 
-**Where it runs:** `infra/dynamodb.tf` (tables, GSI, PITR) → `infra/src/handler.mjs`
-(`@aws-sdk/lib-dynamodb`: `Get`/`Put`/`Query`/`Scan`/`BatchWrite`).
+**Where it runs:** `infra/dynamodb.tf` (8 tables, GSIs, PITR on all) → `infra/src/handler.mjs`
+(`@aws-sdk/lib-dynamodb`: `Get`/`Put`/`Query`/`Scan`/`BatchWrite`/`Update`/`Delete`).
 
 > **Screenshot to include in the submission:** AWS Console → DynamoDB → Tables, showing
-> `giftmaxxing-dev-{users,posts,interactions,knowledge}`. _**[TODO: capture]**_
+> all `giftmaxxing-dev-*` tables (users, posts, interactions, knowledge, events, graph,
+> connections, config). _**[HUMAN TODO: capture from AWS Console]**_
 
 ---
 
@@ -193,13 +198,13 @@ scale while keeping the on-ramp to Aurora open.
 
 ## 10. Submission checklist (exact deliverables)
 
-- [ ] **Text description** stating the AWS Database used → **Amazon DynamoDB** (draft in §1/§5).
-- [ ] **<3-min demo video (YouTube)** — problem → who/why → working app footage → AWS DB used (script in §11).
-- [ ] **Published Vercel Project Link** — _[TODO]_
-- [ ] **Vercel Team ID** — _[TODO]_
-- [ ] **Architecture diagram** — export §4 Mermaid to PNG/PDF.
-- [ ] **Screenshot proving AWS Database usage** — AWS Console DynamoDB tables _[TODO]_.
-- [ ] **(Bonus) Published content** with `#H0Hackathon` + the required "created for this hackathon" disclaimer (plan in §12).
+- [x] **Text description** stating the AWS Database used → **Amazon DynamoDB** (draft in §1/§5).
+- [ ] **<3-min demo video (YouTube)** — problem → who/why → working app footage → AWS DB used (script in §11). **[HUMAN TODO]**
+- [x] **Published Vercel Project Link** — **https://giftmaxxing.vercel.app**
+- [ ] **Vercel Team ID** — **[HUMAN TODO: Vercel dashboard → Settings → General → Team ID]**
+- [x] **Architecture diagram** — `screenshots/architecture-diagram.png` (rendered from §4 Mermaid).
+- [ ] **Screenshot proving AWS Database usage** — AWS Console DynamoDB tables. **[HUMAN TODO: screenshot all `giftmaxxing-dev-*` tables from AWS Console]**
+- [ ] **(Bonus) Published content** with `#H0Hackathon` + the required "created for this hackathon" disclaimer (plan in §12). **[HUMAN TODO]**
 
 ---
 
@@ -237,7 +242,10 @@ scale while keeping the on-ramp to Aurora open.
   API Gateway + S3 in `us-east-1`; run `infra/ingest/` scripts to load data and build
   the S3 Vectors index.
 
-> **Open decisions for the team:**
-> 1. Confirm **primary track** — recommended **Track 1 (Monetizable B2C)**; we also fit
->    Track 3 (Million-scale). 2. Fill the Vercel link + Team ID + video URL. 3. Capture
->    the DynamoDB console screenshot.
+> **Remaining human tasks for submission:**
+> 1. ~~Confirm primary track~~ → **Track 1 (Monetizable B2C)** confirmed.
+> 2. ~~Vercel Project Link~~ → **https://giftmaxxing.vercel.app** (live).
+> 3. **[HUMAN]** Paste **Vercel Team ID** from Vercel dashboard → Settings → General.
+> 4. **[HUMAN]** Record **<3-min demo video** and paste YouTube URL (see script §11).
+> 5. **[HUMAN]** Capture **DynamoDB console screenshot** (AWS Console → DynamoDB → Tables → show all `giftmaxxing-dev-*` tables).
+> 6. **[HUMAN]** Optionally write the bonus blog post (§12).
