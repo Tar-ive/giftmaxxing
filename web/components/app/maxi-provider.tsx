@@ -138,6 +138,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   const lastShownRef = useRef<Pin[]>([]);
   const profileRef = useRef<{ vibes: string[]; name?: string }>({ vibes: [] });
   const messagesRef = useRef<Msg[]>([]);
+  const objectUrlsRef = useRef<string[]>([]);
 
   // hydrate cart + profile on mount (SSR-safe localStorage read)
   useEffect(() => {
@@ -153,6 +154,12 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+
+  // Revoke object URLs on unmount to free memory.
+  useEffect(() => {
+    const urls = objectUrlsRef.current;
+    return () => { urls.forEach((u) => URL.revokeObjectURL(u)); };
+  }, []);
 
   const addPinToCart = useCallback((pin: Pin) => {
     setCart((prev) => addPinToCartArr(prev, pin));
@@ -251,6 +258,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       setOpen(true);
       const label = file.name ? `Uploaded "${file.name.slice(0, 28)}"` : "Uploaded a photo";
       const previewUrl = URL.createObjectURL(file);
+      objectUrlsRef.current.push(previewUrl);
       setMessages((m) => [...m, { id: mkId(), from: "you", text: `\uD83D\uDCF7 ${label} — find similar gifts`, imageUrl: previewUrl }]);
       setSending(true);
       const who = profileRef.current.name ? `, ${profileRef.current.name}` : "";
