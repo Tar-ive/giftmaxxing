@@ -1276,6 +1276,23 @@ export const handler = async (event) => {
       return json(200, { items, source: "visual" });
     }
 
+    // GET /interactions?userId=&type=  — fetch interaction targets, optionally
+    // filtered by type (e.g. "save"). Powers cross-device wishlist restoration.
+    if (method === "GET" && path === "/interactions") {
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: INTERACTIONS,
+          KeyConditionExpression: "userId = :u",
+          ExpressionAttributeValues: { ":u": userId },
+        })
+      );
+      let items = out.Items ?? [];
+      if (qs.type) items = items.filter((i) => i.type === qs.type);
+      return json(200, { items: items.map((i) => ({ target: i.target, type: i.type, createdAt: i.createdAt })) });
+    }
+
     // POST /interactions  { userId, targetId, type }
     if (method === "POST" && path === "/interactions") {
       const { userId, targetId, type } = body;

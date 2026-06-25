@@ -150,6 +150,24 @@ export function recordInteraction(
   });
 }
 
+// Fetch the set of post IDs a user has saved (via GET /interactions?type=save).
+// Used on mount to restore cross-device save state. Returns an empty set on any
+// failure (endpoint not deployed, network error) so localStorage stays the fallback.
+export async function fetchSavedIds(userId: string): Promise<Set<string>> {
+  if (!isApiConfigured() || !userId) return new Set();
+  try {
+    const res = await fetch(
+      `${API_BASE}/interactions?userId=${encodeURIComponent(userId)}&type=save`,
+      { headers: { accept: "application/json" } }
+    );
+    if (!res.ok) return new Set();
+    const data = (await res.json()) as { items?: { target: string }[] };
+    return new Set((data.items ?? []).map((i) => i.target).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
 // ── Vector recommendations (S3 Vectors) ──────────────────────────────────────
 // Raw item shape returned by GET /pins and the vector path of /recommendations.
 export type VectorItem = {

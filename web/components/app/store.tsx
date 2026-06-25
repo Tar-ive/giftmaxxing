@@ -13,7 +13,7 @@ import { type Post, type GroupChat, GROUP_CHATS } from "@/lib/social";
 import { buildPinFeed } from "@/lib/feed-builder";
 import { loadProfile } from "@/lib/onboarding";
 import { tasteFromProfile } from "@/lib/taste";
-import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
+import { fetchFeed, fetchSavedIds, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
 import {
   loadPostState,
   savePostState,
@@ -43,12 +43,30 @@ function saveUserPosts(posts: Post[]): void {
     localStorage.setItem(USER_POSTS_KEY, JSON.stringify(posts));
   } catch { /* quota */ }
 }
+type ClaimState = Record<string, { claimedBy: string; claimedAt: number }>;
+const CLAIMS_KEY = "giftmaxxing_claims";
+function loadClaims(): ClaimState {
+  try {
+    const raw = localStorage.getItem(CLAIMS_KEY);
+    return raw ? (JSON.parse(raw) as ClaimState) : {};
+  } catch {
+    return {};
+  }
+}
+function saveClaims(state: ClaimState): void {
+  try {
+    localStorage.setItem(CLAIMS_KEY, JSON.stringify(state));
+  } catch { /* quota */ }
+}
 
 type Store = {
   posts: Post[];
   follows: Set<string>;
   toggleLike: (postId: string) => void;
   toggleSave: (postId: string) => void;
+  claimItem: (postId: string) => void;
+  unclaimItem: (postId: string) => void;
+  claims: ClaimState;
   reportSeen: (postId: string) => void;
   addComment: (postId: string, text: string) => void;
   addPost: (post: Post) => void;
@@ -166,6 +184,31 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Restore saves from the API so saved state persists across devices.
+  // Merges API saves into localStorage state; the union of both is authoritative.
+  useEffect(() => {
+    const uid = getMyUserId();
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      const apiSaves = await fetchSavedIds(uid);
+      if (cancelled || apiSaves.size === 0) return;
+      const state = loadPostState();
+      let dirty = false;
+      for (const id of apiSaves) {
+        if (!state[id]?.saved) {
+          state[id] = { ...state[id], saved: true };
+          dirty = true;
+        }
+      }
+      if (dirty) savePostState(state);
+      setPosts((prev) =>
+        prev.map((p) => (apiSaves.has(p.id) && !p.saved ? { ...p, saved: true } : p))
+      );
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const toggleLike = useCallback((postId: string) => {
     setPosts((prev) => {
       const next = prev.map((p) => {
@@ -200,6 +243,25 @@ export function AppStore({ children }: { children: React.ReactNode }) {
         savePostState(state);
         syncToCloud();
       }
+      return next;
+    });
+  }, []);
+
+  const [claims, setClaims] = useState<ClaimState>(() => loadClaims());
+
+  const claimItem = useCallback((postId: string) => {
+    setClaims((prev) => {
+      const next = { ...prev, [postId]: { claimedBy: "You", claimedAt: Date.now() } };
+      saveClaims(next);
+      return next;
+    });
+  }, []);
+
+  const unclaimItem = useCallback((postId: string) => {
+    setClaims((prev) => {
+      const next = { ...prev };
+      delete next[postId];
+      saveClaims(next);
       return next;
     });
   }, []);
@@ -343,6 +405,9 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       follows,
       toggleLike,
       toggleSave,
+      claimItem,
+      unclaimItem,
+      claims,
       reportSeen,
       addComment,
       addPost,
@@ -362,7 +427,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       togglePinChat,
       togglePinMessage,
     }),
-    [posts, follows, toggleLike, toggleSave, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
+    [posts, follows, toggleLike, toggleSave, claimItem, unclaimItem, claims, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
