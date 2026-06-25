@@ -7,6 +7,7 @@ import { PINS, type Pin } from "@/lib/pins";
 import { shortTitle } from "@/lib/feed-builder";
 import { isApiConfigured } from "@/lib/api";
 import { visualSearch, type VisualSearchResult } from "@/lib/visual-search";
+import { ItemDetailModal } from "@/components/app/item-detail-modal";
 
 // Explore search: text search filters the bundled catalog instantly; the camera
 // button runs real visual search (uploaded image -> Bedrock Titan Multimodal
@@ -66,16 +67,14 @@ function textToCards(q: string): Card[] {
   ).map(pinToCard);
 }
 
-function CardGrid({ cards }: { cards: Card[] }) {
+function CardGrid({ cards, onSelect }: { cards: Card[]; onSelect: (id: string) => void }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {cards.map((c) => (
-        <a
+        <button
           key={c.id}
-          href={c.url || "#"}
-          target={c.url ? "_blank" : undefined}
-          rel="noreferrer"
-          className="group overflow-hidden rounded-2xl border border-line bg-surface transition-shadow hover:shadow-md"
+          onClick={() => onSelect(c.id)}
+          className="group overflow-hidden rounded-2xl border border-line bg-surface text-left transition-shadow hover:shadow-md"
         >
           <div className="relative aspect-square w-full" style={{ background: GRADIENTS[c.grad] }}>
             <span className="absolute inset-0 grid place-items-center text-4xl">{c.emoji}</span>
@@ -99,7 +98,7 @@ function CardGrid({ cards }: { cards: Card[] }) {
             <p className="line-clamp-1 text-xs font-semibold text-ink">{c.title}</p>
             <p className="mt-0.5 text-xs text-ink-faint">{c.price ? `$${c.price}` : c.brand}</p>
           </div>
-        </a>
+        </button>
       ))}
     </div>
   );
@@ -119,7 +118,13 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
   const [vLoading, setVLoading] = useState(false);
   const [vError, setVError] = useState<string | null>(null);
   const [queryImage, setQueryImage] = useState<string | null>(null);
+  const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const selectItem = (id: string) => {
+    const pin = BY_ID.get(id);
+    if (pin) setSelectedPin(pin);
+  };
 
   // Revoke the object URL when it changes or the component unmounts.
   useEffect(() => {
@@ -235,7 +240,7 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
           ) : vError ? (
             <EmptyNote>{vError}</EmptyNote>
           ) : vResults && vResults.length ? (
-            <CardGrid cards={vResults} />
+            <CardGrid cards={vResults} onSelect={selectItem} />
           ) : (
             <EmptyNote>No visually similar finds yet. Try another photo.</EmptyNote>
           )}
@@ -246,7 +251,7 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
             {textCards.length} result{textCards.length === 1 ? "" : "s"} for “{q.trim()}”
           </p>
           {textCards.length ? (
-            <CardGrid cards={textCards} />
+            <CardGrid cards={textCards} onSelect={selectItem} />
           ) : (
             <EmptyNote>No finds match “{q.trim()}”. Try a brand, category, or vibe.</EmptyNote>
           )}
@@ -254,6 +259,8 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
       ) : (
         children
       )}
+
+      <ItemDetailModal pin={selectedPin} onClose={() => setSelectedPin(null)} />
     </div>
   );
 }

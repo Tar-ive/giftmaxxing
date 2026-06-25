@@ -16,10 +16,41 @@ import { tasteFromProfile } from "@/lib/taste";
 import { fetchFeed, isApiConfigured, getMyUserId, recordInteraction } from "@/lib/api";
 
 const FEED_CAP = 216; // soft cap (~3 passes over the pin set) for the cycling feed
+const USER_POSTS_KEY = "giftmaxxing_user_posts";
+const USER_STATE_KEY = "giftmaxxing_post_state";
 
 // Only surface posts with a real, hotlinkable photo. Drops Reddit preview.redd.it
 // images (they 403 cross-origin), matching the bundled feed's photo-only quality.
 const isPhoto = (p: Post) => !!p.product.image && !p.product.image.includes("redd.it");
+
+// Persistence helpers for user-created posts and interaction state (likes/saves).
+function loadUserPosts(): Post[] {
+  try {
+    const raw = localStorage.getItem(USER_POSTS_KEY);
+    return raw ? (JSON.parse(raw) as Post[]) : [];
+  } catch {
+    return [];
+  }
+}
+function saveUserPosts(posts: Post[]): void {
+  try {
+    localStorage.setItem(USER_POSTS_KEY, JSON.stringify(posts));
+  } catch { /* quota */ }
+}
+type PostState = Record<string, { liked?: boolean; saved?: boolean }>;
+function loadPostState(): PostState {
+  try {
+    const raw = localStorage.getItem(USER_STATE_KEY);
+    return raw ? (JSON.parse(raw) as PostState) : {};
+  } catch {
+    return {};
+  }
+}
+function savePostState(state: PostState): void {
+  try {
+    localStorage.setItem(USER_STATE_KEY, JSON.stringify(state));
+  } catch { /* quota */ }
+}
 
 type Store = {
   posts: Post[];
@@ -65,7 +96,18 @@ export function AppStore({ children }: { children: React.ReactNode }) {
   const [taste] = useState(() => tasteFromProfile(loadProfile()));
   // Feed is built from the bundled Pinterest pins (real photos), ordered by the
   // user's taste. Initialize synchronously so it's never blank on first paint.
-  const [posts, setPosts] = useState<Post[]>(() => buildPinFeed(0, 12, taste));
+  // Prepend persisted user posts so they always appear at the top.
+  const [posts, setPosts] = useState<Post[]>(() => {
+    const userPosts = loadUserPosts();
+    const bundled = buildPinFeed(0, 12, taste);
+    const state = loadPostState();
+    const all = [...userPosts, ...bundled];
+    return all.map((p) => {
+      const s = state[p.id];
+      if (!s) return p;
+      return { ...p, liked: s.liked ?? p.liked, saved: s.saved ?? p.saved };
+    });
+  });
   const [follows, setFollows] = useState<Set<string>>(new Set());
   const [openPostId, setOpenPostId] = useState<string | null>(null);
   const [storyIndex, setStoryIndex] = useState<number | null>(null);
@@ -100,7 +142,11 @@ export function AppStore({ children }: { children: React.ReactNode }) {
           apiModeRef.current = true;
           cursorRef.current = cursor;
           setHasMore(cursor != null);
-          setPosts(photos);
+          // Preserve user-created posts when the API feed takes over
+          setPosts((prev) => {
+            const userPosts = prev.filter((p) => p.user === "you");
+            return [...userPosts, ...photos];
+          });
         }
       } catch {
         // keep the bundled feed on any error
@@ -112,26 +158,34 @@ export function AppStore({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleLike = useCallback((postId: string) => {
-    setPosts((prev) =>
-      prev.map((p) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => {
         if (p.id !== postId) return p;
         const liked = !p.liked;
-        // Persist likes (idempotent) so they seed recs + drop out of future feeds.
         if (liked && apiModeRef.current) recordInteraction(getMyUserId(), postId, "like");
         return { ...p, liked, likes: p.likes + (liked ? 1 : -1) };
-      })
-    );
+      });
+      // Persist the interaction state
+      const state = loadPostState();
+      const target = next.find((p) => p.id === postId);
+      if (target) { state[postId] = { ...state[postId], liked: target.liked }; savePostState(state); }
+      return next;
+    });
   }, []);
 
   const toggleSave = useCallback((postId: string) => {
-    setPosts((prev) =>
-      prev.map((p) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => {
         if (p.id !== postId) return p;
         const saved = !p.saved;
         if (saved && apiModeRef.current) recordInteraction(getMyUserId(), postId, "save");
         return { ...p, saved };
-      })
-    );
+      });
+      const state = loadPostState();
+      const target = next.find((p) => p.id === postId);
+      if (target) { state[postId] = { ...state[postId], saved: target.saved }; savePostState(state); }
+      return next;
+    });
   }, []);
 
   // Mark a post seen once it's dwelled in view (called by PostCard's observer).
@@ -163,6 +217,9 @@ export function AppStore({ children }: { children: React.ReactNode }) {
 
   const addPost = useCallback((post: Post) => {
     setPosts((prev) => [post, ...prev]);
+    // Persist user-created posts so they survive page refreshes
+    const existing = loadUserPosts();
+    saveUserPosts([post, ...existing]);
   }, []);
 
   const toggleFollow = useCallback((userId: string) => {

@@ -151,7 +151,18 @@ export function PostCard({ post }: { post: Post }) {
         <button onClick={() => openPost(post.id)} aria-label="Comment">
           <Icons.comment size={25} />
         </button>
-        <button aria-label="Share">
+        <button
+          onClick={() => {
+            const url = `${window.location.origin}/feed`;
+            const text = `Check out this find: ${post.product.name} ($${post.product.price}) on Giftmaxxing`;
+            if (navigator.share) {
+              navigator.share({ title: "Giftmaxxing", text, url }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(`${text} — ${url}`).catch(() => {});
+            }
+          }}
+          aria-label="Share"
+        >
           <Icons.share size={24} />
         </button>
         <button
@@ -193,8 +204,10 @@ export function PostCard({ post }: { post: Post }) {
             const text = draft.trim();
             if (!text) return;
             addComment(post.id, text);
-            if (/^@maxi\b/i.test(text))
-              ask(`${text.replace(/^@maxi\b/i, "").trim() || "any gift ideas like this?"} (like "${post.product.name}")`);
+            if (/@maxi\b/i.test(text)) {
+              const query = text.replace(/@maxi\b/i, "").trim() || `any gift ideas like ${post.product.name}?`;
+              ask(query);
+            }
             setDraft("");
           }}
           className="mt-3 flex items-center gap-2 border-t border-line pt-3"

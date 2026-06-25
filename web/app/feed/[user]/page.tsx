@@ -41,9 +41,9 @@ export default function ProfilePage() {
   const params = useParams<{ user: string }>();
   const router = useRouter();
   const userId = params.user;
-  const { toggleFollow, isFollowing, openPost } = useStore();
+  const { toggleFollow, isFollowing, openPost, posts: storePosts } = useStore();
   const me = useCurrentUser();
-  const [tab, setTab] = useState<"posts" | "friends">("posts");
+  const [tab, setTab] = useState<"posts" | "saved" | "friends">("posts");
 
   const isMe = userId === "you";
   const baseU = USERS[userId];
@@ -76,7 +76,11 @@ export default function ProfilePage() {
 
   if (!baseU && !isMe) return notFound();
   const u = isMe ? me : baseU;
-  const grid = profilePosts(userId);
+  // For the current user, merge user-created posts (from store) with the static
+  // profile grid so posted finds persist and show on the profile.
+  const grid = isMe
+    ? [...storePosts.filter((p) => p.user === "you"), ...profilePosts(userId).filter((p) => !storePosts.some((sp) => sp.id === p.id))].slice(0, 12)
+    : profilePosts(userId);
   const visibility: ProfileVisibility = profile?.visibility ?? "public";
 
   // Combined taste chips (interests + materialistic categories) for the summary.
@@ -88,12 +92,15 @@ export default function ProfilePage() {
         ].filter(Boolean)
       : [];
 
+  const savedPosts = isMe ? storePosts.filter((p) => p.saved) : [];
+
   const tabs = isMe
     ? ([
-        { id: "posts", label: "Posts", icon: "menu" },
-        { id: "friends", label: "Friends", icon: "users" },
+        { id: "posts", label: "Finds", icon: "menu" },
+        { id: "saved", label: "Saved", icon: "bookmark" },
+        { id: "friends", label: "Tagged", icon: "users" },
       ] as const)
-    : ([{ id: "posts", label: "Posts", icon: "menu" }] as const);
+    : ([{ id: "posts", label: "Finds", icon: "menu" }] as const);
 
   const toggleVisibility = () => {
     const next: ProfileVisibility = visibility === "public" ? "private" : "public";
@@ -248,6 +255,35 @@ export default function ProfilePage() {
       {/* content */}
       {tab === "friends" ? (
         <FriendsList friends={friends} />
+      ) : tab === "saved" ? (
+        savedPosts.length === 0 ? (
+          <p className="py-20 text-center text-sm text-ink-faint">No saved posts yet. Bookmark finds from your feed.</p>
+        ) : (
+          <div className="mt-1 grid grid-cols-3 gap-1 sm:gap-2">
+            {savedPosts.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => openPost(p.id)}
+                className="group relative grid aspect-square place-items-center overflow-hidden"
+                style={{ background: GRADIENTS[p.product.grad] }}
+              >
+                <span className="text-5xl sm:text-6xl">{p.product.emoji}</span>
+                {p.product.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.product.image} alt={p.product.name} className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                )}
+                <div className="absolute inset-0 flex items-center justify-center gap-5 bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <Icons.heartFill size={20} /> {p.likes}
+                  </span>
+                  <span className="flex items-center gap-1.5 font-bold">
+                    <Icons.comment size={20} /> {p.comments.length}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )
       ) : grid.length === 0 ? (
         <p className="py-20 text-center text-sm text-ink-faint">No posts yet.</p>
       ) : (
@@ -260,6 +296,10 @@ export default function ProfilePage() {
               style={{ background: GRADIENTS[p.product.grad] }}
             >
               <span className="text-5xl sm:text-6xl">{p.product.emoji}</span>
+              {p.product.image && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={p.product.image} alt={p.product.name} className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              )}
               <div className="absolute inset-0 flex items-center justify-center gap-5 bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100">
                 <span className="flex items-center gap-1.5 font-bold">
                   <Icons.heartFill size={20} /> {p.likes}

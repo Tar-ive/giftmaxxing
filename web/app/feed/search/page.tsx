@@ -8,7 +8,9 @@ import { GRADIENTS, type Grad } from "@/lib/data";
 import { shortTitle } from "@/lib/feed-builder";
 import { isApiConfigured } from "@/lib/api";
 import { visualSearch, type VisualSearchResult } from "@/lib/visual-search";
+import { enrichBrand } from "@/lib/brand-enrichment";
 import { Avatar, Icons } from "@/components/ui";
+import { ItemDetailModal } from "@/components/app/item-detail-modal";
 
 type SearchTab = "people" | "items" | "brands" | "visual";
 
@@ -54,16 +56,14 @@ function visualToCard(r: VisualSearchResult): Card {
   };
 }
 
-function CardGrid({ cards }: { cards: Card[] }) {
+function CardGrid({ cards, onSelect }: { cards: Card[]; onSelect: (id: string) => void }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {cards.map((c) => (
-        <a
+        <button
           key={c.id}
-          href={c.url || "#"}
-          target={c.url ? "_blank" : undefined}
-          rel="noreferrer"
-          className="group overflow-hidden rounded-2xl border border-line bg-surface transition-shadow hover:shadow-md"
+          onClick={() => onSelect(c.id)}
+          className="group overflow-hidden rounded-2xl border border-line bg-surface text-left transition-shadow hover:shadow-md"
         >
           <div className="relative aspect-square w-full" style={{ background: GRADIENTS[c.grad] }}>
             <span className="absolute inset-0 grid place-items-center text-4xl">{c.emoji}</span>
@@ -87,7 +87,7 @@ function CardGrid({ cards }: { cards: Card[] }) {
             <p className="line-clamp-1 text-xs font-semibold text-ink">{c.title}</p>
             <p className="mt-0.5 text-xs text-ink-faint">{c.price ? `$${c.price}` : c.brand}</p>
           </div>
-        </a>
+        </button>
       ))}
     </div>
   );
@@ -108,7 +108,13 @@ export default function SearchPage() {
   const [vLoading, setVLoading] = useState(false);
   const [vError, setVError] = useState<string | null>(null);
   const [queryImage, setQueryImage] = useState<string | null>(null);
+  const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const selectItem = (id: string) => {
+    const pin = BY_ID.get(id);
+    if (pin) setSelectedPin(pin);
+  };
 
   useEffect(() => {
     if (!queryImage) return;
@@ -132,7 +138,8 @@ export default function SearchPage() {
     return PINS.filter(
       (p) =>
         p.title.toLowerCase().includes(t) ||
-        p.category.toLowerCase().includes(t)
+        p.category.toLowerCase().includes(t) ||
+        enrichBrand(p).toLowerCase().includes(t)
     ).map(pinToCard);
   }, [q]);
 
@@ -140,14 +147,15 @@ export default function SearchPage() {
     const t = q.trim().toLowerCase();
     const brandMap = new Map<string, Card[]>();
     for (const p of PINS) {
-      if (t && !p.brand.toLowerCase().includes(t)) continue;
-      const key = p.brand.toLowerCase();
+      const brand = enrichBrand(p);
+      if (t && !brand.toLowerCase().includes(t)) continue;
+      const key = brand.toLowerCase();
       if (!brandMap.has(key)) brandMap.set(key, []);
-      brandMap.get(key)!.push(pinToCard(p));
+      brandMap.get(key)!.push({ ...pinToCard(p), brand });
     }
     return Array.from(brandMap.entries())
       .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, 12);
+      .slice(0, 20);
   }, [q]);
 
   function clearVisual() {
@@ -267,7 +275,7 @@ export default function SearchPage() {
             {q ? `${items.length} result${items.length === 1 ? "" : "s"} for "${q.trim()}"` : "Trending items"}
           </p>
           {items.length > 0 ? (
-            <CardGrid cards={items} />
+            <CardGrid cards={items} onSelect={selectItem} />
           ) : (
             <EmptyNote>No items match &ldquo;{q.trim()}&rdquo;. Try a brand, category, or vibe.</EmptyNote>
           )}
@@ -284,7 +292,7 @@ export default function SearchPage() {
               {brands.map(([brand, cards]) => (
                 <div key={brand}>
                   <p className="mb-2 text-sm font-bold capitalize text-ink">{brand}</p>
-                  <CardGrid cards={cards.slice(0, 6)} />
+                  <CardGrid cards={cards.slice(0, 6)} onSelect={selectItem} />
                 </div>
               ))}
             </div>
@@ -328,7 +336,7 @@ export default function SearchPage() {
               ) : vError ? (
                 <EmptyNote>{vError}</EmptyNote>
               ) : vResults && vResults.length ? (
-                <CardGrid cards={vResults} />
+                <CardGrid cards={vResults} onSelect={selectItem} />
               ) : (
                 <EmptyNote>No visually similar finds yet. Try another photo.</EmptyNote>
               )}
@@ -354,6 +362,8 @@ export default function SearchPage() {
           )}
         </section>
       )}
+
+      <ItemDetailModal pin={selectedPin} onClose={() => setSelectedPin(null)} />
     </div>
   );
 }
