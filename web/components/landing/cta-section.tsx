@@ -1,15 +1,37 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
+
+const WAITLIST_STORAGE_KEY = "giftmaxxing_waitlist";
+
+interface WaitlistEntry {
+  email: string;
+  name?: string;
+  submittedAt: string;
+}
 
 export function CtaSection() {
   const [isVisible, setIsVisible] = useState(false);
   const sectionRef = useRef<HTMLDivElement>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [email, setEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  const [name, setName] = useState("");
+  const [submitted, setSubmitted] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const stored = localStorage.getItem(WAITLIST_STORAGE_KEY);
+      if (stored) {
+        const entries: WaitlistEntry[] = JSON.parse(stored);
+        return entries.length > 0;
+      }
+    } catch {
+      // localStorage unavailable or corrupted — ignore
+    }
+    return false;
+  });
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -22,6 +44,32 @@ export function CtaSection() {
     if (sectionRef.current) observer.observe(sectionRef.current);
     return () => observer.disconnect();
   }, []);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!email.trim()) return;
+
+      const entry: WaitlistEntry = {
+        email: email.trim(),
+        name: name.trim() || undefined,
+        submittedAt: new Date().toISOString(),
+      };
+
+      // TODO: Wire to backend API for persistent waitlist storage
+      try {
+        const stored = localStorage.getItem(WAITLIST_STORAGE_KEY);
+        const entries: WaitlistEntry[] = stored ? JSON.parse(stored) : [];
+        entries.push(entry);
+        localStorage.setItem(WAITLIST_STORAGE_KEY, JSON.stringify(entries));
+      } catch {
+        // localStorage unavailable — still show success UI
+      }
+
+      setSubmitted(true);
+    },
+    [email, name]
+  );
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -64,34 +112,48 @@ export function CtaSection() {
                 </p>
 
                 {submitted ? (
-                  <div className="inline-flex items-center gap-3 rounded-full border border-[#fb6f52]/40 bg-[#fb6f52]/10 px-6 h-14 text-base">
-                    <span className="text-2xl">🎁</span>
-                    <span>You&apos;re on the list — we&apos;ll be in touch soon.</span>
+                  <div className="flex flex-col gap-3">
+                    <div className="inline-flex items-center gap-3 rounded-full border border-[#fb6f52]/40 bg-[#fb6f52]/10 px-6 h-14 text-base">
+                      <span className="text-2xl">🎁</span>
+                      <span>You&apos;re on the list — we&apos;ll be in touch soon.</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground font-mono">
+                      Want to explore now?{" "}
+                      <Link href="/feed" className="text-[#fb6f52] underline underline-offset-2 hover:text-[#fb6f52]/80">
+                        Try the feed
+                      </Link>
+                    </p>
                   </div>
                 ) : (
                   <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (email.trim()) setSubmitted(true);
-                    }}
-                    className="flex flex-col sm:flex-row items-stretch gap-3 max-w-md"
+                    onSubmit={handleSubmit}
+                    className="flex flex-col gap-3 max-w-md"
                   >
                     <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@email.com"
-                      className="flex-1 h-14 rounded-full bg-foreground/5 border border-foreground/20 px-6 text-base outline-none focus:border-foreground/50 transition-colors"
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Your name (optional)"
+                      className="h-14 rounded-full bg-foreground/5 border border-foreground/20 px-6 text-base outline-none focus:border-foreground/50 transition-colors"
                     />
-                    <Button
-                      type="submit"
-                      size="lg"
-                      className="bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-8 h-14 text-base rounded-full group shrink-0"
-                    >
-                      Get early access
-                      <ArrowRight className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" />
-                    </Button>
+                    <div className="flex flex-col sm:flex-row items-stretch gap-3">
+                      <input
+                        type="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@email.com"
+                        className="flex-1 h-14 rounded-full bg-foreground/5 border border-foreground/20 px-6 text-base outline-none focus:border-foreground/50 transition-colors"
+                      />
+                      <Button
+                        type="submit"
+                        size="lg"
+                        className="bg-[#fb6f52] hover:bg-[#fb6f52]/90 text-white px-8 h-14 text-base rounded-full group shrink-0"
+                      >
+                        Get early access
+                        <ArrowRight className="w-4 h-4 ml-2 transition-transform group-hover:translate-x-1" />
+                      </Button>
+                    </div>
                   </form>
                 )}
 
