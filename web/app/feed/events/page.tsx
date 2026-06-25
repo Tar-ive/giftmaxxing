@@ -176,9 +176,7 @@ export default function EventsPage() {
       {topTab === "personal" && (
         <>
           {/* Gift-prompt reminders for events within their lead window */}
-          <div className="mb-5">
-            <GiftPromptCards />
-          </div>
+          <GiftPromptCards />
 
           {/* Reward bank summary */}
           {unclaimed.length > 0 && (

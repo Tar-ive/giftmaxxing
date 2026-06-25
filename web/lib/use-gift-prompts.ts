@@ -16,6 +16,16 @@ import { PRODUCTS, type Product } from "@/lib/data";
 // `reminderLeadDays`; this is the fallback when no per-event value is set.
 const DEFAULT_LEAD_DAYS = 7;
 
+// Deterministic hash so suggestion order stays stable across recomputations.
+function stableJitter(eventId: string, productId: string): number {
+  let h = 0;
+  const key = `${eventId}:${productId}`;
+  for (let i = 0; i < key.length; i++) {
+    h = (Math.imul(31, h) + key.charCodeAt(i)) | 0;
+  }
+  return (((h >>> 0) % 1000) / 1000) * 0.5;
+}
+
 export type GiftSuggestion = {
   product: Product;
   reason: string;
@@ -88,8 +98,8 @@ function suggestGifts(
     for (const v of vibes) {
       if (targetVibes.has(v)) score += 1;
     }
-    // Slight randomness for variety
-    score += Math.random() * 0.5;
+    // Deterministic jitter for variety (stable across recomputations)
+    score += stableJitter(event.id, product.id);
     return { product, score };
   })
     .sort((a, b) => b.score - a.score)

@@ -99,7 +99,7 @@ export function GiftPromptCards() {
   if (prompts.length === 0) return null;
 
   return (
-    <div className="space-y-3">
+    <div className="mb-5 space-y-3">
       {prompts.map((prompt) => (
         <SinglePromptCard key={prompt.event.id} prompt={prompt} />
       ))}
