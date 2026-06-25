@@ -14,7 +14,7 @@ import { ItemDetailModal } from "@/components/app/item-detail-modal";
 // embedding -> S3 Vectors kNN via POST /visual-search). When neither is active,
 // the page's default content (swipe deck + browse grid) is shown.
 
-type Card = {
+export type SearchCard = {
   id: string;
   title: string;
   image: string;
@@ -26,9 +26,9 @@ type Card = {
   badge?: string;
 };
 
-const BY_ID = new Map<string, Pin>(PINS.map((p) => [p.id, p]));
+export const PIN_BY_ID = new Map<string, Pin>(PINS.map((p) => [p.id, p]));
 
-function pinToCard(p: Pin): Card {
+export function pinToCard(p: Pin): SearchCard {
   return {
     id: p.id,
     title: shortTitle(p.title),
@@ -41,8 +41,8 @@ function pinToCard(p: Pin): Card {
   };
 }
 
-function visualToCard(r: VisualSearchResult): Card {
-  const pin = BY_ID.get(r.id);
+export function visualToCard(r: VisualSearchResult): SearchCard {
+  const pin = PIN_BY_ID.get(r.id);
   return {
     id: r.id,
     title: shortTitle(r.title || pin?.title || "Gift find"),
@@ -56,7 +56,7 @@ function visualToCard(r: VisualSearchResult): Card {
   };
 }
 
-function textToCards(q: string): Card[] {
+function textToCards(q: string): SearchCard[] {
   const t = q.trim().toLowerCase();
   if (!t) return [];
   return PINS.filter(
@@ -67,7 +67,7 @@ function textToCards(q: string): Card[] {
   ).map(pinToCard);
 }
 
-function CardGrid({ cards, onSelect }: { cards: Card[]; onSelect: (id: string) => void }) {
+export function CardGrid({ cards, onSelect }: { cards: SearchCard[]; onSelect: (id: string) => void }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {cards.map((c) => (
@@ -104,7 +104,7 @@ function CardGrid({ cards, onSelect }: { cards: Card[]; onSelect: (id: string) =
   );
 }
 
-function EmptyNote({ children }: { children: React.ReactNode }) {
+export function EmptyNote({ children }: { children: React.ReactNode }) {
   return (
     <p className="rounded-2xl border border-dashed border-line bg-surface/60 px-6 py-10 text-center text-sm text-ink-soft">
       {children}
@@ -114,7 +114,7 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 
 export function ExploreSearch({ children }: { children: React.ReactNode }) {
   const [q, setQ] = useState("");
-  const [vResults, setVResults] = useState<Card[] | null>(null);
+  const [vResults, setVResults] = useState<SearchCard[] | null>(null);
   const [vLoading, setVLoading] = useState(false);
   const [vError, setVError] = useState<string | null>(null);
   const [queryImage, setQueryImage] = useState<string | null>(null);
@@ -122,7 +122,7 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectItem = (id: string) => {
-    const pin = BY_ID.get(id);
+    const pin = PIN_BY_ID.get(id);
     if (pin) setSelectedPin(pin);
   };
 
@@ -132,7 +132,7 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
     return () => URL.revokeObjectURL(queryImage);
   }, [queryImage]);
 
-  const textCards = useMemo(() => textToCards(q), [q]);
+  const textCards: SearchCard[] = useMemo(() => textToCards(q), [q]);
   const showVisual = queryImage !== null;
   const showText = !showVisual && q.trim().length > 0;
 
