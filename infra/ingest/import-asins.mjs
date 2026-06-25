@@ -12,7 +12,7 @@
 //
 // Input is forgiving: one ASIN per line, or comma/space/tab separated, or full
 // Amazon URLs (the ASIN is extracted). For enrichment, a line may be a CSV/TSV
-// record:  ASIN, Title, Brand, Category  (anything after the ASIN is metadata).
+// record:  ASIN, Title, Brand, Category, Description  (after the ASIN is metadata).
 // Blank lines and lines starting with '#' are ignored.
 // ─────────────────────────────────────────────────────────────────────────────
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -40,7 +40,7 @@ function parseRecords(text) {
     const t = line.trim();
     if (!t || t.startsWith("#")) continue;
     // Skip an optional CSV header row.
-    if (/^asin\b/i.test(t) && /(title|brand|category)/i.test(t)) continue;
+    if (/^asin\b/i.test(t) && /(title|brand|category|desc)/i.test(t)) continue;
 
     // Prefer tab as the separator when present (titles often contain commas).
     const sep = t.includes("\t") ? /\t+/ : /,/;
@@ -65,11 +65,12 @@ function parseRecords(text) {
     const idx = asinFlags.findIndex(Boolean);
     const asin = asinFlags[idx];
     const rest = fields.filter((_, i) => i !== idx);
-    const [title, brand, category] = rest;
+    const [title, brand, category, blurb] = rest;
     const rec = { asin };
     if (title) rec.title = title;
     if (brand) rec.brand = brand;
     if (category) rec.category = category;
+    if (blurb) rec.blurb = blurb;
     out.push(rec);
   }
   return out;
@@ -111,7 +112,7 @@ for (const rec of parseRecords(text)) {
     continue;
   }
   let changed = false;
-  for (const k of ["title", "brand", "category", "price"]) {
+  for (const k of ["title", "brand", "category", "blurb", "price"]) {
     if (rec[k] != null && rec[k] !== cur[k]) {
       cur[k] = rec[k];
       changed = true;

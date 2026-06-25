@@ -119,3 +119,55 @@ Quality filter drops pins with no image, no outbound link, off-Pinterest social
 domains (`facebook.com`, …), and out-of-stock/stale products; dedup is by pin id
 **and** image signature. Diversity comes from facet-tagged seeds + per-board /
 per-merchant caps.
+
+---
+
+# Amazon affiliate catalog (`import-asins.mjs` + `paapi-enrich.mjs`)
+
+Powers `/feed/shop`. The catalog lives in `web/lib/amazon-picks.json` and is the
+single source of truth. **We never scrape Amazon** — product images/titles/prices
+may come ONLY from the Product Advertising API (PA-API), per the Associates
+Operating Agreement.
+
+## 1. Add ASINs (`import-asins.mjs`)
+
+```bash
+node import-asins.mjs asins.seed.txt        # from a file (ASINs or full URLs)
+node import-asins.mjs B00ABCDEFG B00HIJKLMN # inline
+pbpaste | node import-asins.mjs             # from the clipboard
+```
+
+Re-running merges — it never drops existing picks. To curate by hand, add a
+**tab-separated** record (tabs beat commas, since titles contain commas):
+
+```
+ASIN<TAB>Title<TAB>Brand<TAB>Category<TAB>Description
+```
+
+Use only your OWN words for Title/Description without PA-API. `Category` drives
+the section grouping and the fallback emoji on each tile.
+
+## 2. Enrich with official data (`paapi-enrich.mjs`) — needs PA-API access
+
+PA-API access is granted after ~3 qualifying sales within 180 days. Until then,
+preview requests with `--dry-run`. Credentials go in the repo-root `.env`
+(SECRET — never `NEXT_PUBLIC_`, never in Vercel):
+
+```bash
+set -a; source ../../.env; set +a   # AMAZON_PAAPI_ACCESS_KEY / _SECRET_KEY / AMAZON_PARTNER_TAG
+node paapi-enrich.mjs --dry-run     # preview only (no credentials needed)
+node paapi-enrich.mjs               # fill picks missing a title/image
+node paapi-enrich.mjs --force       # re-fetch everything (e.g. refresh prices)
+```
+
+| Flag        | Purpose                                                      |
+|-------------|-------------------------------------------------------------|
+| `--dry-run` | Print the batched requests; make no API call, write nothing |
+| `--force`   | Overwrite all fields, not just empty ones                   |
+| `--limit N` | Only the first N target ASINs (handy while testing quotas)  |
+
+GetItems runs in batches of 10, throttled (~1 TPS) with retry/backoff. It fills
+`title/brand/category/blurb` only when empty (preserving manual curation) and
+always refreshes the PA-API-owned `image/price`. **Prices are stored but not yet
+shown** in the UI — the Operating Agreement requires displayed prices be ≤24h
+old, so schedule enrichment (or fetch at request time) before surfacing them.
