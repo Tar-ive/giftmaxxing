@@ -81,13 +81,13 @@ export function HowItWorksSection() {
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <img
-              src="/shots/feed-mobile.jpg"
+              src="https://cdn.midjourney.com/4262b272-bbea-46a1-b9fc-b436daa101fe/0_0.jpeg"
               alt=""
               aria-hidden="true"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
               }}
-              className="absolute bottom-0 left-0 w-full h-full object-cover object-top"
+              className="absolute bottom-0 left-0 w-full h-full object-cover object-center"
             />
             {/* Fade sur le bord gauche */}
             <div className="absolute inset-0 bg-gradient-to-r from-[#fbf7f1] via-transparent to-transparent pointer-events-none" />
