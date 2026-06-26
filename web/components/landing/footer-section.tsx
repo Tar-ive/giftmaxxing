@@ -43,12 +43,12 @@ export function FooterSection() {
         style={{ background: "radial-gradient(120% 120% at 50% 0%, rgba(251,111,82,0.18), #fbf7f1 60%)" }}
       >
         <img
-          src="/shots/shop-desktop.jpg"
-          alt="Hand-picked gifts in the Giftmaxxing shop"
+          src="https://cdn.midjourney.com/4262b272-bbea-46a1-b9fc-b436daa101fe/0_0.jpeg"
+          alt="Wrapped gifts"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.display = "none";
           }}
-          className="w-full h-full object-cover object-top"
+          className="w-full h-full object-cover object-center"
         />
         {/* Gradient fade to cream at bottom */}
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-[#fbf7f1]" />
@@ -116,7 +116,7 @@ export function FooterSection() {
         {/* Bottom Bar */}
         <div className="py-8 border-t border-foreground/10 flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-sm text-muted-foreground">
-            &copy; 2025 Giftmaxxing. Made with care.
+            &copy; 2026 Giftmaxxing. Made with care.
           </p>
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground">

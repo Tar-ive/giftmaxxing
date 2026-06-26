@@ -206,7 +206,7 @@ export function FeaturesSection() {
             </div>
             <div className="hidden lg:block relative w-[42%] shrink-0 overflow-hidden">
               <img
-                src="/shots/pools-desktop.jpg"
+                src="https://cdn.midjourney.com/b0e3eeff-f2f1-48a3-8d82-e530b3d96337/0_0.jpeg"
                 alt=""
                 aria-hidden="true"
                 onError={(e) => {

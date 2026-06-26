@@ -26,6 +26,7 @@ export function CtaSection() {
       const stored = localStorage.getItem(WAITLIST_STORAGE_KEY);
       if (stored) {
         const entries: WaitlistEntry[] = JSON.parse(stored);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate persisted state on mount
         if (entries.length > 0) setSubmitted(true);
       }
     } catch {
@@ -165,8 +166,8 @@ export function CtaSection() {
               {/* Right image */}
               <div className="hidden lg:flex items-center justify-center w-[480px] h-[420px] shrink-0 overflow-hidden rounded-2xl border border-foreground/10">
                 <img
-                  src="/shots/feed-desktop.jpg"
-                  alt="The Giftmaxxing feed of real, shoppable finds"
+                  src="https://cdn.midjourney.com/b0e3eeff-f2f1-48a3-8d82-e530b3d96337/0_0.jpeg"
+                  alt="Curated thoughtful gifts"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display = "none";
                   }}
