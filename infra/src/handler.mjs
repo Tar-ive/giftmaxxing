@@ -640,6 +640,11 @@ const MAXI_SHOPPING_INTENT_RE = new RegExp(
     "add (it|that|this|these|them|the first|the second|the third|one|two|three|all)\\b",
     "(my|the) (cart|basket)",
     "add to cart",
+    "re-?stock",
+    "re-?order",
+    "buy (it |them )?again",
+    "(things?|stuff|items?) i (buy|order|use|restock)",
+    "deals? on .*(buy|order|restock|use|need)",
   ].join("|"),
   "i"
 );
@@ -733,6 +738,7 @@ IMPORTANT — identity rules:
 
 Use tools, don't guess:
 - Find gifts by budget / vibe / recipient / category with find_gifts.
+- "Deals on what I buy/restock most", "reorder", "buy again": call order_history FIRST to find the user's most-restocked categories, THEN call find_deals for those categories, then briefly summarize the best deals (the product cards render automatically). find_deals also handles any "find a deal / what's on sale" request.
 - Look up Reddit-mined ideas for a recipient with gift_ideas, or list types with list_recipients.
 - Recall who they shop for and key dates with get_profile, upcoming_events, list_connections, relationship_graph — and proactively flag a date that's near.
 - When the user states a durable fact (a budget, a like/dislike, who they shop for), call remember_fact. When they give a concrete dated occasion, call save_event so reminders fire.
@@ -778,13 +784,14 @@ async function saveMemory(userId, kind, text) {
 }
 
 function maxiProduct(p) {
+  const price = p.price ?? p.product?.price;
   return {
     postId: p.postId,
-    title: String(p.title || p.name || "").slice(0, 90),
-    price: typeof p.price === "number" ? p.price : null,
-    brand: p.brand || null,
-    image: p.image || p.imageUrl || null,
-    category: p.category || null,
+    title: String(p.product?.name || p.caption || p.title || p.name || "").slice(0, 90),
+    price: typeof price === "number" && price > 0 ? price : null,
+    brand: p.product?.brand || p.merchant || p.brand || null,
+    image: p.product?.image || p.image || p.imageUrl || null,
+    category: p.category || p.product?.category || null,
   };
 }
 
@@ -798,7 +805,7 @@ async function toolFindGifts({ budget, category, recipient, vibes, limit }) {
   };
   const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 150 }));
   let pool = out.Items ?? [];
-  if (opts.budget) pool = pool.filter((p) => (typeof p.price === "number" ? p.price : 1e9) <= opts.budget);
+  if (opts.budget) pool = pool.filter((p) => { const pr = p.price ?? p.product?.price; return (typeof pr === "number" && pr > 0 ? pr : 1e9) <= opts.budget; });
   const items = pool
     .map((p) => ({ p, s: scorePost(p, opts) }))
     .sort((a, b) => b.s - a.s)
@@ -936,6 +943,215 @@ async function toolRememberFact(userId, { fact, kind }) {
   return { ok: true };
 }
 
+// ── Maxi orders + deals: the Alexa-style "deals on what you restock most" flow ─
+// Orders live in the GRAPH table as ORDER# items (pk=userId) — the same pattern
+// as MEM# memories, so they're invisible to GET /graph (kind node|edge only).
+// The agent records an order when it (simulated-)checks out, then reads them back
+// to find the categories the user restocks most. New users with no orders get a
+// deterministic starter history synthesized from the live catalog so the flow
+// works on the very first run.
+function hashStr(s) {
+  let h = 2166136261;
+  const str = String(s || "");
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+// Stable, deterministic commerce metadata for the SIMULATED storefront (there is
+// no real retailer feed): list price + % off, star rating, review count, "bought
+// past month", and a near-term delivery date. Honest demo data — the same kind of
+// simulation as the cart/checkout. Derived from the postId so a product always
+// shows the same numbers.
+function dealMeta(postId, price) {
+  const h = hashStr(postId);
+  const p = typeof price === "number" && price > 0 ? price : 18 + (h % 80);
+  const discountPct = 8 + (h % 38); // 8–45% off
+  const listPrice = Math.max(p + 1, Math.round((p / (1 - discountPct / 100)) * 100) / 100);
+  const rating = Math.round(39 + ((h >>> 3) % 11)) / 10; // 3.9–4.9
+  const reviews = 40 + ((h >>> 5) % 9000);
+  const boughtBuckets = ["50+", "100+", "200+", "500+", "1K+"];
+  const boughtPastMonth = boughtBuckets[(h >>> 7) % boughtBuckets.length];
+  const days = 2 + ((h >>> 9) % 5);
+  const delivery = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+  return { price: Math.round(p * 100) / 100, listPrice, discountPct, rating, reviews, boughtPastMonth, delivery };
+}
+
+const CATEGORY_LABELS = {
+  home: "Home & Cozy", kitchen: "Kitchen", plants: "Plants", jewelry: "Jewelry",
+  art: "Art & Craft", vintage: "Vintage", wellness: "Wellness & Self-Care",
+  sports: "Sports & Outdoors", tech: "Tech", travel: "Travel", party: "Party",
+};
+const categoryLabel = (c) => CATEGORY_LABELS[c] || (c ? String(c).charAt(0).toUpperCase() + String(c).slice(1) : "Gifts");
+const priceOf = (p) => { const v = p?.price ?? p?.product?.price; return typeof v === "number" && v > 0 ? v : 0; };
+const catOf = (p) => p?.category || p?.product?.category || "gift";
+
+async function listOrders(userId, limit = 25) {
+  if (!GRAPH || !userId) return [];
+  try {
+    const out = await ddb.send(new QueryCommand({
+      TableName: GRAPH,
+      KeyConditionExpression: "pk = :u AND begins_with(sk, :p)",
+      ExpressionAttributeValues: { ":u": userId, ":p": "ORDER#" },
+      ScanIndexForward: false,
+      Limit: limit,
+    }));
+    return (out.Items ?? []).map((o) => ({ items: o.items ?? [], total: o.total ?? 0, createdAt: o.createdAt ?? 0 }));
+  } catch (e) {
+    console.warn("listOrders failed:", e.message);
+    return [];
+  }
+}
+
+async function saveOrder(userId, items, total) {
+  if (!GRAPH || !userId || !Array.isArray(items) || !items.length) return null;
+  const order = {
+    pk: userId,
+    sk: `ORDER#${Date.now()}#${gid()}`,
+    kind: "order",
+    items: items.slice(0, 20).map((it) => ({
+      postId: String(it.postId || ""),
+      title: String(it.title || it.name || "").slice(0, 90),
+      category: it.category || null,
+      brand: it.brand || null,
+      price: typeof it.price === "number" ? it.price : null,
+      qty: Number(it.qty) || 1,
+    })),
+    total: Number(total) || items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 1), 0),
+    createdAt: Date.now(),
+  };
+  try { await ddb.send(new PutCommand({ TableName: GRAPH, Item: order })); } catch (e) { console.warn("saveOrder failed:", e.message); }
+  return order;
+}
+
+// A believable starter purchase history from the live catalog: concentrate past
+// orders in the 2 categories with the most priced products, with repeat buys
+// (qty 2–3) so "most restocked" is meaningful. Deterministic per catalog.
+function synthStarterOrders(pool) {
+  const priced = (pool || []).filter((p) => priceOf(p) > 0);
+  const byCat = {};
+  for (const p of priced) { const c = catOf(p); (byCat[c] = byCat[c] || []).push(p); }
+  const cats = Object.keys(byCat).sort((a, b) => byCat[b].length - byCat[a].length).slice(0, 2);
+  const orders = [];
+  cats.forEach((cat, ci) => {
+    const picks = byCat[cat].sort((a, b) => hashStr(a.postId) - hashStr(b.postId)).slice(0, 2);
+    picks.forEach((p, pi) => {
+      const price = priceOf(p);
+      const qty = 2 + ((hashStr(p.postId) >>> 2) % 2); // 2–3 (restocked)
+      orders.push({
+        items: [{ postId: p.postId, title: String(p.product?.name || p.caption || "Gift").slice(0, 90), category: cat, brand: p.product?.brand || p.merchant || null, price, qty }],
+        total: price * qty,
+        createdAt: Date.now() - (14 + ci * 21 + pi * 9) * 86400000,
+        _synthetic: true,
+      });
+    });
+  });
+  return orders;
+}
+
+async function toolOrderHistory(userId) {
+  // Read real orders; if none, synthesize a starter history from the catalog and
+  // persist it once so future reads (and real orders) build on it.
+  let orders = await listOrders(userId, 25);
+  let seeded = false;
+  if (!orders.length) {
+    const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 200 }));
+    orders = synthStarterOrders(out.Items ?? []);
+    seeded = true;
+    if (userId) { for (const o of orders) { await saveOrder(userId, o.items, o.total).catch(() => {}); } }
+  }
+  const catCount = {};
+  const prod = {};
+  for (const o of orders) {
+    for (const it of o.items || []) {
+      const q = Number(it.qty) || 1;
+      const cat = it.category || "gift";
+      catCount[cat] = (catCount[cat] || 0) + q;
+      const key = it.postId || it.title;
+      if (!prod[key]) prod[key] = { postId: it.postId, title: it.title, category: cat, timesOrdered: 0, lastOrdered: 0 };
+      prod[key].timesOrdered += q;
+      prod[key].lastOrdered = Math.max(prod[key].lastOrdered, o.createdAt || 0);
+    }
+  }
+  const topCategories = Object.entries(catCount).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([category, count]) => ({ category, label: categoryLabel(category), count }));
+  const restockables = Object.values(prod).sort((a, b) => b.timesOrdered - a.timesOrdered).slice(0, 6)
+    .map((r) => ({ ...r, lastOrdered: r.lastOrdered ? new Date(r.lastOrdered).toISOString().slice(0, 10) : null }));
+  return { orderCount: orders.length, seeded, topCategories, restockables };
+}
+
+function maxiDealProduct(p) {
+  const meta = dealMeta(p.postId, priceOf(p));
+  return {
+    postId: p.postId,
+    title: String(p.product?.name || p.caption || p.title || "").slice(0, 90),
+    brand: p.product?.brand || p.merchant || p.brand || null,
+    image: p.product?.image || p.image || p.imageUrl || null,
+    category: catOf(p),
+    price: meta.price,
+    listPrice: meta.listPrice,
+    discountPct: meta.discountPct,
+    rating: meta.rating,
+    reviews: meta.reviews,
+    boughtPastMonth: meta.boughtPastMonth,
+    delivery: meta.delivery,
+    onDeal: true,
+  };
+}
+
+async function toolFindDeals({ categories, budget, limit }) {
+  const cats = Array.isArray(categories) ? categories : parseList(categories);
+  const catSet = new Set(cats.map((c) => String(c).toLowerCase()));
+  const n = Math.min(Number(limit) || 8, 12);
+  const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 250 }));
+  let pool = (out.Items ?? []).filter((p) => priceOf(p) > 0);
+  if (catSet.size) pool = pool.filter((p) => catSet.has(String(catOf(p)).toLowerCase()));
+  if (budget) pool = pool.filter((p) => priceOf(p) <= Number(budget));
+  if (!pool.length) pool = (out.Items ?? []).filter((p) => priceOf(p) > 0 && (!budget || priceOf(p) <= Number(budget)));
+  const products = pool.map((p) => maxiDealProduct(p)).sort((a, b) => b.discountPct - a.discountPct).slice(0, n);
+  const groupsMap = {};
+  for (const pr of products) {
+    const c = pr.category || "gift";
+    (groupsMap[c] = groupsMap[c] || { category: c, label: categoryLabel(c), items: [] }).items.push(pr);
+  }
+  return { products, groups: Object.values(groupsMap), count: products.length };
+}
+
+// Human-readable "layer" labels for the agent's tool calls, surfaced to the UI as
+// the visible reasoning trace (like Alexa's "scanning your order history…").
+function maxiStepLabel(name, input, out) {
+  const o = out || {};
+  switch (name) {
+    case "order_history": {
+      const cats = (o.topCategories || []).map((c) => c.label).join(", ");
+      return { tool: name, label: "Scanned your past orders", detail: cats ? `Top categories you restock: ${cats}` : "Looking at what you buy most" };
+    }
+    case "find_deals": {
+      const cats = (o.groups || []).map((g) => g.label).join(", ");
+      return { tool: name, label: `Found ${o.count || 0} active deal${(o.count || 0) === 1 ? "" : "s"}`, detail: cats ? `in ${cats}` : "" };
+    }
+    case "find_gifts":
+      return { tool: name, label: "Searched the catalog", detail: `${o.count || 0} matching pick${(o.count || 0) === 1 ? "" : "s"}` };
+    case "gift_ideas":
+      return { tool: name, label: "Pulled gift ideas", detail: input?.recipient ? `for ${input.recipient}` : "" };
+    case "get_profile":
+      return { tool: name, label: "Checked your profile", detail: "" };
+    case "upcoming_events":
+      return { tool: name, label: "Checked your upcoming dates", detail: "" };
+    case "list_connections":
+      return { tool: name, label: "Checked your people", detail: "" };
+    case "add_to_cart":
+      return { tool: name, label: `Added ${o.added || 0} to your cart`, detail: "simulated" };
+    case "checkout":
+      return { tool: name, label: "Placed your order", detail: "simulated — no real charge" };
+    case "remember_fact":
+      return { tool: name, label: "Saved that to memory", detail: "" };
+    case "save_event":
+      return { tool: name, label: "Saved the occasion", detail: "" };
+    default:
+      return { tool: name, label: String(name).replace(/_/g, " "), detail: "" };
+  }
+}
+
 // Tool specs advertised to the model (JSON Schema per Converse toolConfig).
 const MAXI_TOOLS = [
   {
@@ -1018,8 +1234,25 @@ const MAXI_TOOLS = [
   },
   {
     name: "checkout",
-    description: "Place the user's SIMULATED order (no real charge or shipment).",
+    description: "Place the user's SIMULATED order (no real charge or shipment). Records the order so future restock suggestions know what they bought.",
     schema: { type: "object", properties: {} },
+  },
+  {
+    name: "order_history",
+    description: "Scan the user's PAST ORDERS to find what they buy/restock most. Returns recent orders, their top (most-restocked) categories, and the products they reorder. Call this FIRST for 'deals on what I buy most', 'reorder', 'restock', or 'buy again' requests.",
+    schema: { type: "object", properties: {} },
+  },
+  {
+    name: "find_deals",
+    description: "Find products currently ON DEAL (discounted off list price), optionally filtered to categories and/or a budget. Returns buyable products with list price, % off, rating, and delivery, grouped by category — they render to the user. Pair with order_history to surface deals in the categories the user restocks most.",
+    schema: {
+      type: "object",
+      properties: {
+        categories: { type: "array", items: { type: "string" }, description: "category keys to find deals in, e.g. wellness, kitchen, home" },
+        budget: { type: "number", description: "max price in USD" },
+        limit: { type: "number", description: "how many to return (max 12)" },
+      },
+    },
   },
 ];
 
@@ -1047,14 +1280,36 @@ async function runMaxiTool(name, input, ctx) {
       return toolSaveEvent(ctx.userId, i);
     case "remember_fact":
       return toolRememberFact(ctx.userId, i);
+    case "order_history":
+      return toolOrderHistory(ctx.userId);
+    case "find_deals": {
+      const r = await toolFindDeals(i);
+      ctx.pins.push(...(r.products || []));
+      return r;
+    }
     case "add_to_cart": {
       const ids = Array.isArray(i.postIds) ? i.postIds.map(String) : [];
       ctx.actions.push({ type: "add_to_cart", postIds: ids });
+      // Track items so a later checkout records a real order. Resolve from the
+      // products already shown this turn; fall back to a direct lookup.
+      for (const id of ids) {
+        let prod = (ctx.pins || []).find((p) => p.postId === id);
+        if (!prod && POSTS) {
+          try {
+            const o = await ddb.send(new GetCommand({ TableName: POSTS, Key: { postId: id } }));
+            if (o.Item) prod = maxiProduct(o.Item);
+          } catch { /* ignore */ }
+        }
+        if (prod) ctx.cartItems.push({ postId: prod.postId, title: prod.title, category: prod.category, brand: prod.brand, price: prod.price, qty: 1 });
+      }
       return { ok: true, added: ids.length };
     }
-    case "checkout":
+    case "checkout": {
       ctx.actions.push({ type: "checkout" });
-      return { ok: true };
+      const order = ctx.cartItems.length ? await saveOrder(ctx.userId, ctx.cartItems) : null;
+      ctx.cartItems = [];
+      return { ok: true, recorded: order ? order.items.length : 0 };
+    }
     default:
       return { error: `unknown tool ${name}` };
   }
@@ -1859,7 +2114,7 @@ export const handler = async (event) => {
           toolSpec: { name: t.name, description: t.description, inputSchema: { json: t.schema } },
         })),
       };
-      const tctx = { userId, pins: [], actions: [] };
+      const tctx = { userId, pins: [], actions: [], cartItems: [], steps: [] };
       // Model routing: cheap Amazon Nova by default; Claude Haiku once an agentic
       // shopping experience is triggered (intent now, or a cart/checkout tool below).
       let isShopping = maxiIsShopping(userText, body);
@@ -1908,6 +2163,7 @@ export const handler = async (event) => {
               } catch (e) {
                 out = { error: e.message };
               }
+              tctx.steps.push(maxiStepLabel(tu.name, tu.input, out));
               results.push({
                 toolResult: {
                   toolUseId: tu.toolUseId,
@@ -1934,6 +2190,10 @@ export const handler = async (event) => {
         JSON.stringify({ userId, tier: isShopping ? "shopping" : "base", model: modelId, usedIn, usedOut, costUsd })
       );
 
+      // Nova models can wrap their reasoning in <thinking>…</thinking>; strip it
+      // so only the final, user-facing reply shows (Claude doesn't emit these).
+      say = say.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").replace(/<\/?thinking>/gi, "").trim();
+
       const seen = new Set();
       const pins = tctx.pins
         .filter((p) => p && p.postId && !seen.has(p.postId) && seen.add(p.postId))
@@ -1942,6 +2202,7 @@ export const handler = async (event) => {
         say: say || "Hmm, I didn't quite catch that — tell me a budget or who it's for and I'll find something.",
         pins,
         actions: tctx.actions,
+        steps: tctx.steps,
         source: "agent",
         usage: { inputTokens: usedIn, outputTokens: usedOut, costUsd: Math.round(costUsd * 1e5) / 1e5 },
       });
