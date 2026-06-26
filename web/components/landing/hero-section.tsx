@@ -134,7 +134,7 @@ export function HeroSection() {
         }}
       >
         <img
-          src="https://cdn.midjourney.com/b0e3eeff-f2f1-48a3-8d82-e530b3d96337/0_0.jpeg"
+          src="https://cdn.midjourney.com/5a63ddac-c6a0-48f2-86b4-cd48e8ba610f/0_3.jpeg"
           alt=""
           aria-hidden="true"
           onError={(e) => {

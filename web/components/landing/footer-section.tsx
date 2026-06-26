@@ -43,7 +43,7 @@ export function FooterSection() {
         style={{ background: "radial-gradient(120% 120% at 50% 0%, rgba(251,111,82,0.18), #fbf7f1 60%)" }}
       >
         <img
-          src="https://cdn.midjourney.com/4262b272-bbea-46a1-b9fc-b436daa101fe/0_0.jpeg"
+          src="https://cdn.midjourney.com/7178a607-6bd2-4fde-b465-519bee317788/0_1.jpeg"
           alt="Wrapped gifts"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.display = "none";

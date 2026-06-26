@@ -81,7 +81,7 @@ export function HowItWorksSection() {
             isVisible ? "opacity-100" : "opacity-0"
           }`}>
             <img
-              src="https://cdn.midjourney.com/4262b272-bbea-46a1-b9fc-b436daa101fe/0_0.jpeg"
+              src="https://cdn.midjourney.com/d7c61796-345f-4c0c-ba9f-415abb0a9672/0_0.jpeg"
               alt=""
               aria-hidden="true"
               onError={(e) => {
