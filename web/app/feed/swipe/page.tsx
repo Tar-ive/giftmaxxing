@@ -7,7 +7,7 @@ import { SwipeDeck } from "@/components/app/swipe-deck";
 import { ShareSheet } from "@/components/app/share-sheet";
 import { Icons } from "@/components/ui";
 import { useCurrentUser } from "@/lib/identity";
-import { getMyUserId } from "@/lib/api";
+import { getShareSenderId } from "@/lib/api";
 import { buildInviteUrl } from "@/lib/invite";
 import { EVENT_TYPE_META, type EventType } from "@/lib/events";
 
@@ -32,9 +32,10 @@ function SwipeInner() {
   const [date, setDate] = useState(() => params.get("date") ?? "");
 
   useEffect(() => {
-    // Read the stashed Clerk userId after mount (SSR-safe).
+    // Read the share sender id after mount (Clerk userId if signed in, else a
+    // persistent anon id). SSR-safe; touches localStorage.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSenderId(getMyUserId());
+    setSenderId(getShareSenderId());
   }, []);
 
   const inviterName = me.name !== "You" ? me.name : "A friend";

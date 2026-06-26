@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { loadProfile, saveProfile, type UserProfile } from "@/lib/onboarding";
-import { fetchMe, saveMe, setMyUserId, identifyMe } from "@/lib/api";
+import { fetchMe, saveMe, setMyUserId, identifyMe, claimConnections } from "@/lib/api";
+import { getAnonId, clearAnonId } from "@/lib/anon";
 import { markProfileSyncSettled } from "@/lib/profile-status";
 import { setClerkIdentityCache } from "@/lib/identity";
 import { ADMIN_BYPASS, ADMIN_USER_ID } from "@/lib/admin";
@@ -62,6 +63,16 @@ export function AccountSync() {
     // Stash the Clerk userId so non-Clerk client code (e.g. the swipe share
     // link) can attribute a shared challenge back to this sender.
     setMyUserId(userId);
+
+    // Claim any challenges shared while signed out (same device): re-key the
+    // anon-id soft profiles onto this account, then forget the anon id. On
+    // failure we keep the anon id so the next sign-in can retry.
+    const anonId = getAnonId();
+    if (anonId && anonId !== userId) {
+      void claimConnections(anonId, userId).then((claimed) => {
+        if (claimed !== null) clearAnonId();
+      });
+    }
 
     // Cache Clerk identity (name + avatar) so the identity layer can resolve
     // the display name from Clerk rather than the onboarding profile.

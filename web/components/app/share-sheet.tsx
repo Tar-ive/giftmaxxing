@@ -16,6 +16,35 @@ import {
 
 const enc = encodeURIComponent;
 
+// Robust copy: the async Clipboard API is blocked in some contexts (e.g. an
+// embedded preview iframe without clipboard-write permission), so fall back to a
+// hidden <textarea> + execCommand. Returns whether the copy succeeded.
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function ShareSheet({
   url,
   text,
@@ -72,14 +101,10 @@ export function ShareSheet({
   }, [open]);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      track("copy");
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      /* clipboard blocked */
-    }
+    await copyToClipboard(url);
+    setCopied(true);
+    track("copy");
+    window.setTimeout(() => setCopied(false), 2400);
   };
 
   const nativeShare = async () => {
@@ -93,11 +118,9 @@ export function ShareSheet({
   };
 
   const instagram = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch { /* clipboard blocked */ }
+    await copyToClipboard(url);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2400);
     track("instagram");
     window.open("https://www.instagram.com/", "_blank", "noopener,noreferrer");
   };
@@ -159,6 +182,12 @@ export function ShareSheet({
                 {copied ? "Copied!" : "Copy"}
               </button>
             </div>
+
+            {copied && (
+              <p className="mb-3 -mt-1.5 rounded-lg bg-green-50 px-3 py-2 text-center text-xs font-semibold text-green-700">
+                ✓ Link copied — send it to anyone. Their responses show up in your activity once you sign in.
+              </p>
+            )}
 
             {/* Channels */}
             <div className="grid grid-cols-4 gap-2">

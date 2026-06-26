@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
-const words = ["figured out", "effortless", "personal", "together"];
+const words = ["love", "treasure", "remember", "show off"];
 
 function BlurWord({ word, trigger }: { word: string; trigger: number }) {
   const letters = word.split("");
@@ -183,7 +183,7 @@ export function HeroSection() {
         >
           <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground">
             <span className="w-8 h-px bg-foreground/30" />
-            Social gifting, with an AI companion
+            Social gifting, powered by Maxi
           </span>
         </div>
         
@@ -194,8 +194,9 @@ export function HeroSection() {
               isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
             }`}
           >
-            <span className="block whitespace-nowrap">Gifting, finally</span>
+            <span className="block whitespace-nowrap">Know exactly what</span>
             <span className="block whitespace-nowrap">
+              they&apos;ll{" "}
               <span className="relative inline-block">
                 <BlurWord word={words[wordIndex]} trigger={wordIndex} />
               </span>
@@ -216,12 +217,12 @@ export function HeroSection() {
             Try it now
             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
           </Link>
-          <a
-            href="#waitlist"
+          <Link
+            href="/challenge"
             className="inline-flex items-center gap-2 border border-foreground/20 hover:border-foreground/40 bg-background/60 backdrop-blur-sm text-foreground font-semibold px-8 h-14 rounded-full text-base transition-colors"
           >
-            Join the waitlist
-          </a>
+            Share a challenge
+          </Link>
         </div>
         </div>
       </div>

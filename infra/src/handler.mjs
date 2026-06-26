@@ -1624,6 +1624,44 @@ export const handler = async (event) => {
       return json(200, { ok: true, updated: ids.length });
     }
 
+    // POST /connections/claim  { anonId, userId }  — re-key every soft profile
+    // collected under a signed-out creator's anon id onto their real account.
+    // Called by AccountSync on sign-in. Bound to the caller: you can only claim
+    // INTO an account you're authenticated as (or via the admin token).
+    if (method === "POST" && path === "/connections/claim") {
+      const anonId = String(body.anonId || "");
+      const claimUserId = String(body.userId || "");
+      if (!anonId || !claimUserId) return json(400, { error: "anonId and userId required" });
+      if (!anonId.startsWith("anon_")) return json(400, { error: "invalid anonId" });
+      // Only allow claiming INTO your own account (or admin/ingest).
+      const auth = await authorizeRequest(event, method, path);
+      if (!(auth.via === "admin" || auth.sub === claimUserId)) {
+        return json(403, { error: "forbidden" });
+      }
+      const out = await ddb.send(
+        new QueryCommand({
+          TableName: CONNECTIONS,
+          KeyConditionExpression: "userId = :u",
+          ExpressionAttributeValues: { ":u": anonId },
+        })
+      );
+      const rows = out.Items ?? [];
+      let claimed = 0;
+      for (const row of rows) {
+        await ddb.send(
+          new PutCommand({ TableName: CONNECTIONS, Item: { ...row, userId: claimUserId } })
+        );
+        await ddb.send(
+          new DeleteCommand({
+            TableName: CONNECTIONS,
+            Key: { userId: anonId, connectionId: row.connectionId },
+          })
+        );
+        claimed++;
+      }
+      return json(200, { ok: true, claimed });
+    }
+
     // ── Unified events (personal milestones + shared occasions/soft profiles) ──
     // GET /events?userId=&scope=  — a user's events, optionally filtered by scope.
     if (method === "GET" && path === "/events") {

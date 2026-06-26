@@ -4,6 +4,7 @@ import type { Grad } from "@/lib/data";
 import type { Post } from "@/lib/social";
 import { SEED_PINS } from "@/lib/seed-pins";
 import { ADMIN_BYPASS } from "@/lib/admin";
+import { getOrCreateAnonId } from "@/lib/anon";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const isApiConfigured = () => API_BASE.length > 0;
@@ -415,6 +416,13 @@ export function setMyUserId(userId: string | null): void {
   }
 }
 
+// The id to attribute a shared challenge to: the signed-in Clerk userId if we
+// have one, otherwise a persistent anonymous id (claimed into the account on
+// sign-in). Lets a signed-out user share a challenge and still collect results.
+export function getShareSenderId(): string {
+  return getMyUserId() ?? getOrCreateAnonId();
+}
+
 // Taste + identity captured from a guest's completed swipe challenge.
 export type GuestSoftProfile = {
   name: string;
@@ -498,6 +506,29 @@ export async function markConnectionsSeen(
     return res.ok;
   } catch {
     return false;
+  }
+}
+
+// Re-key every soft profile collected under a signed-out creator's anon id onto
+// their real account. Called by AccountSync on sign-in. Returns the number of
+// claimed connections, or null if the request failed (so the caller can retry
+// next sign-in instead of dropping the anon id).
+export async function claimConnections(
+  anonId: string,
+  userId: string
+): Promise<number | null> {
+  if (!isApiConfigured() || !anonId || !userId) return null;
+  try {
+    const res = await apiFetch(`/connections/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ anonId, userId }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { claimed?: number };
+    return data.claimed ?? 0;
+  } catch {
+    return null;
   }
 }
 
