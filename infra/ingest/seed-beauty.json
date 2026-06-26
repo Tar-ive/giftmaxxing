@@ -1,0 +1,31 @@
+{
+  "_comment": "Beauty + fashion gift seeds for `pinterest-scrape.mjs --seeds seed-beauty.json`. A focused subset of brands whose Pinterest boards link to their own retail .com (Sephora, Ulta, Glossier, Urban Outfitters, Anthropologie, Nordstrom, ...), so a --retailers / --allow-domains + --require-price crawl yields real, priced beauty/fashion product pages. Fewer seed users => faster seed phase + tighter board discovery than the full seed-boards.json.",
+  "users": [
+    { "user": "Sephora", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "ulta", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "glossier", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "charlottetilbury", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "fentybeauty", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "aesopskincare", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "lushcosmetics", "recipient": "anyone", "occasion": "any", "categoryHint": "wellness" },
+    { "user": "burtsbees", "recipient": "anyone", "occasion": "any", "categoryHint": "wellness" },
+    { "user": "diptyque", "recipient": "partner", "occasion": "anniversary", "categoryHint": "beauty" },
+    { "user": "voluspa", "recipient": "anyone", "occasion": "any", "categoryHint": "home" },
+    { "user": "urbanoutfitters", "recipient": "teen", "occasion": "any", "categoryHint": "fashion" },
+    { "user": "anthropologie", "recipient": "partner", "occasion": "any", "categoryHint": "fashion" },
+    { "user": "freepeople", "recipient": "partner", "occasion": "any", "categoryHint": "fashion" },
+    { "user": "madewell", "recipient": "partner", "occasion": "any", "categoryHint": "fashion" },
+    { "user": "nordstrom", "recipient": "partner", "occasion": "any", "categoryHint": "fashion" },
+    { "user": "mejuri", "recipient": "partner", "occasion": "anniversary", "categoryHint": "jewelry" }
+  ],
+  "queries": [
+    { "q": "sephora gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "ulta beauty gifts", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "skincare gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "makeup gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "perfume gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "urban outfitters gifts", "recipient": "teen", "occasion": "any", "categoryHint": "fashion" },
+    { "q": "anthropologie gifts", "recipient": "partner", "occasion": "any", "categoryHint": "fashion" }
+  ],
+  "boards": []
+}

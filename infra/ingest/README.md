@@ -159,6 +159,53 @@ net with `--allow-domains store1.com,store2.com`, or relax with `--keep-listicle
 
 ---
 
+# Clean trash posts (`clean-posts.mjs`)
+
+Removes low-quality Pinterest imports from the `posts` table (the `/feed` store):
+dead/non-shoppable links (Pinterest-only, social), bare landing pages, and
+blog/recipe/spam domains. **Reddit posts and user-generated content are never
+touched** — only items with author `pinterest_*` / source `Pinterest/*` are
+considered. Classification reuses `../src/quality.mjs` (`classifyPin`).
+
+```bash
+set -a; source ../../.env; set +a   # AWS creds (refresh SSO if expired)
+
+npm run clean:posts:dry             # DRY RUN: scan, print breakdown, write backup
+npm run clean:posts                 # APPLY: backup first, then BatchWrite-delete
+```
+
+## Trash buckets
+
+| Bucket          | What it catches                                   | Default  |
+|-----------------|---------------------------------------------------|----------|
+| `dead-link`     | No usable http(s) product link                    | delete   |
+| `non-shoppable` | Link goes to pinterest/instagram/facebook/tiktok/… | delete   |
+| `landing`       | Bare homepage / root path (no product page)       | delete   |
+| `content`       | Blog / recipe / spam domain                       | delete   |
+| `guide`         | Listicle / gift-guide / editorial / seasonal      | opt-in   |
+| `no-price`      | Real shoppable deep link but missing a price      | opt-in   |
+
+## Options
+
+| Flag                  | Purpose                                                   |
+|-----------------------|----------------------------------------------------------|
+| (none)                | Dry run — scan, report, and write a backup; no deletes    |
+| `--apply`             | Actually delete (a timestamped backup is written first)   |
+| `--include-guides`    | Also delete the `guide` bucket                            |
+| `--include-no-price`  | Also delete the `no-price` bucket                         |
+| `--keep a,b`          | Exclude buckets from deletion (e.g. `--keep content`)     |
+| `--only a,b`          | Delete ONLY these buckets                                 |
+| `--table` / `--region`| Override `$POSTS_TABLE` / `$AWS_REGION`                   |
+| `--limit N`           | Cap how many posts are scanned (testing)                  |
+| `--out P`             | Backup path (default `clean-posts.backup.<ts>.json`)      |
+| `--verbose`           | Print every `postId` slated for deletion                  |
+
+Deletes are `BatchWrite` (25/req) by `postId` with `UnprocessedItems` retry. The
+posts table has point-in-time recovery enabled, and the backup JSON is restorable
+via a `BatchWrite` Put, so the operation is reversible.
+
+---
+
 # Amazon affiliate catalog (`import-asins.mjs` + `paapi-enrich.mjs`)
 
 Powers `/feed/shop`. The catalog lives in `web/lib/amazon-picks.json` and is the

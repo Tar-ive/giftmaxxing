@@ -18,6 +18,8 @@
     "embed": "node embed.mjs",
     "ingest:pins:dry": "node ingest-pins.mjs --dry-run",
     "ingest:pins": "node ingest-pins.mjs",
+    "clean:posts:dry": "node clean-posts.mjs",
+    "clean:posts": "node clean-posts.mjs --apply",
     "vectors:query": "node vector-query.mjs"
   },
   "dependencies": {
