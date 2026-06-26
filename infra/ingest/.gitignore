@@ -1,4 +1,7 @@
 node_modules/
 posts.ingest.json
+pins.ingest.json
 pins.manifest.json
+pins.retailers.json
 .scrape-state.json
+.scrape-retailers.state.json

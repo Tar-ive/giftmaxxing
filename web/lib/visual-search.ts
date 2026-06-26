@@ -63,6 +63,7 @@ export type VisualSearchResult = {
   title: string;
   similarity: number; // cosine similarity 0–1
   affiliateUrl?: string;
+  url?: string; // real outbound retailer link (Sephora, Urban Outfitters, …)
   price?: number;
   brand?: string;
   source: "s3vectors" | "placeholder";
@@ -175,7 +176,9 @@ export async function visualSearch(
     imageUrl: i.image ?? "",
     title: i.name ?? "",
     similarity: i._score ?? 0,
-    brand: i.author,
+    brand: i.merchant ?? i.author,
+    url: i.url ?? i.productUrl ?? undefined,
+    price: typeof i.price === "number" ? i.price : undefined,
     source: "s3vectors" as const,
   }));
 }
@@ -245,7 +248,9 @@ export async function fetchEnhancedRecommendations(
     imageUrl: i.image ?? "",
     title: i.name ?? "",
     similarity: i._score ?? 0,
-    brand: i.author,
+    brand: i.merchant ?? i.author,
+    url: i.url ?? i.productUrl ?? undefined,
+    price: typeof i.price === "number" ? i.price : undefined,
     source: "s3vectors" as const,
   }));
 }

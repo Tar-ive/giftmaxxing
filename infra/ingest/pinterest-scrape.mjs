@@ -31,6 +31,28 @@ const UA =
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Major shoppable retailers we trust to be real PRODUCT pages (not blogs /
+// listicles). Used by --retailers / --allow-domains to keep only outbound links
+// that land on an actual store. Matched against the outbound link's hostname
+// (exact or subdomain), so "shop.sephora.com" still matches "sephora.com".
+const RETAILER_DOMAINS = [
+  // Beauty
+  "sephora.com", "ulta.com", "glossier.com", "fentybeauty.com", "charlottetilbury.com",
+  "rarebeauty.com", "kosas.com", "aesop.com", "lushusa.com", "theordinary.com", "spacenk.com",
+  // Fashion / lifestyle
+  "urbanoutfitters.com", "anthropologie.com", "freepeople.com", "nordstrom.com", "nordstromrack.com",
+  "madewell.com", "aritzia.com", "abercrombie.com", "everlane.com", "revolve.com", "net-a-porter.com",
+  // Home / kitchen
+  "westelm.com", "potterybarn.com", "crateandbarrel.com", "cb2.com", "williams-sonoma.com",
+  "food52.com", "brooklinen.com", "parachutehome.com", "muji.com", "muji.us",
+  // Marketplaces / gifts
+  "etsy.com", "uncommongoods.com", "target.com",
+  // Jewelry
+  "mejuri.com", "brilliantearth.com", "catbird.com",
+  // Outdoors / tech
+  "rei.com", "yeti.com", "stanley1913.com", "patagonia.com", "sonos.com",
+];
+
 function parseArgs(argv) {
   const a = {
     target: 10000,
@@ -50,6 +72,9 @@ function parseArgs(argv) {
     useRss: true,
     prefix: "images/",
     concurrency: 6,
+    requirePrice: false, // --require-price: drop pins with no real price
+    blockListicles: false, // --block-listicles: drop blog / gift-guide URLs
+    allowDomains: null, // Set<string> from --retailers / --allow-domains
   };
   for (let i = 0; i < argv.length; i++) {
     const x = argv[i];
@@ -68,6 +93,16 @@ function parseArgs(argv) {
     else if (x === "--max-per-domain") a.maxPerDomain = Number(argv[++i]);
     else if (x === "--page-cap") a.pageCap = Number(argv[++i]);
     else if (x === "--min-interval") a.minInterval = Number(argv[++i]);
+    else if (x === "--require-price") a.requirePrice = true;
+    else if (x === "--block-listicles") a.blockListicles = true;
+    else if (x === "--keep-listicles") a.blockListicles = false;
+    else if (x === "--retailers") {
+      a.allowDomains = new Set(RETAILER_DOMAINS);
+      a.blockListicles = true;
+    } else if (x === "--allow-domains")
+      a.allowDomains = new Set(
+        argv[++i].split(",").map((d) => d.trim().replace(/^www\./, "").toLowerCase()).filter(Boolean)
+      );
   }
   return a;
 }
@@ -245,12 +280,46 @@ const BLOCK_DOMAINS = new Set([
   "facebook.com", "instagram.com", "youtube.com", "youtu.be", "tiktok.com",
   "twitter.com", "x.com", "pinterest.com", "linktr.ee", "google.com", "bit.ly",
 ]);
+function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+// host matches an allowlisted domain exactly or as a subdomain (shop.sephora.com).
+function matchesAllow(host, allow) {
+  if (!host) return false;
+  for (const a of allow) if (host === a || host.endsWith("." + a)) return true;
+  return false;
+}
+
+// Blog / gift-guide / editorial URLs — real links, but NOT a buyable product
+// page. Dropped under --block-listicles (and --retailers).
+const LISTICLE_RE =
+  /\/(?:blog|blogs|journal|magazine|article|articles|guide|guides|ideas|inspiration|lookbook|stories|the-edit|edit|news|learn|tips|how-to)(?:\/|$)|-(?:ideas|guide|gift-guide)(?:\/|$|\?)/i;
+function looksLikeListicle(link) {
+  try {
+    return LISTICLE_RE.test(new URL(link).pathname);
+  } catch {
+    return false;
+  }
+}
+
 function isQuality(r) {
   if (!r.imageUrl || !r.link) return false;
   if (!r.title || r.title.length < 3) return false;
   if (!r.domain) return false;
   if (BLOCK_DOMAINS.has(r.domain.replace(/^www\./, ""))) return false;
   if (/pinterest\.com/i.test(r.link)) return false; // must leave Pinterest
+  // Opt-in "real shoppable product" filters (--retailers / --allow-domains /
+  // --require-price / --block-listicles). All off by default, so the general
+  // crawl behaves exactly as before.
+  if (ARGS.allowDomains && !matchesAllow(hostOf(r.link) || r.domain.replace(/^www\./, ""), ARGS.allowDomains))
+    return false;
+  if (ARGS.requirePrice && r.price == null) return false;
+  if (ARGS.blockListicles && looksLikeListicle(r.link)) return false;
   return true;
 }
 
@@ -331,6 +400,13 @@ async function main() {
   };
 
   console.log(`Target ${ARGS.target} pins. Resuming with ${records.length} already collected.`);
+  if (ARGS.allowDomains)
+    console.log(
+      `  filters: allowlist=${ARGS.allowDomains.size} domains` +
+        `${ARGS.requirePrice ? ", require-price" : ""}${ARGS.blockListicles ? ", block-listicles" : ""}`
+    );
+  else if (ARGS.requirePrice || ARGS.blockListicles)
+    console.log(`  filters:${ARGS.requirePrice ? " require-price" : ""}${ARGS.blockListicles ? " block-listicles" : ""}`);
 
   // 1. SEED via brand users (RSS) -> PinResource -> board.id. Curated, higher
   //    quality, so their boards are crawled FIRST (priority).

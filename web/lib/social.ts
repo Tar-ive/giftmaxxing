@@ -13,6 +13,7 @@ export type User = {
 
 export const USERS: Record<string, User> = {
   you: { id: "you", name: "You", handle: "you", grad: "coral" },
+  maxi: { id: "maxi", name: "Maxi", handle: "maxi", grad: "coral", bio: "your AI gift concierge 🎁" },
   maya: { id: "maya", name: "Maya Reyes", handle: "mayareyes", grad: "rose", bio: "film photos + cozy corners 📷", followers: 1840, following: 412 },
   jules: { id: "jules", name: "Jules Park", handle: "julesp", grad: "lilac", bio: "professional group-gift organizer (unpaid)", followers: 980, following: 530 },
   sam: { id: "sam", name: "Sam Okafor", handle: "samok", grad: "sky", bio: "off to Lisbon 🛫", followers: 642, following: 388 },

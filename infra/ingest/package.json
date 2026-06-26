@@ -12,8 +12,12 @@
     "scrape:dry": "node pinterest-scrape.mjs --target 200 --dry-run",
     "scrape": "node pinterest-scrape.mjs --target 10000",
     "scrape:resume": "node pinterest-scrape.mjs --target 10000 --resume",
+    "scrape:retailers:dry": "node pinterest-scrape.mjs --target 60 --retailers --require-price --dry-run --out pins.retailers.json --state .scrape-retailers.state.json",
+    "scrape:retailers": "node pinterest-scrape.mjs --target 3000 --retailers --require-price --out pins.retailers.json --state .scrape-retailers.state.json",
     "vectors:setup": "node s3vectors-setup.mjs",
     "embed": "node embed.mjs",
+    "ingest:pins:dry": "node ingest-pins.mjs --dry-run",
+    "ingest:pins": "node ingest-pins.mjs",
     "vectors:query": "node vector-query.mjs"
   },
   "dependencies": {

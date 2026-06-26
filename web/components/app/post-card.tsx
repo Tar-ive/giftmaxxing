@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { GRADIENTS } from "@/lib/data";
+import { hiResImage } from "@/lib/images";
 import { resolveUser, commentCountOf, type Post } from "@/lib/social";
 import { useCurrentUser, displayUser } from "@/lib/identity";
 import { Avatar, Icons } from "@/components/ui";
@@ -10,13 +11,14 @@ import { useStore } from "@/components/app/store";
 import { useMaxi } from "@/components/app/maxi-provider";
 
 export function PostCard({ post }: { post: Post }) {
-  const { toggleLike, toggleSave, addComment, toggleFollow, isFollowing, openPost, reportSeen } = useStore();
-  const { ask } = useMaxi();
+  const { toggleLike, toggleSave, addComment, replyAsMaxi, toggleFollow, isFollowing, openPost, reportSeen } = useStore();
+  const { commentReply } = useMaxi();
   const me = useCurrentUser();
   const u = post.user === "you" ? me : resolveUser(post);
   const commentTotal = commentCountOf(post);
   const [draft, setDraft] = useState("");
   const [burst, setBurst] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
   const lastTap = useRef(0);
   const articleRef = useRef<HTMLElement>(null);
 
@@ -61,6 +63,10 @@ export function PostCard({ post }: { post: Post }) {
     if (now - lastTap.current < 300) doubleTapLike();
     lastTap.current = now;
   };
+
+  // A broken/blocked product image (a dead scrape URL) makes for an ugly card,
+  // so hide the whole post rather than showing an empty placeholder.
+  if (post.product.image && imgFailed) return null;
 
   return (
     <article ref={articleRef} className="overflow-hidden rounded-2xl border border-line bg-surface shadow-sm">
@@ -115,13 +121,11 @@ export function PostCard({ post }: { post: Post }) {
         {post.product.image && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={post.product.image}
+            src={hiResImage(post.product.image)}
             alt={post.product.name}
             loading="lazy"
             className="absolute inset-0 h-full w-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
+            onError={() => setImgFailed(true)}
           />
         )}
 
@@ -133,7 +137,8 @@ export function PostCard({ post }: { post: Post }) {
           }}
           className="absolute bottom-3 left-3 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur"
         >
-          <Icons.gift size={14} /> {post.product.name} · ${post.product.price}
+          <Icons.gift size={14} /> {post.product.name}
+          {post.product.price > 0 ? ` · $${post.product.price}` : ""}
         </button>
 
         {burst && (
@@ -154,7 +159,8 @@ export function PostCard({ post }: { post: Post }) {
         <button
           onClick={() => {
             const url = `${window.location.origin}/feed`;
-            const text = `Check out this find: ${post.product.name} ($${post.product.price}) on Giftmaxxing`;
+            const priceTag = post.product.price > 0 ? ` ($${post.product.price})` : "";
+            const text = `Check out this find: ${post.product.name}${priceTag} on Giftmaxxing`;
             if (navigator.share) {
               navigator.share({ title: "Giftmaxxing", text, url }).catch(() => {});
             } else {
@@ -206,7 +212,8 @@ export function PostCard({ post }: { post: Post }) {
             addComment(post.id, text);
             if (/@maxi\b/i.test(text)) {
               const query = text.replace(/@maxi\b/i, "").trim() || `any gift ideas like ${post.product.name}?`;
-              ask(query);
+              // Maxi replies inline in the thread (does NOT open the side panel).
+              void commentReply(query, post.product.name).then((reply) => replyAsMaxi(post.id, reply));
             }
             setDraft("");
           }}

@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import { GRADIENTS, type Grad } from "@/lib/data";
 import { PINS, type Pin } from "@/lib/pins";
 import { loadProfile } from "@/lib/onboarding";
@@ -27,7 +28,9 @@ import {
   removeFromCart,
 } from "@/lib/cart";
 import { respond, type MaxiReply } from "@/lib/maxi";
-import { askMaxi, getMyUserId, type MaxiAgentProduct } from "@/lib/api";
+import { productAmazonUrl, AFFILIATE_REL } from "@/lib/affiliate";
+import { hiResImage } from "@/lib/images";
+import { askMaxi, getMyUserId, type MaxiAgentProduct, type MaxiStep } from "@/lib/api";
 import { Maxi, Icons } from "@/components/ui";
 
 type Msg = {
@@ -38,6 +41,8 @@ type Msg = {
   pins?: Pin[];
   chips?: string[];
   source?: string;
+  steps?: MaxiStep[]; // agent reasoning "layers" (scan orders -> deals -> …)
+  products?: MaxiAgentProduct[]; // raw agent products (carry deal metadata)
 };
 
 type Order = { id: string; items: CartItem[]; total: number };
@@ -50,6 +55,7 @@ type MaxiStore = {
   sending: boolean;
   send: (text: string) => void;
   ask: (text: string) => void; // open the panel + send (for @maxi mentions)
+  commentReply: (query: string, contextName?: string) => Promise<string>; // inline @maxi reply (no panel)
   searchByImage: (file: File) => void; // visual search from an uploaded photo
   cart: CartItem[];
   cartCount: number;
@@ -96,8 +102,8 @@ function resultToPin(r: { id: string; imageUrl: string; title: string; brand?: s
   return {
     id: r.id,
     title: r.title || "Visual match",
-    image: r.imageUrl,
-    thumb: r.imageUrl,
+    image: hiResImage(r.imageUrl),
+    thumb: hiResImage(r.imageUrl),
     source: r.brand || "pinterest",
     brand: r.brand || "Pinterest",
     url: "#",
@@ -117,8 +123,8 @@ function agentPinToPin(p: MaxiAgentProduct): Pin {
   return {
     id: p.postId,
     title: p.title || "Gift idea",
-    image: p.image || "",
-    thumb: p.image || "",
+    image: hiResImage(p.image),
+    thumb: hiResImage(p.image),
     source: p.brand || "giftmaxxing",
     brand: p.brand || "Giftmaxxing",
     url: "#",
@@ -195,6 +201,8 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       setSending(true);
       (async () => {
         let reply: MaxiReply;
+        let agentSteps: MaxiStep[] | undefined;
+        let agentProducts: MaxiAgentProduct[] | undefined;
         // Try the real LLM agent first (behind a flag); fall back to the offline
         // rule-based responder on any miss so the panel always answers.
         const agent =
@@ -212,6 +220,8 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
               })
             : null;
         if (agent) {
+          agentSteps = agent.steps?.length ? agent.steps : undefined;
+          agentProducts = agent.pins?.length ? agent.pins : undefined;
           const pins = agent.pins.map(agentPinToPin);
           const byId = new Map(pins.map((p) => [p.id, p]));
           const addPins = agent.actions
@@ -243,7 +253,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
         if (reply.pins?.length) lastShownRef.current = reply.pins;
         setMessages((m) => [
           ...m,
-          { id: mkId(), from: "maxi", text: reply.text, pins: reply.pins, chips: reply.chips, source: reply.source },
+          { id: mkId(), from: "maxi", text: reply.text, pins: reply.pins, chips: reply.chips, source: reply.source, steps: agentSteps, products: agentProducts },
         ]);
         setSending(false);
         if (typeof window !== "undefined") {
@@ -266,6 +276,38 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       send(text);
     },
     [send]
+  );
+
+  // Generate a concise Maxi reply for an inline comment thread WITHOUT opening
+  // the panel — used by "@maxi" mentions in comments.
+  const commentReply = useCallback(
+    async (query: string, contextName?: string): Promise<string> => {
+      try {
+        const r = await respond(query, {
+          lastShown: lastShownRef.current,
+          vibes: profileRef.current.vibes,
+          cart,
+          name: profileRef.current.name,
+        });
+        let text = (r.text || "").trim();
+        if (r.pins && r.pins.length) {
+          const top = r.pins
+            .slice(0, 2)
+            .map((p) => {
+              const name = p.title.split(/[—,.:]/)[0].trim().slice(0, 36);
+              return p.price > 0 ? `${name} ($${p.price})` : name;
+            })
+            .join(", ");
+          if (top) text = `${text} Try: ${top}.`;
+        }
+        return text || "Tell me a budget and who it's for and I'll find a few ideas 🎁";
+      } catch {
+        return contextName
+          ? `For something like ${contextName}, give me a budget and I'll line up options 🎁`
+          : "Give me a budget and who it's for and I'll find a few ideas 🎁";
+      }
+    },
+    [cart]
   );
 
   // Visual search: embed the uploaded photo (Titan Multimodal) -> S3 Vectors kNN.
@@ -346,6 +388,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       sending,
       send,
       ask,
+      commentReply,
       searchByImage,
       cart,
       cartCount: calcCount(cart),
@@ -358,7 +401,7 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
       lastOrder,
       checkout,
     }),
-    [open, messages, sending, send, ask, searchByImage, cart, addPinToCart, removeItem, clearCart, cartOpen, lastOrder, checkout]
+    [open, messages, sending, send, ask, commentReply, searchByImage, cart, addPinToCart, removeItem, clearCart, cartOpen, lastOrder, checkout]
   );
 
   return (
@@ -372,6 +415,10 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
 // ── Floating launcher ────────────────────────────────────────────────────────
 function MaxiDock() {
   const { open, toggle, cartCount } = useMaxi();
+  const pathname = usePathname();
+  // On the dedicated Maxi page the whole screen IS the chat, so skip the
+  // floating launcher + slide-over dock there.
+  if (pathname === "/feed/maxi") return null;
   return (
     <>
       {!open && (
@@ -413,9 +460,10 @@ function ImageIcon({ size = 22, className }: { size?: number; className?: string
   );
 }
 
-// ── Slide-over panel ─────────────────────────────────────────────────────────
-function MaxiPanel() {
+// ── Reusable chat surface — used by the dock AND the full-page /feed/maxi ─────
+export function MaxiChatSurface({ variant = "dock" }: { variant?: "dock" | "page" }) {
   const { open, setOpen, messages, sending, send, searchByImage, cart, cartCount, cartTotal, addPinToCart, removeItem } = useMaxi();
+  const isPage = variant === "page";
   const [draft, setDraft] = useState("");
   const [view, setView] = useState<"chat" | "cart">("chat");
   const [listening, setListening] = useState(false);
@@ -520,10 +568,8 @@ function MaxiPanel() {
 
   return (
     <div
-      className={`fixed inset-y-0 right-0 z-[75] flex w-full max-w-[400px] flex-col border-l border-line bg-cream shadow-2xl transition-transform duration-300 ${
-        open ? "translate-x-0" : "translate-x-full"
-      }`}
-      role="dialog"
+      className="relative flex h-full w-full flex-col bg-cream"
+      role={isPage ? undefined : "dialog"}
       aria-label="Maxi"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -568,9 +614,11 @@ function MaxiPanel() {
             </span>
           )}
         </button>
-        <button onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-full text-ink-soft hover:bg-ink/5" aria-label="Close">
-          <Icons.close size={22} />
-        </button>
+        {!isPage && (
+          <button onClick={() => setOpen(false)} className="grid h-9 w-9 place-items-center rounded-full text-ink-soft hover:bg-ink/5" aria-label="Close">
+            <Icons.close size={22} />
+          </button>
+        )}
       </header>
 
       {view === "cart" ? (
@@ -578,7 +626,7 @@ function MaxiPanel() {
       ) : (
         <>
           {/* messages */}
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+          <div ref={scrollRef} className={`flex-1 space-y-3 overflow-y-auto px-4 py-4 ${isPage ? "mx-auto w-full max-w-2xl" : ""}`}>
             {messages.map((m) => (
               <MessageBubble key={m.id} m={m} onAdd={addPinToCart} onChip={submit} />
             ))}
@@ -596,7 +644,7 @@ function MaxiPanel() {
             onSubmit={(e) => { e.preventDefault(); submit(draft); }}
             className="border-t border-line bg-surface px-3 py-3"
           >
-            <div className="flex items-center gap-2 rounded-full border border-line bg-cream px-3 py-2">
+            <div className={`flex items-center gap-2 rounded-full border border-line bg-cream px-3 py-2 ${isPage ? "mx-auto w-full max-w-2xl" : ""}`}>
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
@@ -646,11 +694,41 @@ function MaxiPanel() {
   );
 }
 
+// ── Right-side dock (slide-over) — wraps the shared surface ───────────────────
+function MaxiPanel() {
+  const { open } = useMaxi();
+  return (
+    <div
+      className={`fixed inset-y-0 right-0 z-[75] flex w-full max-w-[400px] flex-col border-l border-line bg-cream shadow-2xl transition-transform duration-300 ${
+        open ? "translate-x-0" : "translate-x-full"
+      }`}
+      aria-hidden={!open}
+    >
+      <MaxiChatSurface variant="dock" />
+    </div>
+  );
+}
+
 function MessageBubble({ m, onAdd, onChip }: { m: Msg; onAdd: (p: Pin) => void; onChip: (t: string) => void }) {
   const mine = m.from === "you";
+  const dealProducts =
+    !mine && m.products?.some((p) => p.onDeal || typeof p.listPrice === "number") ? m.products : null;
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[88%]">
+        {!mine && m.steps && m.steps.length > 0 && (
+          <div className="mb-2 space-y-1 rounded-xl border border-line bg-cream/60 px-3 py-2">
+            {m.steps.map((s, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-[11px] text-ink-soft">
+                <span className="mt-0.5 text-coral">✓</span>
+                <span>
+                  <span className="font-semibold text-ink">{s.label}</span>
+                  {s.detail ? ` — ${s.detail}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-snug ${mine ? "bg-ink text-cream" : "border border-line bg-surface text-ink"}`}>
           {m.imageUrl && (
             <div className="mb-2 overflow-hidden rounded-xl">
@@ -663,23 +741,42 @@ function MessageBubble({ m, onAdd, onChip }: { m: Msg; onAdd: (p: Pin) => void; 
             <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-coral">· {m.source}</span>
           )}
         </div>
-        {m.pins && m.pins.length > 0 && (
+        {dealProducts && (
+          <div className="mt-2 space-y-2">
+            {dealProducts.map((p) => (
+              <DealCard key={p.postId} p={p} onAdd={() => onAdd(agentPinToPin(p))} />
+            ))}
+          </div>
+        )}
+        {m.pins && m.pins.length > 0 && !dealProducts && (
           <div className="mt-2 grid grid-cols-2 gap-2">
             {m.pins.map((p) => (
               <div key={p.id} className="overflow-hidden rounded-xl border border-line bg-surface">
                 <div className="relative aspect-square w-full" style={{ background: GRADIENTS[p.grad] }}>
                   <span className="absolute inset-0 grid place-items-center text-4xl">{p.emoji}</span>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.image} alt={p.title} loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  <img src={hiResImage(p.image)} alt={p.title} loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 </div>
                 <div className="p-2">
                   <p className="truncate text-[11px] font-semibold text-ink">{p.title.slice(0, 40)}</p>
                   <div className="mt-1 flex items-center justify-between">
-                    <span className="text-xs font-bold text-ink">${p.price}</span>
+                    {p.price > 0 ? (
+                      <span className="text-xs font-bold text-ink">${p.price}</span>
+                    ) : (
+                      <span />
+                    )}
                     <button onClick={() => onAdd(p)} className="rounded-full bg-coral px-2 py-0.5 text-[11px] font-bold text-white hover:opacity-90">
                       + Cart
                     </button>
                   </div>
+                  <a
+                    href={productAmazonUrl({ name: p.title, brand: p.brand })}
+                    target="_blank"
+                    rel={AFFILIATE_REL}
+                    className="mt-1 block text-center text-[10px] font-bold text-ink-faint hover:text-coral"
+                  >
+                    View on Amazon ↗
+                  </a>
                 </div>
               </div>
             ))}
@@ -694,6 +791,47 @@ function MessageBubble({ m, onAdd, onChip }: { m: Msg; onAdd: (p: Pin) => void; 
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Alexa-style deal card: image + rating/bought + price w/ strikethrough list
+// price + % off + delivery + Add to cart. Used for find_deals (restock) results.
+function DealCard({ p, onAdd }: { p: MaxiAgentProduct; onAdd: () => void }) {
+  const hasList = typeof p.listPrice === "number" && typeof p.price === "number" && p.listPrice > p.price;
+  let deliveryLabel = "";
+  if (p.delivery) {
+    const d = new Date(p.delivery);
+    if (!Number.isNaN(d.getTime())) deliveryLabel = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+  return (
+    <div className="flex gap-3 overflow-hidden rounded-xl border border-line bg-surface p-2">
+      <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-cream">
+        {p.image && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={hiResImage(p.image)} alt={p.title} loading="lazy" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 text-[12px] font-semibold text-ink">{p.title}</p>
+        {(typeof p.rating === "number" || p.boughtPastMonth) && (
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-ink-faint">
+            {typeof p.rating === "number" && <span className="font-bold text-amber-500">★ {p.rating.toFixed(1)}</span>}
+            {typeof p.reviews === "number" && <span>({p.reviews.toLocaleString()})</span>}
+            {p.boughtPastMonth && <span>· {p.boughtPastMonth} bought</span>}
+          </p>
+        )}
+        <div className="mt-1 flex items-center gap-1.5">
+          {typeof p.price === "number" && <span className="text-sm font-bold text-ink">${p.price}</span>}
+          {hasList && <span className="text-[11px] text-ink-faint line-through">${p.listPrice}</span>}
+          {hasList && typeof p.discountPct === "number" && <span className="rounded bg-coral/10 px-1 text-[10px] font-bold text-coral">{p.discountPct}% off</span>}
+        </div>
+        {deliveryLabel && <p className="text-[10px] text-ink-faint">FREE delivery {deliveryLabel}</p>}
+        <div className="mt-1 flex items-center gap-3">
+          <button onClick={onAdd} className="rounded-full bg-coral px-2.5 py-0.5 text-[11px] font-bold text-white hover:opacity-90">+ Cart</button>
+          <a href={productAmazonUrl({ name: p.title, brand: p.brand ?? undefined })} target="_blank" rel={AFFILIATE_REL} className="text-[10px] font-bold text-ink-faint hover:text-coral">View ↗</a>
+        </div>
       </div>
     </div>
   );
@@ -719,7 +857,7 @@ function CartView({ cart, total, onRemove, onCheckout, onBack }: { cart: CartIte
                 {it.emoji}
                 {it.image && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={it.image} alt={it.name} className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                  <img src={hiResImage(it.image)} alt={it.name} className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
                 )}
               </span>
               <div className="min-w-0 flex-1">

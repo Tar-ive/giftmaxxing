@@ -51,8 +51,29 @@ export function visualToCard(r: VisualSearchResult): SearchCard {
     emoji: pin?.emoji ?? "🎁",
     price: r.price ?? pin?.price,
     brand: r.brand || pin?.brand,
-    url: pin?.url,
+    url: r.url || pin?.url,
     badge: r.similarity ? `${Math.round(r.similarity * 100)}% match` : undefined,
+  };
+}
+
+// Build a Pin for the detail modal from any SearchCard — including live
+// visual-search hits that aren't in the bundled PINS set, so every result is
+// clickable, not just the bundled ones. Bundled visuals/category are reused when
+// available; the card's real retailer URL always wins over the pin's.
+export function cardToPin(c: SearchCard): Pin {
+  const base = PIN_BY_ID.get(c.id);
+  return {
+    id: c.id,
+    title: c.title,
+    image: c.image,
+    thumb: c.image,
+    source: base?.source ?? c.brand ?? "",
+    brand: c.brand ?? base?.brand ?? "Shop",
+    url: c.url ?? base?.url ?? "",
+    price: c.price ?? base?.price ?? 0,
+    grad: c.grad,
+    emoji: c.emoji,
+    category: base?.category ?? "",
   };
 }
 
@@ -67,13 +88,13 @@ function textToCards(q: string): SearchCard[] {
   ).map(pinToCard);
 }
 
-export function CardGrid({ cards, onSelect }: { cards: SearchCard[]; onSelect: (id: string) => void }) {
+export function CardGrid({ cards, onSelect }: { cards: SearchCard[]; onSelect: (card: SearchCard) => void }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {cards.map((c) => (
         <button
           key={c.id}
-          onClick={() => onSelect(c.id)}
+          onClick={() => onSelect(c)}
           className="group overflow-hidden rounded-2xl border border-line bg-surface text-left transition-shadow hover:shadow-md"
         >
           <div className="relative aspect-square w-full" style={{ background: GRADIENTS[c.grad] }}>
@@ -121,10 +142,7 @@ export function ExploreSearch({ children }: { children: React.ReactNode }) {
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const selectItem = (id: string) => {
-    const pin = PIN_BY_ID.get(id);
-    if (pin) setSelectedPin(pin);
-  };
+  const selectItem = (card: SearchCard) => setSelectedPin(cardToPin(card));
 
   // Revoke the object URL when it changes or the component unmounts.
   useEffect(() => {

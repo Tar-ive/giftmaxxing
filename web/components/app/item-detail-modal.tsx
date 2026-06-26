@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { GRADIENTS } from "@/lib/data";
+import { outboundAffiliateUrl, AFFILIATE_REL } from "@/lib/affiliate";
 import type { Pin } from "@/lib/pins";
 import { Icons } from "@/components/ui";
 import { useMaxi } from "@/components/app/maxi-provider";
@@ -77,7 +78,9 @@ export function ItemDetailModal({
             <h2 className="mt-3 font-display text-lg font-extrabold leading-tight text-ink">
               {pin.title.length > 120 ? pin.title.slice(0, 117) + "…" : pin.title}
             </h2>
-            <p className="mt-2 text-2xl font-bold text-ink">${pin.price}</p>
+            {pin.price > 0 && (
+              <p className="mt-2 text-2xl font-bold text-ink">${pin.price}</p>
+            )}
             <p className="mt-1 text-xs text-ink-faint capitalize">{pin.category}</p>
 
             {pin.source && (
@@ -93,18 +96,16 @@ export function ItemDetailModal({
               onClick={handleAdd}
               className="w-full rounded-full bg-coral py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
             >
-              {added ? "Added to cart!" : `Add to cart · $${pin.price}`}
+              {added ? "Added to cart!" : pin.price > 0 ? `Add to cart · $${pin.price}` : "Add to cart"}
             </button>
-            {pin.url && pin.url !== "#" && (
-              <a
-                href={pin.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block w-full rounded-full border border-line py-2.5 text-center text-sm font-bold text-ink transition-colors hover:bg-ink/5"
-              >
-                View original source
-              </a>
-            )}
+            <a
+              href={outboundAffiliateUrl(pin.url, { name: pin.title, brand: pin.brand })}
+              target="_blank"
+              rel={AFFILIATE_REL}
+              className="block w-full rounded-full border border-line py-2.5 text-center text-sm font-bold text-ink transition-colors hover:bg-ink/5"
+            >
+              {pin.brand ? `View on ${pin.brand}` : "View product"}
+            </a>
           </div>
         </div>
       </div>

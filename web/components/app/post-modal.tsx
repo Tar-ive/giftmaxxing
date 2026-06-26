@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { GRADIENTS } from "@/lib/data";
+import { productAmazonUrl, AFFILIATE_REL } from "@/lib/affiliate";
+import { hiResImage } from "@/lib/images";
 import { resolveUser, commentCountOf } from "@/lib/social";
 import { useCurrentUser, displayUser } from "@/lib/identity";
 import type { Pin } from "@/lib/pins";
@@ -10,10 +12,10 @@ import { useStore } from "@/components/app/store";
 import { useMaxi } from "@/components/app/maxi-provider";
 
 export function PostModal() {
-  const { openPostId, openPost, posts, toggleLike, toggleSave, addComment } = useStore();
+  const { openPostId, openPost, posts, toggleLike, toggleSave, addComment, replyAsMaxi } = useStore();
   const [draft, setDraft] = useState("");
   const me = useCurrentUser();
-  const { ask, addPinToCart } = useMaxi();
+  const { commentReply, addPinToCart } = useMaxi();
   const post = posts.find((p) => p.id === openPostId);
   if (!post) return null;
   const u = post.user === "you" ? me : resolveUser(post);
@@ -58,7 +60,7 @@ export function PostModal() {
           {post.product.image && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={post.product.image}
+              src={hiResImage(post.product.image)}
               alt={post.product.name}
               className="absolute inset-0 h-full w-full object-cover"
               onError={(e) => {
@@ -69,8 +71,9 @@ export function PostModal() {
           <div className="absolute bottom-4 left-4 rounded-xl bg-black/55 px-4 py-2.5 text-white backdrop-blur">
             <p className="text-sm font-bold">{post.product.name}</p>
             <p className="text-xs text-white/80">
-              {post.product.brand} · ${post.product.price}
-              {post.product.was && (
+              {post.product.brand}
+              {post.product.price > 0 ? ` · $${post.product.price}` : ""}
+              {post.product.price > 0 && post.product.was && (
                 <span className="ml-1.5 line-through opacity-70">${post.product.was}</span>
               )}
             </p>
@@ -135,7 +138,8 @@ export function PostModal() {
               <button
                 onClick={() => {
                   const url = `${window.location.origin}/feed`;
-                  const text = `Check out this find: ${post.product.name} ($${post.product.price}) on Giftmaxxing`;
+                  const priceTag = post.product.price > 0 ? ` ($${post.product.price})` : "";
+                  const text = `Check out this find: ${post.product.name}${priceTag} on Giftmaxxing`;
                   if (typeof navigator !== "undefined" && navigator.share) {
                     navigator.share({ title: "Giftmaxxing", text, url }).catch(() => {});
                   } else if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -161,8 +165,17 @@ export function PostModal() {
               onClick={() => addPinToCart(asPin)}
               className="mt-3 w-full rounded-full bg-coral py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
             >
-              Add to cart · ${post.product.price}
+              Add to cart{post.product.price > 0 ? ` · $${post.product.price}` : ""}
             </button>
+            <a
+              href={productAmazonUrl({ name: post.product.name, brand: post.product.brand })}
+              target="_blank"
+              rel={AFFILIATE_REL}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-full border border-line py-2.5 text-sm font-bold text-ink transition-colors hover:bg-ink/5"
+            >
+              View on Amazon
+              <Icons.arrow size={14} className="-rotate-45" />
+            </a>
           </div>
 
           {/* add comment */}
@@ -174,7 +187,8 @@ export function PostModal() {
               addComment(post.id, text);
               if (/@maxi\b/i.test(text)) {
                 const query = text.replace(/@maxi\b/i, "").trim() || `gift ideas like ${post.product.name}`;
-                ask(query);
+                // Maxi replies inline in the thread (does NOT open the side panel).
+                void commentReply(query, post.product.name).then((reply) => replyAsMaxi(post.id, reply));
               }
               setDraft("");
             }}

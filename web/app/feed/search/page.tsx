@@ -11,7 +11,7 @@ import { Avatar, Icons } from "@/components/ui";
 import { ItemDetailModal } from "@/components/app/item-detail-modal";
 import {
   type SearchCard,
-  PIN_BY_ID,
+  cardToPin,
   pinToCard,
   visualToCard,
   CardGrid,
@@ -30,10 +30,7 @@ export default function SearchPage() {
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const selectItem = (id: string) => {
-    const pin = PIN_BY_ID.get(id);
-    if (pin) setSelectedPin(pin);
-  };
+  const selectItem = (card: SearchCard) => setSelectedPin(cardToPin(card));
 
   useEffect(() => {
     if (!queryImage) return;

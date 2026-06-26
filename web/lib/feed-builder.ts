@@ -6,6 +6,7 @@
 import { PINS, type Pin } from "@/lib/pins";
 import type { Comment, Post } from "@/lib/social";
 import type { Product } from "@/lib/data";
+import { hiResImage } from "@/lib/images";
 import { type Taste, scorePinForTaste, tasteMatchesPin } from "@/lib/taste";
 
 const AUTHORS = ["maya", "theo", "jules", "noor", "ivy", "sam", "remy"];
@@ -56,7 +57,7 @@ export function pinToProduct(pin: Pin): Product {
     price: pin.price,
     grad: pin.grad,
     emoji: pin.emoji,
-    image: pin.image,
+    image: hiResImage(pin.image),
   };
 }
 

@@ -69,6 +69,7 @@ type Store = {
   claims: ClaimState;
   reportSeen: (postId: string) => void;
   addComment: (postId: string, text: string) => void;
+  replyAsMaxi: (postId: string, text: string) => void;
   addPost: (post: Post) => void;
   toggleFollow: (userId: string) => void;
   isFollowing: (userId: string) => boolean;
@@ -332,6 +333,27 @@ export function AppStore({ children }: { children: React.ReactNode }) {
     recordInteraction(getMyUserId(), postId, "comment", { text: clean });
   }, []);
 
+  // Append a reply authored by Maxi (the AI concierge) to a post's comment
+  // thread — used when a user @mentions @maxi in a comment. No interaction is
+  // recorded (it isn't a human action).
+  const replyAsMaxi = useCallback((postId: string, text: string) => {
+    const clean = text.trim();
+    if (!clean) return;
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              comments: [
+                ...p.comments,
+                { id: `c-maxi-${Date.now()}`, user: "maxi", text: clean },
+              ],
+            }
+          : p
+      )
+    );
+  }, []);
+
   const addPost = useCallback((post: Post) => {
     setPosts((prev) => [post, ...prev]);
     // Persist user-created posts so they survive page refreshes
@@ -449,6 +471,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       claims,
       reportSeen,
       addComment,
+      replyAsMaxi,
       addPost,
       toggleFollow,
       isFollowing,
@@ -466,7 +489,7 @@ export function AppStore({ children }: { children: React.ReactNode }) {
       togglePinChat,
       togglePinMessage,
     }),
-    [posts, follows, toggleLike, toggleSave, claimItem, unclaimItem, claims, reportSeen, addComment, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
+    [posts, follows, toggleLike, toggleSave, claimItem, unclaimItem, claims, reportSeen, addComment, replyAsMaxi, addPost, toggleFollow, isFollowing, loadMore, hasMore, loadingMore, openPostId, storyIndex, groupChats, openChatId, sendChatMessage, togglePinChat, togglePinMessage]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

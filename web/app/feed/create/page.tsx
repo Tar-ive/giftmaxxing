@@ -30,8 +30,8 @@ const RECIPIENTS = ["Friend", "Partner", "Parent", "Sibling", "Coworker", "Child
 export default function CreatePage() {
   const router = useRouter();
   const me = useCurrentUser();
-  const { addPost } = useStore();
-  const { ask } = useMaxi();
+  const { addPost, replyAsMaxi } = useStore();
+  const { commentReply } = useMaxi();
 
   const [caption, setCaption] = useState("");
   const [selected, setSelected] = useState<Pin | null>(null);
@@ -85,10 +85,9 @@ export default function CreatePage() {
     addPost(post);
 
     if (/@maxi\b/i.test(text)) {
-      ask(
-        text.replace(/@maxi\b/i, "").trim() ||
-          `gift ideas like ${postTitle}`
-      );
+      const query = text.replace(/@maxi\b/i, "").trim() || `gift ideas like ${postTitle}`;
+      // Maxi replies inline on the new post (does NOT open the side panel).
+      void commentReply(query, postTitle).then((reply) => replyAsMaxi(post.id, reply));
     }
 
     router.push("/feed");

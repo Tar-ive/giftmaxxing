@@ -34,7 +34,12 @@
     { "user": "voluspa", "recipient": "anyone", "occasion": "any", "categoryHint": "home" },
     { "user": "loewe", "recipient": "partner", "occasion": "any", "categoryHint": "fashion" },
     { "user": "muji_global", "recipient": "anyone", "occasion": "any", "categoryHint": "home" },
-    { "user": "cb2", "recipient": "anyone", "occasion": "housewarming", "categoryHint": "home" }
+    { "user": "cb2", "recipient": "anyone", "occasion": "housewarming", "categoryHint": "home" },
+    { "user": "urbanoutfitters", "recipient": "teen", "occasion": "any", "categoryHint": "fashion" },
+    { "user": "ulta", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "glossier", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "charlottetilbury", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "user": "fentybeauty", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" }
   ],
   "queries": [
     { "q": "unique gifts for mom", "recipient": "mom", "occasion": "any" },
@@ -56,7 +61,11 @@
     { "q": "cozy home gifts", "recipient": "anyone", "occasion": "any", "categoryHint": "home" },
     { "q": "jewelry gifts", "recipient": "partner", "occasion": "any", "categoryHint": "jewelry" },
     { "q": "tech gadget gifts", "recipient": "anyone", "occasion": "any", "categoryHint": "tech" },
-    { "q": "self care gift box", "recipient": "anyone", "occasion": "any", "categoryHint": "wellness" }
+    { "q": "self care gift box", "recipient": "anyone", "occasion": "any", "categoryHint": "wellness" },
+    { "q": "skincare gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "makeup gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "perfume gift set", "recipient": "partner", "occasion": "any", "categoryHint": "beauty" },
+    { "q": "urban outfitters gifts", "recipient": "teen", "occasion": "any", "categoryHint": "fashion" }
   ],
   "boards": []
 }

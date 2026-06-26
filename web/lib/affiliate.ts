@@ -40,6 +40,59 @@ export function amazonUrl(asin: string): string {
   return `${AMAZON_MARKETPLACE}/dp/${normalized}?tag=${AMAZON_ASSOC_TAG}`;
 }
 
+// Tagged Amazon search link for a free-text product query. The feed + Maxi
+// cards have no ASIN, so every outbound product link still carries the affiliate
+// tag — any resulting purchase qualifies, even if it isn't the exact item.
+export function amazonSearchUrl(query: string): string {
+  return `${AMAZON_MARKETPLACE}/s?k=${encodeURIComponent(query.trim())}&tag=${AMAZON_ASSOC_TAG}`;
+}
+
+// Best affiliate URL for a demo product: a real /dp link when it carries a valid
+// ASIN, otherwise a tagged search by name + brand.
+export function productAmazonUrl(p: {
+  name?: string;
+  title?: string;
+  brand?: string;
+  asin?: string;
+}): string {
+  if (p.asin && isValidAsin(p.asin)) return amazonUrl(p.asin);
+  const q = [p.name ?? p.title ?? "", p.brand ?? ""].filter(Boolean).join(" ").trim();
+  return amazonSearchUrl(q || "gifts");
+}
+
+// ── Generic outbound affiliate routing (Amazon tag + Skimlinks) ──────────────
+//
+// Visual-search / catalog items carry a REAL retailer URL (Sephora, Urban
+// Outfitters, Target, …) in their metadata. We can't join most of those brand
+// programs directly, so we leave non-Amazon links as plain retailer URLs and let
+// the Skimlinks in-page script (see components/skimlinks.tsx) rewrite them into
+// commission-tracked links at click time. Amazon isn't in Skimlinks, so Amazon
+// links keep OUR associate tag. Anything missing/Pinterest/"#" falls back to a
+// tagged Amazon search so every outbound click is still monetized.
+export function isAmazonUrl(url: string): boolean {
+  return /amazon\.[a-z]/i.test(url) || /amzn\.to\//i.test(url) || /\/\/a\.co\//i.test(url);
+}
+
+export function isPinterestUrl(url: string): boolean {
+  return /pinterest\.[a-z]/i.test(url) || /\/\/pin\.it\//i.test(url);
+}
+
+export function outboundAffiliateUrl(
+  url: string | null | undefined,
+  fallback: { name?: string; title?: string; brand?: string } = {}
+): string {
+  const u = (url ?? "").trim();
+  const usable = /^https?:\/\//i.test(u) && !isPinterestUrl(u);
+  if (usable) {
+    if (isAmazonUrl(u)) {
+      const asin = extractAsin(u);
+      return asin ? amazonUrl(asin) : productAmazonUrl(fallback);
+    }
+    return u; // real retailer link — Skimlinks monetizes it client-side
+  }
+  return productAmazonUrl(fallback);
+}
+
 // Deterministic, stable visuals so a pick always renders the same tile even
 // before we have real metadata. Gradient varies by ASIN; emoji is decorative.
 const GRAD_KEYS: Grad[] = ["peach", "rose", "butter", "lilac", "sky", "sage", "coral"];

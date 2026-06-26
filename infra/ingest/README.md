@@ -114,11 +114,48 @@ node pinterest-scrape.mjs --target 10000 --bucket "$MEDIA_BUCKET" --skip-existin
 | `--max-per-domain`  | `1500`             | Diversity cap per merchant                 |
 | `--min-interval`    | `1200` (ms)        | Throttle between requests                  |
 | `--no-search` / `--no-rss` | both on     | Disable a seeding path                     |
+| `--retailers`       | off                | Keep only real retailer **product** pages (built-in `RETAILER_DOMAINS` allowlist) + drop blog/gift-guide URLs |
+| `--allow-domains a,b` | —                | Keep only outbound links on these domains (subdomains ok) |
+| `--require-price`   | off                | Drop pins with no real price — i.e. links **and** prices  |
+| `--block-listicles` / `--keep-listicles` | off | Drop / keep blog & gift-guide URLs                |
 
 Quality filter drops pins with no image, no outbound link, off-Pinterest social
 domains (`facebook.com`, …), and out-of-stock/stale products; dedup is by pin id
 **and** image signature. Diversity comes from facet-tagged seeds + per-board /
 per-merchant caps.
+
+## Real retailer products (Sephora, Urban Outfitters, …) — end to end
+
+To pull only **actual product pages with links and prices** from trusted stores
+(Sephora, Ulta, Urban Outfitters, Anthropologie, Nordstrom, West Elm, Etsy, … —
+see `RETAILER_DOMAINS` in `pinterest-scrape.mjs`) and load them into BOTH the
+vector index (powers visual search) and the feed DB:
+
+```bash
+set -a; source ../../.env; set +a    # AWS creds + MEDIA_BUCKET + ADMIN_API_SECRET
+
+# 1. Validate: tiny dry run -> ./pins.retailers.json (no AWS; prints a sample +
+#    a "with real price" ratio so you can confirm links + prices came through)
+npm run scrape:retailers:dry
+
+# 2. Crawl real products + upload their images to the media bucket. Writes a
+#    SEPARATE pins.retailers.json, so your existing pins.manifest.json is untouched.
+node pinterest-scrape.mjs --target 3000 --retailers --require-price \
+  --out pins.retailers.json --state .scrape-retailers.state.json \
+  --bucket "$MEDIA_BUCKET" --skip-existing
+
+# 3. Embed images -> S3 Vectors (UPSERTS — adds to the index, never clobbers it)
+node embed.mjs --manifest pins.retailers.json
+
+# 4. Ingest -> DynamoDB posts (the feed) via the admin-only /seed endpoint
+node ingest-pins.mjs --manifest pins.retailers.json --dry-run   # preview items
+node ingest-pins.mjs --manifest pins.retailers.json             # POST (needs ADMIN_API_SECRET)
+```
+
+`--retailers` narrows the crawl to the allowlist and drops gift-guide/blog URLs;
+`--require-price` keeps only pins Pinterest exposes a real price for. Widen the
+net with `--allow-domains store1.com,store2.com`, or relax with `--keep-listicles`
+/ by dropping `--require-price` if a run comes back too sparse.
 
 ---
 

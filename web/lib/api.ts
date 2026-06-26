@@ -5,6 +5,7 @@ import type { Post } from "@/lib/social";
 import { SEED_PINS } from "@/lib/seed-pins";
 import { ADMIN_BYPASS } from "@/lib/admin";
 import { getOrCreateAnonId } from "@/lib/anon";
+import { hiResImage } from "@/lib/images";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const isApiConfigured = () => API_BASE.length > 0;
@@ -102,7 +103,7 @@ export function mapApiPost(api: ApiPost): Post {
       price: Number(p.price) || 0,
       grad: asGrad(p.grad),
       emoji: p.emoji ?? "🎁",
-      image: p.image ?? null,
+      image: hiResImage(p.image) || null,
     },
     caption: api.caption ?? "",
     likes: Number(api.likes) || 0,
@@ -252,6 +253,13 @@ export type VectorItem = {
   name?: string;
   source?: string;
   reason?: string;
+  // Real shoppable fields returned by vecToItem (infra/src/handler.mjs): the
+  // outbound retailer link, price, and merchant — used to make results buyable.
+  url?: string;
+  productUrl?: string | null;
+  price?: number;
+  merchant?: string;
+  domain?: string;
   _score?: number | null;
   _distance?: number | null;
 };
@@ -672,12 +680,23 @@ export type MaxiAgentProduct = {
   brand: string | null;
   image: string | null;
   category: string | null;
+  // Optional Alexa-style commerce metadata (present on find_deals results).
+  listPrice?: number;
+  discountPct?: number;
+  rating?: number;
+  reviews?: number;
+  boughtPastMonth?: string;
+  delivery?: string;
+  onDeal?: boolean;
 };
 export type MaxiAction = { type: string; postIds?: string[] };
+// One surfaced "layer" of the agent's tool-use loop (e.g. "Scanned your past orders").
+export type MaxiStep = { tool: string; label: string; detail?: string };
 export type MaxiAgentReply = {
   say: string;
   pins: MaxiAgentProduct[];
   actions: MaxiAction[];
+  steps: MaxiStep[];
   source: string;
 };
 
@@ -709,6 +728,7 @@ export async function askMaxi(input: {
       say: data.say,
       pins: Array.isArray(data.pins) ? data.pins : [],
       actions: Array.isArray(data.actions) ? data.actions : [],
+      steps: Array.isArray(data.steps) ? data.steps : [],
       source: typeof data.source === "string" ? data.source : "agent",
     };
   } catch {
