@@ -19,9 +19,11 @@ import {
   contributeToPool,
   fetchPoolMessages,
   postPoolMessage,
+  postMaxiMessage,
 } from "@/lib/pools";
+import { USERS } from "@/lib/social";
 import { buildPoolInviteUrl, type PoolInviteSnapshot } from "@/lib/invite";
-import { ShareSheet } from "@/components/app/share-sheet";
+import { InvitePeopleSheet } from "@/components/app/invite-people-sheet";
 import { PaymentMethodSheet, type PaymentMethod } from "@/components/app/payment-method-sheet";
 import { PaymentConfirmDialog } from "@/components/app/payment-confirm-dialog";
 
@@ -93,6 +95,23 @@ export default function PoolDetailPage() {
     [myName]
   );
 
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invitedIds, setInvitedIds] = useState<string[]>([]);
+
+  // Inviting a friend has Maxi announce it in the group chat (the chat poll picks
+  // it up within seconds), delivering on "Maxi auto-messages the people you invite".
+  const handleInviteFriend = useCallback(
+    async (friendUserId: string) => {
+      setInvitedIds((prev) => (prev.includes(friendUserId) ? prev : [...prev, friendUserId]));
+      const firstName = USERS[friendUserId]?.name?.split(" ")[0] ?? "a friend";
+      await postMaxiMessage(
+        poolId,
+        `🎁 ${myName} invited ${firstName} to chip in — welcome aboard, ${firstName}!`
+      );
+    },
+    [poolId, myName]
+  );
+
   if (loading) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center text-sm text-ink-faint">
@@ -124,6 +143,8 @@ export default function PoolDetailPage() {
   const { pool, members, contributions, messages } = data;
   const pct = pool.goal ? Math.min(100, Math.round((pool.raised / pool.goal) * 100)) : 0;
   const funded = pool.raised >= pool.goal;
+  // "maxi" is the chat bot, never a real member — keep it out of the roster + count.
+  const humanMembers = members.filter((m) => m.userId !== "maxi");
 
   const snapshot: PoolInviteSnapshot = {
     id: pool.poolId,
@@ -192,7 +213,7 @@ export default function PoolDetailPage() {
               ${pool.raised} <span className="font-medium text-ink-faint">of ${pool.goal}</span>
             </span>
             <span className="text-ink-soft">
-              {pool.memberCount} in · {pct}%
+              {humanMembers.length} in · {pct}%
             </span>
           </div>
 
@@ -204,14 +225,12 @@ export default function PoolDetailPage() {
               funded={funded}
               onContributed={handleContributed}
             />
-            <ShareSheet
-              url={inviteUrl}
-              text={`Chip in with me for "${pool.title}" on Giftmaxxing`}
-              subject={`${pool.organizerName || myName} invited you to chip in`}
-              recipientName={pool.title}
-              triggerLabel="Share to chip in"
-              triggerClassName="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-5 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
-            />
+            <button
+              onClick={() => setInviteOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-5 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
+            >
+              <Icons.share size={16} /> Invite &amp; share
+            </button>
           </div>
           <p className="mt-3 text-[11px] text-ink-faint">
             🧪 Demo Mode — Giftmaxxing coordinates the gift but never holds money or splits the
@@ -231,7 +250,7 @@ export default function PoolDetailPage() {
             <Icons.users size={18} /> In this pool
           </h2>
           <ul className="mt-3 space-y-2.5">
-            {members.map((m) => (
+            {humanMembers.map((m) => (
               <li key={m.userId} className="flex items-center gap-2.5">
                 <span
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-white"
@@ -279,6 +298,16 @@ export default function PoolDetailPage() {
         initialMessages={messages}
         myUserId={myUserId}
         myName={myName}
+      />
+
+      <InvitePeopleSheet
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        url={inviteUrl}
+        poolTitle={pool.title}
+        invited={invitedIds}
+        contributorIds={humanMembers.map((m) => m.userId)}
+        onInviteFriend={handleInviteFriend}
       />
     </div>
   );

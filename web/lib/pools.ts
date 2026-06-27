@@ -212,3 +212,17 @@ export async function postPoolMessage(
     return null;
   }
 }
+
+// Reserved author id for messages authored by Maxi (the AI gift concierge). The
+// backend treats this id as a bot, so a Maxi message never makes Maxi a member
+// or counts toward the pool size.
+export const MAXI_USER_ID = "maxi";
+
+// Post a message authored by Maxi into a pool's group chat — used to welcome the
+// group and to announce invites ("Maxi auto-messages the people you invite").
+export async function postMaxiMessage(
+  poolId: string,
+  text: string
+): Promise<PoolMessage | null> {
+  return postPoolMessage(poolId, MAXI_USER_ID, "Maxi", text);
+}

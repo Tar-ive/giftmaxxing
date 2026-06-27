@@ -30,6 +30,7 @@ export default function PoolsPage() {
   const [pools, setPools] = useState<Pool[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const configured = isApiConfigured();
 
   const refresh = useCallback(async () => {
@@ -57,12 +58,20 @@ export default function PoolsPage() {
 
   const handleCreate = async (input: NewPoolInput) => {
     const uid = getMyUserId();
-    if (!uid) return;
+    if (!uid) {
+      setError("Please sign in to start a group gift.");
+      return;
+    }
+    setError(null);
     const created = await createPool(uid, myName, input);
-    setCreating(false);
     if (created) {
+      setCreating(false);
       setPools((p) => [created, ...p]);
       router.push(`/feed/pools/${created.poolId}`);
+    } else {
+      // The create failed even after apiFetch's throttle retries — keep the form
+      // open with the user's input and tell them, instead of silently no-op'ing.
+      setError("Couldn't save your group gift just now — the server was busy. Please try again.");
     }
   };
 
@@ -84,6 +93,13 @@ export default function PoolsPage() {
           {creating ? "Close" : "Start a pool"}
         </button>
       </header>
+
+      {error && (
+        <div className="mb-4 flex items-start gap-2 rounded-2xl border border-coral/40 bg-coral-soft/60 px-4 py-3 text-sm text-coral-ink">
+          <span aria-hidden className="mt-0.5 shrink-0">⚠️</span>
+          <span>{error}</span>
+        </div>
+      )}
 
       {creating && <CreatePool onCreate={handleCreate} />}
 

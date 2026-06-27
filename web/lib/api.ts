@@ -34,12 +34,23 @@ async function authHeaders(): Promise<Record<string, string>> {
 
 // fetch() wrapper that targets the API and attaches auth headers. ALL API calls
 // go through this so a single place controls authentication.
+//
+// Resilience: the dev AWS account's Lambda concurrency is capped low, so API
+// Gateway intermittently returns 503/429 under even light load. Those are
+// pre-invocation throttles (API Gateway rejected the request before the Lambda
+// ran), so the request had no side effect and is safe to retry — including
+// writes like creating a pool. We retry a few times with linear backoff so user
+// actions don't fail silently while a quota increase is pending.
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const auth = await authHeaders();
-  return fetch(API_BASE + path, {
-    ...init,
-    headers: { ...(init.headers as Record<string, string> | undefined), ...auth },
-  });
+  const headers = { ...(init.headers as Record<string, string> | undefined), ...auth };
+  const url = API_BASE + path;
+  let res = await fetch(url, { ...init, headers });
+  for (let attempt = 1; attempt <= 3 && (res.status === 503 || res.status === 429); attempt++) {
+    await new Promise((r) => setTimeout(r, 350 * attempt));
+    res = await fetch(url, { ...init, headers });
+  }
+  return res;
 }
 
 const GRADS: Grad[] = ["peach", "rose", "butter", "lilac", "sky", "sage", "coral"];

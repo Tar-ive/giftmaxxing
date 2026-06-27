@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { USERS, GROUP_CHATS, type ChatMessage, type GroupChat } from "@/lib/social";
+import { GRADIENTS } from "@/lib/data";
 import { Avatar, Icons } from "@/components/ui";
+import { useMyPools } from "@/lib/use-pools";
 
 const STORAGE_KEY = "giftmaxxing_messages";
 
@@ -43,6 +46,7 @@ function memberNames(chat: GroupChat): string {
 }
 
 export default function MessagesPage() {
+  const { pools } = useMyPools();
   const [chats, setChats] = useState<GroupChat[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -90,24 +94,58 @@ export default function MessagesPage() {
   }, [draft, activeId]);
 
   // Conversation list view
+  const total = pools.length + chats.length;
   const ConversationList = (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-line px-4 py-4">
         <h1 className="font-display text-xl font-extrabold text-ink">Messages</h1>
         <span className="text-xs font-semibold text-ink-faint">
-          {chats.length} conversation{chats.length !== 1 ? "s" : ""}
+          {total} conversation{total !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {chats.length === 0 ? (
+      {total === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
           <span className="text-5xl">✉️</span>
           <p className="text-sm text-ink-faint">
             No conversations yet. Start a group gift to message friends!
           </p>
+          <Link
+            href="/feed/pools"
+            className="mt-1 rounded-full bg-coral px-5 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
+          >
+            Start a group gift
+          </Link>
         </div>
       ) : (
-        <div className="flex-1 divide-y divide-line overflow-y-auto">
+        <div className="flex-1 overflow-y-auto">
+          {/* Real backend group-gift pools — each opens its live group chat. */}
+          {pools.length > 0 && (
+            <div className="divide-y divide-line border-b border-line">
+              {pools.map((p) => (
+                <Link
+                  key={p.poolId}
+                  href={`/feed/pools/${p.poolId}`}
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-ink/5"
+                >
+                  <span
+                    className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-2xl"
+                    style={{ background: GRADIENTS[p.grad] }}
+                  >
+                    {p.emoji}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-ink">{p.title}</p>
+                    <p className="truncate text-xs text-ink-soft">
+                      Group gift · {p.memberCount} in · ${p.raised} of ${p.goal}
+                    </p>
+                  </div>
+                  <Icons.message size={18} className="shrink-0 text-ink-faint" />
+                </Link>
+              ))}
+            </div>
+          )}
+          <div className="divide-y divide-line">
           {chats.map((chat) => {
             const last = lastMessage(chat);
             const u = USERS[chat.forUser];
@@ -153,6 +191,7 @@ export default function MessagesPage() {
               </button>
             );
           })}
+          </div>
         </div>
       )}
     </div>

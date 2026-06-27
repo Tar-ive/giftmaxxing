@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { GRADIENTS } from "@/lib/data";
 import { USERS } from "@/lib/social";
 import { useCurrentUser } from "@/lib/identity";
 import { Icons, Avatar } from "@/components/ui";
 import { useStore } from "@/components/app/store";
+import { useMyPools } from "@/lib/use-pools";
 
 // ── Group Chat Tray (replaces stories) ──────────────────────────────────────
 
 export function StoriesTray() {
   const { groupChats, openChat } = useStore();
+  const { pools } = useMyPools();
   const me = useCurrentUser();
   // Pinned chats first, then the rest (excluding "new chat" placeholder which is always first)
   const sorted = [
@@ -27,6 +30,29 @@ export function StoriesTray() {
         </span>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {/* Real backend group-gift pools the user created or joined, first. */}
+        {pools.map((p) => (
+          <Link
+            key={p.poolId}
+            href={`/feed/pools/${p.poolId}`}
+            className="flex w-16 shrink-0 flex-col items-center gap-1.5"
+          >
+            <span className="grid place-items-center rounded-full bg-gradient-to-tr from-coral via-rose-2 to-butter-2 p-[2.5px]">
+              <span className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream bg-surface">
+                <span
+                  className="grid h-full w-full place-items-center rounded-full text-2xl"
+                  style={{ background: GRADIENTS[p.grad] }}
+                >
+                  {p.emoji}
+                </span>
+              </span>
+            </span>
+            <span className="max-w-16 truncate text-[11px] font-medium text-ink-soft">
+              {p.title}
+            </span>
+          </Link>
+        ))}
+
         {sorted.map((gc) => {
           const u = gc.forUser === "you" ? me : USERS[gc.forUser];
           if (!u) return null;
