@@ -484,7 +484,92 @@
         </div>
       </section>
 
-      <!-- ════════════════ SLIDE 8 — MARKET ════════════════ -->
+      <!-- ════════════════ SLIDE 8 — ARCHITECTURE ════════════════ -->
+      <section data-slide="architecture">
+        <div class="wrap">
+          <div class="eyebrow">Architecture</div>
+          <h1 class="display-sm mt-s">DynamoDB at the <span class="coral italic">core</span>.</h1>
+          <p class="lead-sm mt-s">
+            One serverless stack — <span class="strong">Lambda + API Gateway + DynamoDB</span> — scales from zero
+            to peak with no provisioned capacity. DynamoDB powers three layers of the product.
+          </p>
+
+          <div class="grid g3 mt-m">
+            <!-- Pillar 1 -->
+            <div class="card">
+              <div class="ico">🗄️</div>
+              <h3 class="card-h">Data backbone</h3>
+              <p>
+                <b style="color:var(--ink);">8 tables, pay-per-request.</b>
+                Posts, users, interactions, knowledge, events, connections, graph, and config &mdash;
+                each keyed for single-digit-ms access. GSIs (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byFeed</span>,
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byAuthor</span>,
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byScope</span>,
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byEntity</span>)
+                eliminate full-table scans &mdash; the feed paginates millions of items
+                via one GSI query.
+              </p>
+            </div>
+
+            <!-- Pillar 2 -->
+            <div class="card accent">
+              <div class="ico">🧠</div>
+              <h3 class="card-h">Maxi's memory</h3>
+              <p>
+                <b style="color:var(--ink);">13 AI tools, all DynamoDB-backed.</b>
+                Maxi reads the user's profile, upcoming events, connections, order history,
+                and network graph &mdash; then writes long-term memories and orders back.
+                The <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">graph</span>
+                table does triple duty: network viz, persistent AI memory
+                (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">MEM#</span>),
+                and purchase history
+                (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">ORDER#</span>)
+                &mdash; one single-table design.
+              </p>
+            </div>
+
+            <!-- Pillar 3 -->
+            <div class="card">
+              <div class="ico">🔐</div>
+              <h3 class="card-h">Auth &amp; identity sync</h3>
+              <p>
+                <b style="color:var(--ink);">Clerk JWT &rarr; Lambda &rarr; DynamoDB.</b>
+                On sign-in, the <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">users</span>
+                table upserts identity without clobbering profile data.
+                Cross-device restore is one GetItem. Anonymous swipe-challenge
+                connections re-key onto the real account via
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">/connections/claim</span>.
+              </p>
+            </div>
+          </div>
+
+          <!-- Architecture flow -->
+          <div class="card mt-m" style="padding:18px 26px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">Browser</span>
+            <span style="color:var(--ink-faint);">&rarr;</span>
+            <span class="pill"><span class="dot"></span>Clerk JWT</span>
+            <span style="color:var(--ink-faint);">&rarr;</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">API Gateway</span>
+            <span style="color:var(--ink-faint);">&rarr;</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">Lambda</span>
+            <span style="color:var(--ink-faint);">&rarr;</span>
+            <span class="pill"><span class="dot"></span>DynamoDB (8 tables)</span>
+            <span style="color:var(--ink-faint);">+</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">S3 Vectors</span>
+            <span style="color:var(--ink-faint);">+</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">Bedrock</span>
+          </div>
+
+          <div class="foot">
+            <span class="wordmark">Gift<span class="x">maxxing</span></span>
+            <span class="sep"></span>
+            <span>all tables PAY_PER_REQUEST &middot; PITR enabled &middot; $1k cost kill-switch</span>
+            <span class="right">Architecture &middot; 08</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ════════════════ SLIDE 9 — MARKET ════════════════ -->
       <section data-slide="market">
         <div class="wrap">
           <div class="eyebrow">Market</div>
@@ -519,12 +604,12 @@
             <span class="wordmark">Gift<span class="x">maxxing</span></span>
             <span class="sep"></span>
             <span>TAM/SAM illustrative — verify (e.g. NRF) before investor use</span>
-            <span class="right">Market · 08</span>
+            <span class="right">Market &middot; 09</span>
           </div>
         </div>
       </section>
 
-      <!-- ════════════════ SLIDE 9 — BUSINESS MODEL ════════════════ -->
+      <!-- ════════════════ SLIDE 10 — BUSINESS MODEL ════════════════ -->
       <section data-slide="model">
         <div class="wrap">
           <div class="eyebrow">Business model</div>
@@ -561,12 +646,12 @@
             <span class="wordmark">Gift<span class="x">maxxing</span></span>
             <span class="sep"></span>
             <span>commission rates vary by merchant — verify current terms</span>
-            <span class="right">Business model · 09</span>
+            <span class="right">Business model &middot; 10</span>
           </div>
         </div>
       </section>
 
-      <!-- ════════════════ SLIDE 10 — COMPETITION ════════════════ -->
+      <!-- ════════════════ SLIDE 11 — COMPETITION ════════════════ -->
       <section data-slide="competition">
         <div class="wrap">
           <div class="split">
@@ -622,7 +707,7 @@
           <div class="foot">
             <span class="wordmark">Gift<span class="x">maxxing</span></span>
             <span class="sep"></span>
-            <span class="right">Competition · 10</span>
+            <span class="right">Competition &middot; 11</span>
           </div>
         </div>
       </section>
