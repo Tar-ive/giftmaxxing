@@ -36,21 +36,66 @@ async function authHeaders(): Promise<Record<string, string>> {
 // go through this so a single place controls authentication.
 //
 // Resilience: the dev AWS account's Lambda concurrency is capped low, so API
-// Gateway intermittently returns 503/429 under even light load. Those are
-// pre-invocation throttles (API Gateway rejected the request before the Lambda
-// ran), so the request had no side effect and is safe to retry — including
-// writes like creating a pool. We retry a few times with linear backoff so user
-// actions don't fail silently while a quota increase is pending.
+// Gateway can return 503/429 — a pre-invocation throttle (rejected before the
+// Lambda ran, so the request had no side effect). We ONLY retry writes here:
+// retrying a throttled write is safe and avoids losing a user action (e.g.
+// creating a pool), with jittered backoff so many clients don't resend in
+// lockstep. GETs are NOT retried — they go through cachedGetJson() + the
+// CloudFront edge cache, so retrying them only amplifies the throttle storm
+// (that loop resending throttled feed reads WAS most of the storm).
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const auth = await authHeaders();
   const headers = { ...(init.headers as Record<string, string> | undefined), ...auth };
   const url = API_BASE + path;
   let res = await fetch(url, { ...init, headers });
-  for (let attempt = 1; attempt <= 3 && (res.status === 503 || res.status === 429); attempt++) {
-    await new Promise((r) => setTimeout(r, 350 * attempt));
+  const method = (init.method ?? "GET").toUpperCase();
+  const maxRetries = method === "GET" ? 0 : 2;
+  for (let attempt = 1; attempt <= maxRetries && (res.status === 503 || res.status === 429); attempt++) {
+    await new Promise((r) => setTimeout(r, 250 * attempt + Math.random() * 250));
     res = await fetch(url, { ...init, headers });
   }
   return res;
+}
+
+// ── Client-side cache + in-flight dedup for the public, cacheable GET routes ──
+// Repeated/identical feed reads (remounts, retries, multiple components) must not
+// each hit the origin while the Lambda concurrency is tiny. We cache successful
+// JSON in memory for a short TTL, share in-flight requests (N callers -> 1 fetch),
+// and serve the last-good response if a refresh fails. These routes are public,
+// so we issue a plain "simple" CORS GET (no Authorization header => no preflight),
+// which also maximizes the CloudFront edge-cache hit rate.
+const FEED_CACHE_TTL_MS = 45_000;
+type GetCacheEntry<T> = { at: number; data: T };
+const _getCache = new Map<string, GetCacheEntry<unknown>>();
+const _getInflight = new Map<string, Promise<unknown>>();
+
+async function cachedGetJson<T>(path: string, ttlMs = FEED_CACHE_TTL_MS): Promise<T> {
+  const now = Date.now();
+  const cached = _getCache.get(path) as GetCacheEntry<T> | undefined;
+  if (cached && now - cached.at < ttlMs) return cached.data;
+
+  const inflight = _getInflight.get(path) as Promise<T> | undefined;
+  if (inflight) return inflight;
+
+  const p = (async (): Promise<T> => {
+    try {
+      const res = await fetch(API_BASE + path, { headers: { accept: "application/json" } });
+      if (!res.ok) {
+        if (cached) return cached.data; // serve stale rather than fail
+        throw new Error(`${path} -> HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as T;
+      _getCache.set(path, { at: Date.now(), data });
+      return data;
+    } catch (err) {
+      if (cached) return cached.data; // network error -> serve stale
+      throw err;
+    } finally {
+      _getInflight.delete(path);
+    }
+  })();
+  _getInflight.set(path, p);
+  return p;
 }
 
 const GRADS: Grad[] = ["peach", "rose", "butter", "lilac", "sky", "sage", "coral"];
@@ -156,11 +201,9 @@ async function getPage(path: string, opts: FeedOpts): Promise<FeedPage> {
   if (opts.eventBoost) q.set("eventBoost", String(opts.eventBoost));
   if (opts.userId) q.set("userId", opts.userId);
 
-  const res = await apiFetch(`${path}?${q.toString()}`, {
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${path} -> HTTP ${res.status}`);
-  const data = (await res.json()) as { items?: ApiPost[]; cursor?: string | null };
+  const data = await cachedGetJson<{ items?: ApiPost[]; cursor?: string | null }>(
+    `${path}?${q.toString()}`
+  );
   return {
     posts: (data.items ?? []).map(mapApiPost),
     cursor: data.cursor ?? null,
@@ -283,13 +326,8 @@ export type VectorResponse = { items: VectorItem[]; source: string | null };
 export async function fetchPins(limit = 60): Promise<VectorItem[]> {
   if (isApiConfigured()) {
     try {
-      const res = await apiFetch(`/pins?limit=${limit}`, {
-        headers: { accept: "application/json" },
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { items?: VectorItem[] };
-        if (data.items && data.items.length) return data.items;
-      }
+      const data = await cachedGetJson<{ items?: VectorItem[] }>(`/pins?limit=${limit}`);
+      if (data.items && data.items.length) return data.items;
     } catch {
       // fall through to the bundled list
     }
@@ -312,11 +350,9 @@ export async function fetchVectorRecommendations(
   if (opts.sourceUser) q.set("sourceUser", opts.sourceUser);
   q.set("limit", String(opts.limit ?? 12));
 
-  const res = await apiFetch(`/recommendations?${q.toString()}`, {
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`/recommendations -> HTTP ${res.status}`);
-  const data = (await res.json()) as { items?: VectorItem[]; source?: string };
+  const data = await cachedGetJson<{ items?: VectorItem[]; source?: string }>(
+    `/recommendations?${q.toString()}`
+  );
   return { items: data.items ?? [], source: data.source ?? null };
 }
 
