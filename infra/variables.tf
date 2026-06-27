@@ -99,6 +99,12 @@ variable "maxi_monthly_budget_usd" {
   default     = 25
 }
 
+variable "maxi_daily_limit" {
+  description = "Per-user Maxi rate limit: max /maxi chats per user per UTC day. Blocks a single account from running away with cost/abuse without throttling normal use. Keyed by the verified Clerk sub (admin/ingest token bypasses). 0 = unlimited."
+  type        = number
+  default     = 50
+}
+
 # Maxi SHOPPING-tier (Haiku) prices. Fed to the handler as both the legacy
 # MAXI_PRICE_* and the MAXI_SHOPPING_PRICE_* envs.
 variable "maxi_price_in_per_1m" {
@@ -149,6 +155,18 @@ variable "alarm_api_concurrency" {
   description = "Real-time tripwire: trip the kill switch if API Lambda concurrency exceeds this. Keep it below api_reserved_concurrency."
   type        = number
   default     = 40
+}
+
+variable "monthly_budget_limit_usd" {
+  description = "Monthly AWS Budget limit (USD) AND the hard kill-switch trigger point: at this month-to-date spend the budget publishes to the cost-killswitch topic -> breaker PAUSES non-essential features (human resume only). The $10/$50/$100 actual + $500 forecasted heads-up alerts are unchanged. Raise this to scale up; e.g. 3000 for ~500 users."
+  type        = number
+  default     = 1000
+}
+
+variable "feed_shards" {
+  description = "Number of partitions for the byFeed GSI hot 'all' key. 1 (default) = single partition (current behavior, unchanged). >1 = the handler writes feedPk='all#<hash(postId) %% N>' and scatter-gathers reads across all shards, spreading the global feed past one GSI partition's ~3k RCU/s ceiling. After raising this, terraform apply THEN re-run `node ingest-pins.mjs` to re-key existing posts into shards."
+  type        = number
+  default     = 1
 }
 
 # ── API authentication (see handler.mjs auth gate) ───────────────────────────

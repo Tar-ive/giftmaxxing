@@ -80,7 +80,7 @@ locals {
 resource "aws_budgets_budget" "monthly" {
   name         = "${local.prefix}-monthly"
   budget_type  = "COST"
-  limit_amount = "1000"
+  limit_amount = tostring(var.monthly_budget_limit_usd)
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
@@ -111,13 +111,14 @@ resource "aws_budgets_budget" "monthly" {
     subscriber_email_addresses = var.cost_alert_emails
   }
 
-  # $1,000 -> trigger the auto-pause kill switch. AWS Budgets allows only ONE SNS
-  # subscriber per notification, so this points at the cost_killswitch topic
-  # (killswitch.tf -> breaker Lambda, which then re-publishes to cost_alerts for
-  # email/SMS) and also emails you directly when alert_email is set.
+  # The budget LIMIT (var.monthly_budget_limit_usd) -> trigger the auto-pause kill
+  # switch. AWS Budgets allows only ONE SNS subscriber per notification, so this
+  # points at the cost_killswitch topic (killswitch.tf -> breaker Lambda, which
+  # then re-publishes to cost_alerts for email/SMS) and also emails you directly
+  # when alert_email is set.
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 1000
+    threshold                  = var.monthly_budget_limit_usd
     threshold_type             = "ABSOLUTE_VALUE"
     notification_type          = "ACTUAL"
     subscriber_sns_topic_arns  = [aws_sns_topic.cost_killswitch.arn]

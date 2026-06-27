@@ -1,13 +1,19 @@
-# ── Phase 2: $1,000 auto-pause kill switch + real-time tripwires ──────────────
-# At $1,000 (budget) — or in MINUTES if a real-time CloudWatch alarm trips — the
-# breaker Lambda flips a DynamoDB feature flag to { paused: true }. The API
-# Lambda reads that flag (fail-open, cached) and 503s the cost-driving routes
-# (visual search, vector recs, /pins, Maxi later) while auth, feed/posts, and
-# data collection keep serving. Nothing auto-resumes: a human runs the resume
-# command (see `killswitch_resume_command` output) to turn features back on.
+# ── Tiered auto-pause kill switch + real-time tripwires (Phase 3) ─────────────
+# The breaker Lambda writes a degradation TIER onto a DynamoDB flag item:
+#   • A real-time CloudWatch alarm (Bedrock/Maxi/API/concurrency spike) -> ALARM
+#     publishes here -> breaker sets level="degraded" (shed the heaviest AI, run
+#     Maxi cheap+short). When the alarm CLEARS, its OK action publishes here too
+#     and the breaker AUTO-RESUMES (plus a 30-min read-side backstop) — no page.
+#   • The monthly budget LIMIT (var.monthly_budget_limit_usd) -> level="paused"
+#     (hard cap): kill non-essential AI; human resume only.
+# The API Lambda reads the tier (fail-open, cached); auth, feed/posts, and data
+# collection keep serving at every tier.
 
-# ── Feature-flag store ────────────────────────────────────────────────────────
-# One item: { key: "feature-flags", paused: bool, reason, pausedAt, resumedAt }.
+# ── Flag + counters store ─────────────────────────────────────────────────────
+# Items: { key:"feature-flags", level, paused (back-compat), reason, since,
+# autoResumeAt }; the Maxi monthly budget (key maxi-budget#YYYY-MM); and per-user
+# rate-limit counters (key maxi-rate#<day>#<principal>) that self-purge via the
+# expiresAt TTL below.
 resource "aws_dynamodb_table" "config" {
   name         = "${local.prefix}-config"
   billing_mode = "PAY_PER_REQUEST"
@@ -16,6 +22,11 @@ resource "aws_dynamodb_table" "config" {
   attribute {
     name = "key"
     type = "S"
+  }
+
+  ttl {
+    attribute_name = "expiresAt"
+    enabled        = true
   }
 
   point_in_time_recovery {
@@ -124,6 +135,9 @@ resource "aws_lambda_function" "breaker" {
       CONFIG_TABLE          = aws_dynamodb_table.config.name
       COST_ALERTS_TOPIC_ARN = aws_sns_topic.cost_alerts.arn
       RESUME_HINT           = "aws lambda invoke --function-name ${local.prefix}-breaker --payload '{\"action\":\"resume\"}' --cli-binary-format raw-in-base64-out /dev/stdout"
+      # Backstop window for an alarm-induced "degraded" tier (the alarm clearing
+      # resumes sooner). The API handler honors the same value on read.
+      DEGRADE_AUTORESUME_MIN = "30"
     }
   }
 
@@ -163,7 +177,9 @@ resource "aws_iam_role_policy" "api_config_read" {
 }
 
 # ── Real-time tripwires: trip the breaker in MINUTES (billing budgets lag) ─────
-# Each alarm publishes to the kill-switch topic -> breaker engages.
+# Each alarm's ALARM action publishes to the kill-switch topic -> breaker sets
+# "degraded"; its OK action publishes there too -> breaker auto-resumes. (These
+# real-time spikes DEGRADE, not hard-pause — only the monthly budget hard-pauses.)
 resource "aws_cloudwatch_metric_alarm" "bedrock_invocations" {
   alarm_name          = "${local.prefix}-bedrock-invocations-spike"
   alarm_description   = "Bedrock (Titan) invocations spiked in 5 min — possible runaway AI cost. Trips the cost kill switch."
@@ -177,6 +193,7 @@ resource "aws_cloudwatch_metric_alarm" "bedrock_invocations" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.cost_killswitch.arn]
+  ok_actions          = [aws_sns_topic.cost_killswitch.arn]
 }
 
 # ── Maxi model-router tripwires (POST /maxi) ──────────────────────────────────
@@ -212,6 +229,7 @@ resource "aws_cloudwatch_metric_alarm" "maxi_invocations" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.cost_killswitch.arn]
+  ok_actions          = [aws_sns_topic.cost_killswitch.arn]
 }
 
 resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
@@ -227,6 +245,7 @@ resource "aws_cloudwatch_metric_alarm" "api_request_spike" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.cost_killswitch.arn]
+  ok_actions          = [aws_sns_topic.cost_killswitch.arn]
 }
 
 resource "aws_cloudwatch_metric_alarm" "lambda_concurrency" {
@@ -242,4 +261,5 @@ resource "aws_cloudwatch_metric_alarm" "lambda_concurrency" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.cost_killswitch.arn]
+  ok_actions          = [aws_sns_topic.cost_killswitch.arn]
 }

@@ -30,9 +30,32 @@ const POSTS = process.env.POSTS_TABLE;
 const INTERACTIONS = process.env.INTERACTIONS_TABLE;
 const KNOWLEDGE = process.env.KNOWLEDGE_TABLE;
 const CONNECTIONS = process.env.CONNECTIONS_TABLE;
+const POOLS = process.env.POOLS_TABLE;
 const EVENTS = process.env.EVENTS_TABLE;
 const GRAPH = process.env.GRAPH_TABLE;
 const CONFIG = process.env.CONFIG_TABLE;
+
+// ── byFeed GSI sharding (Phase 4b) ───────────────────────────────────────────
+// The global feed rides one GSI partition key (feedPk="all"). Past a few thousand
+// RCU/s that single partition is a bottleneck, so FEED_SHARDS>1 spreads writes
+// across feedPk="all#0".."all#<N-1>" (deterministic by postId) and reads scatter-
+// gather across every shard. Default 1 = the original single-partition layout, so
+// turning this on is a no-op until posts are (re-)ingested into shards.
+const FEED_SHARDS = Math.max(1, Number(process.env.FEED_SHARDS || 1));
+
+// Deterministic shard for a post's feedPk on write (hashStr is hoisted below).
+function feedShardForPost(postId) {
+  return FEED_SHARDS <= 1 ? "all" : `all#${hashStr(postId) % FEED_SHARDS}`;
+}
+
+// Every feedPk a read must cover. Always includes the legacy "all" so rows written
+// before sharding was enabled are still served during/after the migration.
+function feedShardKeys() {
+  if (FEED_SHARDS <= 1) return ["all"];
+  const keys = ["all"];
+  for (let i = 0; i < FEED_SHARDS; i++) keys.push(`all#${i}`);
+  return keys;
+}
 
 // ── API authentication ───────────────────────────────────────────────────────
 // Protects the API so the live data store isn't world-readable/writable. A
@@ -100,25 +123,47 @@ async function authorizeRequest(event, method, path) {
   return { ok: false };
 }
 
-// ── Cost kill-switch feature flag (DynamoDB config table) ────────────────────
-// The breaker Lambda sets { paused: true } when spend trips $1,000 or a real-time
-// alarm fires. Read here with a short in-memory cache and FAIL-OPEN: any error /
-// missing flag means NOT paused, so a config glitch never takes the app down.
-// When paused, the non-essential (cost-driving) routes short-circuit while auth,
-// feed/posts, and data collection keep serving.
-let _flagCache = { at: 0, paused: false };
-async function isPaused() {
-  if (!CONFIG) return false;
+// ── Cost guard: tiered degradation flag (DynamoDB config table) ──────────────
+// The breaker Lambda writes a { level } onto the feature-flags item (Phase 3):
+//   • "active"   — everything on.
+//   • "degraded" — a real-time alarm tripped: shed the heaviest AI (visual search,
+//     vector recs, /pins) and run Maxi cheap+short (base model, fewer steps). Set
+//     by an ALARM transition; AUTO-RESUMES when the alarm clears (OK transition) or
+//     after the 30-min backstop below — no human, no 3 AM page.
+//   • "paused"   — the monthly budget LIMIT tripped (hard cost cap): kill all
+//     non-essential AI. Human resume only.
+// Read with a short in-memory cache and FAIL-OPEN: any error / missing flag means
+// "active", so a config glitch never takes the app down. Auth, feed/posts, and
+// data-collection keep serving at every level. Legacy { paused:true } items still
+// map to "paused" for back-compat.
+const DEGRADE_LEVELS = new Set(["active", "degraded", "paused"]);
+let _flagCache = { at: 0, level: "active" };
+async function getDegradeLevel() {
+  if (!CONFIG) return "active";
   const now = Date.now();
-  if (now - _flagCache.at < 30000) return _flagCache.paused;
+  if (now - _flagCache.at < 30000) return _flagCache.level;
   try {
     const out = await ddb.send(new GetCommand({ TableName: CONFIG, Key: { key: "feature-flags" } }));
-    _flagCache = { at: now, paused: out.Item?.paused === true };
+    const it = out.Item || {};
+    let level = DEGRADE_LEVELS.has(it.level) ? it.level : (it.paused === true ? "paused" : "active");
+    // 30-min auto-resume backstop: if a DEGRADED window's autoResumeAt has passed,
+    // self-heal to active on read even if the alarm-clear event was never delivered.
+    // (A hard "paused" carries no autoResumeAt, so it never auto-resumes.)
+    if (level === "degraded" && it.autoResumeAt && now >= Number(it.autoResumeAt)) {
+      level = "active";
+    }
+    _flagCache = { at: now, level };
   } catch (err) {
-    console.warn("isPaused read failed (fail-open):", err.message);
-    _flagCache = { at: now, paused: false };
+    console.warn("getDegradeLevel read failed (fail-open):", err.message);
+    _flagCache = { at: now, level: "active" };
   }
-  return _flagCache.paused;
+  return _flagCache.level;
+}
+// The expensive AI routes (Bedrock embeds, S3 Vectors) only run at full health;
+// "degraded" and "paused" both shed them. /maxi reads getDegradeLevel() directly
+// (it stays up, just cheaper, when degraded).
+async function aiEnabled() {
+  return (await getDegradeLevel()) === "active";
 }
 
 // S3 Vectors (the vector store powering similarity-based recommendations).
@@ -667,6 +712,8 @@ const MAXI_MAX_TOKENS = Number(process.env.MAXI_MAX_TOKENS || 768);
 const MAXI_INTERACTION_TOKEN_BUDGET = Number(process.env.MAXI_INTERACTION_TOKEN_BUDGET || 30000);
 const MAXI_MAX_STEPS = Number(process.env.MAXI_MAX_STEPS || 5);
 const MAXI_MONTHLY_BUDGET_USD = Number(process.env.MAXI_MONTHLY_BUDGET_USD || 25);
+// Per-user daily chat cap (abuse guard, not a usage cap). 0 = unlimited.
+const MAXI_DAILY_LIMIT = Number(process.env.MAXI_DAILY_LIMIT || 50);
 // Per-tier Bedrock prices (USD per 1M tokens) so the monthly $ budget stays
 // accurate even when one interaction spans both models. BASE defaults to Amazon
 // Nova Lite; SHOPPING falls back to the legacy MAXI_PRICE_* (Haiku) numbers.
@@ -722,6 +769,43 @@ async function recordMaxiUsage(inTok, outTok, costUsd) {
     );
   } catch (e) {
     console.warn("recordMaxiUsage failed:", e.message);
+  }
+}
+
+// ── Per-user Maxi rate limit (Phase 3) ───────────────────────────────────────
+// Abuse guard, not a usage cap: cap chats per principal per UTC day with an atomic
+// counter in the config table (key maxi-rate#<day>#<principal>). The principal is
+// the VERIFIED Clerk sub when auth is enforced, so it can't be spoofed via
+// body.userId. Rows carry a TTL (expiresAt) so they self-purge. FAIL-OPEN: a
+// counter error never blocks a real user.
+const _utcDay = () => new Date().toISOString().slice(0, 10);
+function _secondsUntilUtcMidnight() {
+  const now = Date.now();
+  const d = new Date(now);
+  const next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1);
+  return Math.max(1, Math.ceil((next - now) / 1000));
+}
+async function checkMaxiRateLimit(principal) {
+  if (!CONFIG || MAXI_DAILY_LIMIT <= 0 || !principal) return { ok: true };
+  const key = `maxi-rate#${_utcDay()}#${principal}`;
+  const expiresAt = Math.floor(Date.now() / 1000) + 2 * 86400; // self-purge after 2 days
+  try {
+    const out = await ddb.send(
+      new UpdateCommand({
+        TableName: CONFIG,
+        Key: { key },
+        UpdateExpression: "ADD #c :one SET expiresAt = if_not_exists(expiresAt, :ttl), updatedAt = :now",
+        ExpressionAttributeNames: { "#c": "count" },
+        ExpressionAttributeValues: { ":one": 1, ":ttl": expiresAt, ":now": Date.now() },
+        ReturnValues: "UPDATED_NEW",
+      })
+    );
+    const count = Number(out.Attributes?.count) || 0;
+    if (count > MAXI_DAILY_LIMIT) return { ok: false, count, retryAfterSec: _secondsUntilUtcMidnight() };
+    return { ok: true, count };
+  } catch (e) {
+    console.warn("checkMaxiRateLimit failed (fail-open):", e.message);
+    return { ok: true };
   }
 }
 
@@ -795,6 +879,108 @@ function maxiProduct(p) {
   };
 }
 
+// ── Maxi catalog cache (Phase 2) ──────────────────────────────────────────────
+// Maxi's find_gifts / find_deals / order_history tools used to FULL-SCAN the posts
+// table on EVERY chat turn — at 10K posts that burns seconds + thousands of RCUs
+// per message and only ever saw the first ~150-250 arbitrary items. Instead we
+// load a recency-ordered slice ONCE via the byFeed GSI and cache it in the warm
+// Lambda container, shared across all three tools and every turn. Falls back to a
+// bounded Scan only if the GSI is missing.
+const MAXI_CATALOG_TTL = Number(process.env.MAXI_CATALOG_TTL_MS || 300000); // 5 min
+const MAXI_CATALOG_SIZE = Number(process.env.MAXI_CATALOG_SIZE || 600);
+let _catalogCache = { at: 0, items: [] };
+const _categoryCache = new Map(); // category -> { at, items }
+
+// Newest-first page of the byFeed GSI, scatter-gathered across feed shards. Each
+// shard query is createdAt-sorted; we merge, de-dup, and take the newest `limit`.
+async function feedRecencyItems(limit) {
+  const keys = feedShardKeys();
+  const perShard = Math.ceil(limit / keys.length) + 25; // headroom for the merge
+  const pages = await Promise.all(
+    keys.map(async (f) => {
+      const items = [];
+      let ExclusiveStartKey;
+      do {
+        const out = await ddb.send(
+          new QueryCommand({
+            TableName: POSTS,
+            IndexName: "byFeed",
+            KeyConditionExpression: "feedPk = :f",
+            ExpressionAttributeValues: { ":f": f },
+            ScanIndexForward: false,
+            Limit: Math.min(perShard, 200),
+            ExclusiveStartKey,
+          })
+        );
+        items.push(...(out.Items ?? []));
+        ExclusiveStartKey = out.LastEvaluatedKey;
+      } while (ExclusiveStartKey && items.length < perShard);
+      return items;
+    })
+  );
+  const seen = new Set();
+  const dedup = [];
+  for (const p of pages.flat().sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))) {
+    if (p.postId && !seen.has(p.postId)) { seen.add(p.postId); dedup.push(p); }
+  }
+  return dedup.slice(0, limit);
+}
+
+// Shared recency slice of the catalog, cached in-container for MAXI_CATALOG_TTL.
+async function getCatalog() {
+  const now = Date.now();
+  if (now - _catalogCache.at < MAXI_CATALOG_TTL && _catalogCache.items.length) {
+    return _catalogCache.items;
+  }
+  let items = [];
+  try {
+    items = await feedRecencyItems(MAXI_CATALOG_SIZE);
+  } catch (e) {
+    console.warn("getCatalog byFeed query failed, falling back to scan:", e.message);
+  }
+  if (!items.length) {
+    try {
+      const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: MAXI_CATALOG_SIZE }));
+      items = out.Items ?? [];
+    } catch (e) {
+      console.warn("getCatalog scan fallback failed:", e.message);
+    }
+  }
+  if (items.length) _catalogCache = { at: now, items };
+  return _catalogCache.items;
+}
+
+// Deep, category-specific pool via the byCategory GSI (Phase 4a), cached per
+// category. Lets Maxi pull every product in a category instead of being limited
+// to whatever happens to fall in the recency window. Falls back to filtering the
+// cached recency slice if the GSI isn't deployed yet.
+async function getCatalogByCategory(category) {
+  const cat = String(category || "").toLowerCase().trim();
+  if (!cat) return [];
+  const now = Date.now();
+  const hit = _categoryCache.get(cat);
+  if (hit && now - hit.at < MAXI_CATALOG_TTL && hit.items.length) return hit.items;
+  let items = [];
+  try {
+    const out = await ddb.send(
+      new QueryCommand({
+        TableName: POSTS,
+        IndexName: "byCategory",
+        KeyConditionExpression: "category = :c",
+        ExpressionAttributeValues: { ":c": cat },
+        ScanIndexForward: false,
+        Limit: 200,
+      })
+    );
+    items = out.Items ?? [];
+  } catch (e) {
+    console.warn(`getCatalogByCategory(${cat}) failed, filtering cached catalog:`, e.message);
+    items = (await getCatalog()).filter((p) => String(catOf(p)).toLowerCase() === cat);
+  }
+  if (items.length) _categoryCache.set(cat, { at: now, items });
+  return items;
+}
+
 async function toolFindGifts({ budget, category, recipient, vibes, limit }) {
   const n = Math.min(Number(limit) || 6, 10);
   const opts = {
@@ -803,8 +989,9 @@ async function toolFindGifts({ budget, category, recipient, vibes, limit }) {
     category: category || undefined,
     budget: Number(budget) || undefined,
   };
-  const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 150 }));
-  let pool = out.Items ?? [];
+  // Category given -> deep category pool (byCategory GSI); else the recency cache.
+  let pool = opts.category ? await getCatalogByCategory(opts.category) : await getCatalog();
+  if (!pool.length) pool = await getCatalog();
   if (opts.budget) pool = pool.filter((p) => { const pr = p.price ?? p.product?.price; return (typeof pr === "number" && pr > 0 ? pr : 1e9) <= opts.budget; });
   const items = pool
     .map((p) => ({ p, s: scorePost(p, opts) }))
@@ -827,14 +1014,24 @@ async function toolGiftIdeas({ recipient }) {
   return { ideas, bundles };
 }
 
+// The KNOWLEDGE table is tiny (~16 recipient partitions) and has no GSI to list
+// every partition, so a Scan is the right primitive — but cache it so warm
+// containers don't re-scan on every Maxi turn.
+const RECIPIENTS_TTL = Number(process.env.RECIPIENTS_TTL_MS || 600000); // 10 min
+let _recipientsCache = { at: 0, items: [] };
 async function toolListRecipients() {
+  const now = Date.now();
+  if (now - _recipientsCache.at < RECIPIENTS_TTL && _recipientsCache.items.length) {
+    return { items: _recipientsCache.items };
+  }
   const out = await ddb.send(new ScanCommand({ TableName: KNOWLEDGE }));
   const items = (out.Items ?? [])
     .filter((r) => r.recipient !== "anyone" && r.recipient !== "self")
     .map((r) => ({ recipient: r.recipient, label: r.label || r.recipient, postCount: r.postCount ?? 0 }))
     .sort((a, b) => (b.postCount ?? 0) - (a.postCount ?? 0))
     .slice(0, 20);
-  return { items };
+  if (items.length) _recipientsCache = { at: now, items };
+  return { items: _recipientsCache.items };
 }
 
 async function toolGetProfile(userId) {
@@ -1054,8 +1251,7 @@ async function toolOrderHistory(userId) {
   let orders = await listOrders(userId, 25);
   let seeded = false;
   if (!orders.length) {
-    const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 200 }));
-    orders = synthStarterOrders(out.Items ?? []);
+    orders = synthStarterOrders(await getCatalog());
     seeded = true;
     if (userId) { for (const o of orders) { await saveOrder(userId, o.items, o.total).catch(() => {}); } }
   }
@@ -1102,11 +1298,23 @@ async function toolFindDeals({ categories, budget, limit }) {
   const cats = Array.isArray(categories) ? categories : parseList(categories);
   const catSet = new Set(cats.map((c) => String(c).toLowerCase()));
   const n = Math.min(Number(limit) || 8, 12);
-  const out = await ddb.send(new ScanCommand({ TableName: POSTS, Limit: 250 }));
-  let pool = (out.Items ?? []).filter((p) => priceOf(p) > 0);
+  // Categories given -> union of deep per-category pools (byCategory GSI); else
+  // the cached recency catalog. Both replace the old full-table scan.
+  let catalog;
+  if (catSet.size) {
+    const pools = await Promise.all([...catSet].map((c) => getCatalogByCategory(c)));
+    catalog = pools.flat();
+    if (!catalog.length) catalog = await getCatalog();
+  } else {
+    catalog = await getCatalog();
+  }
+  let pool = catalog.filter((p) => priceOf(p) > 0);
   if (catSet.size) pool = pool.filter((p) => catSet.has(String(catOf(p)).toLowerCase()));
   if (budget) pool = pool.filter((p) => priceOf(p) <= Number(budget));
-  if (!pool.length) pool = (out.Items ?? []).filter((p) => priceOf(p) > 0 && (!budget || priceOf(p) <= Number(budget)));
+  if (!pool.length) {
+    const fallback = await getCatalog();
+    pool = fallback.filter((p) => priceOf(p) > 0 && (!budget || priceOf(p) <= Number(budget)));
+  }
   const products = pool.map((p) => maxiDealProduct(p)).sort((a, b) => b.discountPct - a.discountPct).slice(0, n);
   const groupsMap = {};
   for (const pr of products) {
@@ -1357,6 +1565,114 @@ function buildMaxiMessages(incoming, userText) {
   return norm;
 }
 
+// ── Group gifts (pools) ──────────────────────────────────────────────────────
+// Backend-backed group-gift pools (POOLS table) so contributions + the group
+// chat sync across everyone in a pool. One DynamoDB partition per pool, keyed by
+// itemId:
+//   { poolId, itemId:"META", ...pool, raised, contribCount, memberCount }
+//   { poolId, itemId:"MEMBER#<userId>", memberId, name, joinedAt, role }
+//   { poolId, itemId:"CONTRIB#<ts>#<id>", userId, name, amount, at }
+//   { poolId, itemId:"MSG#<ts>#<id>", userId, name, text, at }
+// "MSG#" sorts AFTER every other prefix, so `sk > "MSG#<ts>"` returns only chat
+// messages newer than ts (used for incremental polling).
+const POOL_GRADS = new Set(["peach", "rose", "butter", "lilac", "sky", "sage", "coral"]);
+const poolGrad = (g) => (POOL_GRADS.has(g) ? g : "coral");
+
+// Shape a stored META row into the wire pool object the client expects.
+function poolFromMeta(m) {
+  if (!m) return null;
+  return {
+    poolId: m.poolId,
+    title: m.title,
+    occasion: m.occasion,
+    goal: Number(m.goal) || 0,
+    blurb: m.blurb ?? "",
+    emoji: m.emoji ?? "🎁",
+    grad: poolGrad(m.grad),
+    image: m.image ?? null,
+    recipient: m.recipient ?? "",
+    organizerId: m.organizerId,
+    organizerName: m.organizerName ?? "a friend",
+    raised: Number(m.raised) || 0,
+    contribCount: Number(m.contribCount) || 0,
+    memberCount: Number(m.memberCount) || 0,
+    deadline: m.deadline,
+    createdAt: m.createdAt,
+  };
+}
+
+// Add a MEMBER row if absent and bump META.memberCount only on first join.
+// Idempotent — a no-op when the user is already a member of the pool.
+async function ensurePoolMember(poolId, userId, name) {
+  if (!POOLS || !poolId || !userId) return;
+  try {
+    await ddb.send(
+      new PutCommand({
+        TableName: POOLS,
+        Item: {
+          poolId,
+          itemId: `MEMBER#${userId}`,
+          memberId: userId,
+          name: String(name || "Someone").slice(0, 80),
+          joinedAt: Date.now(),
+          role: "member",
+        },
+        ConditionExpression: "attribute_not_exists(itemId)",
+      })
+    );
+    await ddb.send(
+      new UpdateCommand({
+        TableName: POOLS,
+        Key: { poolId, itemId: "META" },
+        UpdateExpression: "ADD memberCount :one",
+        ExpressionAttributeValues: { ":one": 1 },
+      })
+    );
+  } catch (e) {
+    // Already a member → the conditional Put fails; that's the expected no-op.
+    if (e.name !== "ConditionalCheckFailedException") throw e;
+  }
+}
+
+// List the META rows for every pool a user belongs to (via the byMember GSI).
+// Parallel GetItem on the META rows (handful of pools per user) keeps it simple.
+async function listPoolsForMember(userId) {
+  if (!POOLS || !userId) return [];
+  const mem = await ddb.send(
+    new QueryCommand({
+      TableName: POOLS,
+      IndexName: "byMember",
+      KeyConditionExpression: "memberId = :u",
+      ExpressionAttributeValues: { ":u": userId },
+      ScanIndexForward: false,
+    })
+  );
+  const poolIds = [...new Set((mem.Items ?? []).map((m) => m.poolId).filter(Boolean))];
+  const metas = await Promise.all(
+    poolIds.map((poolId) =>
+      ddb
+        .send(new GetCommand({ TableName: POOLS, Key: { poolId, itemId: "META" } }))
+        .then((o) => o.Item)
+        .catch(() => null)
+    )
+  );
+  return metas
+    .map(poolFromMeta)
+    .filter(Boolean)
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+// Normalize a stored chat row into the wire message shape.
+function msgFromItem(it) {
+  return {
+    id: it.itemId,
+    userId: it.userId,
+    name: it.name,
+    text: it.text,
+    at: Number(it.at) || 0,
+  };
+}
+
 export const handler = async (event) => {
   const method = event.requestContext?.http?.method ?? "GET";
   const path = event.requestContext?.http?.path ?? "/";
@@ -1380,9 +1696,11 @@ export const handler = async (event) => {
 
   // ── Auth gate ────────────────────────────────────────────────────────────
   // Default-deny for protected routes when enforcement is on. Public catalog +
-  // the anonymous guest write stay open; /seed is admin-only.
+  // the anonymous guest write stay open; /seed is admin-only. The result is kept
+  // so downstream routes (e.g. /maxi rate limiting) can use the verified identity.
+  let auth = null;
   if (AUTH_ENFORCE && !isPublicRoute(method, path)) {
-    const auth = await authorizeRequest(event, method, path);
+    auth = await authorizeRequest(event, method, path);
     if (!auth.ok) {
       return json(401, {
         error: "unauthorized",
@@ -1430,10 +1748,66 @@ export const handler = async (event) => {
       // Per-user de-dup: skip anything this viewer has already seen/liked/saved.
       const exclude = await userExcludeSet(qs.userId);
 
+      // Sharded feed path (FEED_SHARDS > 1): the byFeed partition is split across
+      // "all#<n>", so scatter-gather a recency window across every shard (filters
+      // pushed down per shard), then rank + paginate by offset. Variety = a random
+      // offset on a fresh, unfiltered load. The single-partition path below runs
+      // unchanged when FEED_SHARDS == 1; on a sharded error we drop to the scan.
+      if (FEED_SHARDS > 1) {
+        try {
+          const filters = [];
+          const baseEav = {};
+          if (qs.recipient && qs.recipient !== "anyone") { filters.push("recipient = :r"); baseEav[":r"] = qs.recipient; }
+          if (qs.occasion && qs.occasion !== "any") { filters.push("occasion = :o"); baseEav[":o"] = qs.occasion; }
+          if (qs.category) { filters.push("category = :c"); baseEav[":c"] = String(qs.category).toLowerCase(); }
+          const keys = feedShardKeys();
+          const perShard = Math.ceil((filters.length ? 600 : 400) / keys.length);
+          const pages = await Promise.all(
+            keys.map((f) =>
+              ddb
+                .send(
+                  new QueryCommand({
+                    TableName: POSTS,
+                    IndexName: "byFeed",
+                    KeyConditionExpression: "feedPk = :f",
+                    ExpressionAttributeValues: { ...baseEav, ":f": f },
+                    FilterExpression: filters.length ? filters.join(" AND ") : undefined,
+                    ScanIndexForward: false,
+                    Limit: perShard,
+                  })
+                )
+                .then((o) => o.Items ?? [])
+            )
+          );
+          const seen = new Set();
+          const ranked = [];
+          for (const p of pages.flat()) {
+            if (!p.postId || seen.has(p.postId) || exclude.has(p.postId)) continue;
+            seen.add(p.postId);
+            const q = classifyPin({ title: p.caption ?? p.product?.name, domain: p.domain ?? p.merchant, link: p.url ?? p.productUrl, price: p.price ?? p.product?.price });
+            if (!q.feedEligible) continue;
+            ranked.push({ ...p, contentType: q.contentType, qualityScore: q.qualityScore, feedEligible: true, _score: scorePost(p, opts) + q.qualityScore * 0.4 });
+          }
+          ranked.sort((a, b) => b._score - a._score);
+          let offset = start?._offset ?? 0;
+          if (!start && !filters.length && qs.fresh !== "0" && ranked.length > limit) {
+            offset = Math.floor(Math.random() * Math.max(1, ranked.length - limit));
+          }
+          const page = ranked.slice(offset, offset + limit);
+          const nextOffset = offset + limit;
+          return json(200, { items: page, cursor: nextOffset < ranked.length ? encodeCursor({ _offset: nextOffset }) : null });
+        } catch (err) {
+          console.warn("sharded byFeed query failed, falling back to full scan:", err.message);
+        }
+      }
+
       // Preferred path: read a recency-ordered page from the byFeed GSI (PK
       // feedPk="all", SK createdAt) instead of scanning the whole table. Facets
       // are hard-filtered; the page is ranked by scorePost() + qualityScore.
       try {
+        // When sharded, the scatter-gather above already ran; bail to the scan
+        // fallback below rather than querying the (now-empty) legacy "all" key.
+        if (FEED_SHARDS > 1) throw new Error("sharded: use scan fallback");
         const eav = { ":f": "all" };
         const filters = [];
         if (qs.recipient && qs.recipient !== "anyone") { filters.push("recipient = :r"); eav[":r"] = qs.recipient; }
@@ -1566,7 +1940,7 @@ export const handler = async (event) => {
     // from S3 Vectors. The browser uses these keys as seed vectors for the
     // recommendation kNN (a pin's key == its postId in the posts table).
     if (method === "GET" && path === "/pins") {
-      if (!s3v || (await isPaused())) return json(200, { items: [] });
+      if (!s3v || !(await aiEnabled())) return json(200, { items: [] });
       const limit = Math.min(Number(qs.limit) || 60, 200);
       const out = await s3v.send(
         new ListVectorsCommand({
@@ -1584,7 +1958,7 @@ export const handler = async (event) => {
     // True "find gifts that look like this": embed the uploaded image with Titan
     // Multimodal, then kNN against the pin index. Returns post-shaped items.
     if (method === "POST" && path === "/visual-search") {
-      if (await isPaused()) return json(503, { error: "temporarily disabled (cost guard)" });
+      if (!(await aiEnabled())) return json(503, { error: "temporarily disabled (cost guard)" });
       if (!s3v) return json(503, { error: "vector store not configured" });
       const imageBase64 = body.imageBase64 || body.image;
       if (!imageBase64) return json(400, { error: "imageBase64 required" });
@@ -1679,7 +2053,7 @@ export const handler = async (event) => {
       // Seeds come from ?seedKeys=pin-a,pin-b or from the user's interactions.
       const seedKeys = parseList(qs.seedKeys);
       const seeds = seedKeys.length ? seedKeys : [...likedTargets];
-      if (s3v && seeds.length && !(await isPaused())) {
+      if (s3v && seeds.length && (await aiEnabled())) {
         try {
           const vitems = await vectorRecommend(seeds, { limit, sourceUser: qs.sourceUser });
           if (vitems && vitems.length) {
@@ -1721,12 +2095,19 @@ export const handler = async (event) => {
         Array.from({ length: Math.ceil(arr.length / 25) }, (_, i) =>
           arr.slice(i * 25, i * 25 + 25)
         );
-      // Posts must carry feedPk="all" + a numeric createdAt so they show up in
-      // the byFeed recency GSI the /feed endpoint pages through.
-      const prep = (name, Item) =>
-        name === POSTS
-          ? { ...Item, feedPk: "all", createdAt: Number(Item.createdAt) || Date.now() }
-          : Item;
+      // Posts must carry feedPk (the byFeed recency-GSI partition — a single "all"
+      // or, when FEED_SHARDS>1, a deterministic "all#<n>" shard) + a numeric
+      // createdAt. We also normalize `category` to a trimmed lowercase value so the
+      // byCategory GSI exact-match is reliable, and DROP it when empty so that
+      // (sparse) index skips uncategorized posts rather than choking on an empty key.
+      const prep = (name, Item) => {
+        if (name !== POSTS) return Item;
+        const out = { ...Item, feedPk: feedShardForPost(Item.postId), createdAt: Number(Item.createdAt) || Date.now() };
+        const cat = String(Item.category ?? "").toLowerCase().trim();
+        if (cat) out.category = cat;
+        else delete out.category;
+        return out;
+      };
       for (const table of [
         [USERS, body.users ?? []],
         [POSTS, body.posts ?? []],
@@ -1917,6 +2298,202 @@ export const handler = async (event) => {
       return json(200, { ok: true, claimed });
     }
 
+    // ── Group gifts (pools) ──────────────────────────────────────────────────
+    // POST /pools  { userId, name, pool:{ title, occasion, goal, blurb?, emoji?,
+    //   grad?, image?, recipient? } } — create a pool; the creator becomes the
+    // organizer + first member. Returns the created pool.
+    if (method === "POST" && path === "/pools") {
+      if (!POOLS) return json(503, { error: "pools table not configured" });
+      const userId = String(body.userId || auth?.sub || "").trim();
+      const name = (String(body.name || "").trim() || "Someone").slice(0, 80);
+      const p = body.pool ?? {};
+      if (!userId) return json(400, { error: "userId required" });
+      if (typeof p !== "object" || !String(p.title || "").trim()) {
+        return json(400, { error: "pool.title required" });
+      }
+      const poolId = `pool_${gid()}`;
+      const now = Date.now();
+      const meta = {
+        poolId,
+        itemId: "META",
+        title: String(p.title).trim().slice(0, 120),
+        occasion: String(p.occasion || "Gift").slice(0, 40),
+        goal: Math.max(10, Math.round(Number(p.goal) || 100)),
+        blurb: String(p.blurb || "").slice(0, 500),
+        emoji: String(p.emoji || "🎁").slice(0, 8),
+        grad: poolGrad(p.grad),
+        image: p.image ? String(p.image).slice(0, 600) : null,
+        recipient: String(p.recipient || "").slice(0, 80),
+        organizerId: userId,
+        organizerName: name,
+        raised: 0,
+        contribCount: 0,
+        memberCount: 1,
+        deadline: p.deadline ? String(p.deadline).slice(0, 40) : undefined,
+        createdAt: now,
+      };
+      await ddb.send(new PutCommand({ TableName: POOLS, Item: meta }));
+      await ddb.send(
+        new PutCommand({
+          TableName: POOLS,
+          Item: { poolId, itemId: `MEMBER#${userId}`, memberId: userId, name, joinedAt: now, role: "organizer" },
+        })
+      );
+      // Seed a Maxi welcome so the group chat opens warm and everyone (including
+      // invitees) sees the AI concierge is in the loop. "maxi" is a bot author —
+      // it never becomes a member (see the messages route), so memberCount stays
+      // accurate.
+      const welcomeAt = now + 1;
+      await ddb.send(
+        new PutCommand({
+          TableName: POOLS,
+          Item: {
+            poolId,
+            itemId: `MSG#${welcomeAt}#${gid()}`,
+            userId: "maxi",
+            name: "Maxi",
+            text: `👋 I'm Maxi, your gift concierge. ${name} started "${meta.title}" — chip in what you can, invite friends, and let's make it happen! 🎁`,
+            at: welcomeAt,
+          },
+        })
+      );
+      return json(200, { ok: true, pool: poolFromMeta(meta) });
+    }
+
+    // GET /pools?userId=  — every pool the user belongs to (organizer or member).
+    if (method === "GET" && path === "/pools") {
+      if (!POOLS) return json(200, { items: [] });
+      const userId = qs.userId;
+      if (!userId) return json(400, { error: "userId required" });
+      return json(200, { items: await listPoolsForMember(userId) });
+    }
+
+    // /pools/{poolId}              GET  → full pool (meta+members+contribs+chat)
+    // /pools/{poolId}/join         POST → become a member
+    // /pools/{poolId}/contribute   POST → chip in { amount }
+    // /pools/{poolId}/messages     GET/POST → the group chat
+    if (path.startsWith("/pools/")) {
+      if (!POOLS) return json(503, { error: "pools table not configured" });
+      const parts = path.split("/");
+      const poolId = decodeURIComponent(parts[2] || "");
+      const sub = parts[3] || "";
+      if (!poolId) return json(400, { error: "poolId required" });
+
+      // GET /pools/{poolId} — one Query over the whole pool partition.
+      if (method === "GET" && !sub) {
+        const out = await ddb.send(
+          new QueryCommand({
+            TableName: POOLS,
+            KeyConditionExpression: "poolId = :p",
+            ExpressionAttributeValues: { ":p": poolId },
+          })
+        );
+        const all = out.Items ?? [];
+        const metaItem = all.find((i) => i.itemId === "META");
+        if (!metaItem) return json(404, { error: "pool not found" });
+        const members = all
+          .filter((i) => typeof i.itemId === "string" && i.itemId.startsWith("MEMBER#"))
+          .map((m) => ({ userId: m.memberId, name: m.name, joinedAt: m.joinedAt, role: m.role }))
+          .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0));
+        const contributions = all
+          .filter((i) => typeof i.itemId === "string" && i.itemId.startsWith("CONTRIB#"))
+          .map((c) => ({ id: c.itemId, userId: c.userId, name: c.name, amount: Number(c.amount) || 0, at: Number(c.at) || 0 }))
+          .sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+        const messages = all
+          .filter((i) => typeof i.itemId === "string" && i.itemId.startsWith("MSG#"))
+          .map(msgFromItem)
+          .sort((a, b) => (a.at ?? 0) - (b.at ?? 0))
+          .slice(-300);
+        return json(200, { pool: poolFromMeta(metaItem), members, contributions, messages });
+      }
+
+      // POST /pools/{poolId}/join  { userId, name }
+      if (method === "POST" && sub === "join") {
+        const userId = String(body.userId || auth?.sub || "").trim();
+        const name = String(body.name || "").trim() || "Someone";
+        if (!userId) return json(400, { error: "userId required" });
+        const meta = await ddb.send(new GetCommand({ TableName: POOLS, Key: { poolId, itemId: "META" } }));
+        if (!meta.Item) return json(404, { error: "pool not found" });
+        await ensurePoolMember(poolId, userId, name);
+        return json(200, { ok: true, pool: poolFromMeta(meta.Item) });
+      }
+
+      // POST /pools/{poolId}/contribute  { userId, name, amount } — chip in. Adds
+      // a CONTRIB row, bumps the denormalized raised total, ensures membership.
+      if (method === "POST" && sub === "contribute") {
+        const userId = String(body.userId || auth?.sub || "").trim();
+        const name = (String(body.name || "").trim() || "Someone").slice(0, 80);
+        const amount = Math.round(Number(body.amount) || 0);
+        if (!userId) return json(400, { error: "userId required" });
+        if (!(amount > 0)) return json(400, { error: "amount must be > 0" });
+        const meta = await ddb.send(new GetCommand({ TableName: POOLS, Key: { poolId, itemId: "META" } }));
+        if (!meta.Item) return json(404, { error: "pool not found" });
+        await ensurePoolMember(poolId, userId, name);
+        const at = Date.now();
+        await ddb.send(
+          new PutCommand({
+            TableName: POOLS,
+            Item: { poolId, itemId: `CONTRIB#${at}#${gid()}`, userId, name, amount, at },
+          })
+        );
+        const upd = await ddb.send(
+          new UpdateCommand({
+            TableName: POOLS,
+            Key: { poolId, itemId: "META" },
+            UpdateExpression: "ADD raised :a, contribCount :one",
+            ExpressionAttributeValues: { ":a": amount, ":one": 1 },
+            ReturnValues: "UPDATED_NEW",
+          })
+        );
+        return json(200, { ok: true, raised: Number(upd.Attributes?.raised) || amount });
+      }
+
+      // GET /pools/{poolId}/messages?after=<ms>  — group chat, oldest-first.
+      // `after` (a ms timestamp) returns only newer messages for incremental polling.
+      if (method === "GET" && sub === "messages") {
+        const after = qs.after ? String(qs.after) : "";
+        const out = await ddb.send(
+          new QueryCommand(
+            after
+              ? {
+                  TableName: POOLS,
+                  KeyConditionExpression: "poolId = :p AND itemId > :after",
+                  ExpressionAttributeValues: { ":p": poolId, ":after": `MSG#${after}` },
+                  Limit: 300,
+                }
+              : {
+                  TableName: POOLS,
+                  KeyConditionExpression: "poolId = :p AND begins_with(itemId, :pfx)",
+                  ExpressionAttributeValues: { ":p": poolId, ":pfx": "MSG#" },
+                  Limit: 300,
+                }
+          )
+        );
+        const items = (out.Items ?? []).map(msgFromItem).sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+        return json(200, { items });
+      }
+
+      // POST /pools/{poolId}/messages  { userId, name, text } — post to the chat.
+      if (method === "POST" && sub === "messages") {
+        const userId = String(body.userId || auth?.sub || "").trim();
+        const name = (String(body.name || "").trim() || "Someone").slice(0, 80);
+        const text = String(body.text || "").trim();
+        if (!userId) return json(400, { error: "userId required" });
+        if (!text) return json(400, { error: "text required" });
+        const meta = await ddb.send(new GetCommand({ TableName: POOLS, Key: { poolId, itemId: "META" } }));
+        if (!meta.Item) return json(404, { error: "pool not found" });
+        // The "maxi" concierge is a bot author — it posts to the chat but never
+        // joins as a member or counts toward the pool size.
+        if (userId !== "maxi") await ensurePoolMember(poolId, userId, name);
+        const at = Date.now();
+        const item = { poolId, itemId: `MSG#${at}#${gid()}`, userId, name, text: text.slice(0, 1000), at };
+        await ddb.send(new PutCommand({ TableName: POOLS, Item: item }));
+        return json(200, { ok: true, message: msgFromItem(item) });
+      }
+
+      return json(404, { error: `no route for ${method} ${path}` });
+    }
+
     // ── Unified events (personal milestones + shared occasions/soft profiles) ──
     // GET /events?userId=&scope=  — a user's events, optionally filtered by scope.
     if (method === "GET" && path === "/events") {
@@ -2089,7 +2666,10 @@ export const handler = async (event) => {
     // gift concierge. Runs a bounded Bedrock Converse tool-use loop and returns
     // { say, pins, actions }. Falls back client-side if this 5xx's.
     if (method === "POST" && path === "/maxi") {
-      if (await isPaused()) return json(503, { error: "Maxi is napping (cost guard)" });
+      // Tiered cost guard: hard "paused" stops Maxi; "degraded" runs it cheap+short.
+      const level = await getDegradeLevel();
+      if (level === "paused") return json(503, { error: "Maxi is napping (cost guard)" });
+      const degraded = level === "degraded";
       // Per-MONTH Bedrock budget: hard stop once month-to-date Maxi spend is used up.
       if (MAXI_MONTHLY_BUDGET_USD > 0 && (await maxiSpentThisMonth()) >= MAXI_MONTHLY_BUDGET_USD) {
         return json(503, { error: "maxi_budget_exhausted" });
@@ -2098,6 +2678,24 @@ export const handler = async (event) => {
       const userText = typeof body.message === "string" ? body.message.trim() : "";
       const messages = buildMaxiMessages(body.messages, userText);
       if (!messages.length) return json(400, { error: "message required" });
+
+      // Per-user daily rate limit (abuse guard, not a usage cap). Admin/ingest
+      // token bypasses; identity is the verified Clerk sub when enforced, else the
+      // client userId, else the source IP.
+      const rlPrincipal = auth?.via === "admin"
+        ? null
+        : (auth?.sub || userId || event.requestContext?.http?.sourceIp || null);
+      if (rlPrincipal) {
+        const rl = await checkMaxiRateLimit(rlPrincipal);
+        if (!rl.ok) {
+          return json(429, {
+            error: "rate_limited",
+            scope: "maxi_daily",
+            limit: MAXI_DAILY_LIMIT,
+            retryAfterSec: rl.retryAfterSec,
+          });
+        }
+      }
 
       const memories = await recallMemories(userId, 8);
       const memBlock = memories.length
@@ -2117,14 +2715,16 @@ export const handler = async (event) => {
       const tctx = { userId, pins: [], actions: [], cartItems: [], steps: [] };
       // Model routing: cheap Amazon Nova by default; Claude Haiku once an agentic
       // shopping experience is triggered (intent now, or a cart/checkout tool below).
-      let isShopping = maxiIsShopping(userText, body);
+      // In DEGRADED mode we pin the cheap base model + cap the tool loop to shed cost.
+      let isShopping = !degraded && maxiIsShopping(userText, body);
       let modelId = isShopping ? MAXI_SHOPPING_MODEL_ID : MAXI_BASE_MODEL_ID;
+      const maxSteps = degraded ? Math.min(2, MAXI_MAX_STEPS) : MAXI_MAX_STEPS;
       let say = "";
       let usedIn = 0;
       let usedOut = 0;
       let usedCost = 0;
       try {
-        for (let step = 0; step < MAXI_MAX_STEPS; step++) {
+        for (let step = 0; step < maxSteps; step++) {
           const res = await bedrock.send(
             new ConverseCommand({
               modelId,
@@ -2151,7 +2751,7 @@ export const handler = async (event) => {
             // Agentic-shopping trigger: if the agent reaches for a cart/checkout
             // tool while still on the cheap base model, escalate the rest of the
             // loop (incl. the order-confirmation turn) to the shopping model.
-            if (!isShopping && toolUses.some((tu) => MAXI_SHOPPING_TOOLS.has(tu.name))) {
+            if (!degraded && !isShopping && toolUses.some((tu) => MAXI_SHOPPING_TOOLS.has(tu.name))) {
               isShopping = true;
               modelId = MAXI_SHOPPING_MODEL_ID;
             }

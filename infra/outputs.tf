@@ -62,11 +62,16 @@ output "breaker_function_name" {
 }
 
 output "killswitch_resume_command" {
-  description = "APPROVE + turn paused features back on after the kill switch engages."
+  description = "APPROVE + restore FULL service (clears either the degraded or paused tier)."
   value       = "aws lambda invoke --function-name ${aws_lambda_function.breaker.function_name} --payload '{\"action\":\"resume\"}' --cli-binary-format raw-in-base64-out /dev/stdout"
 }
 
 output "killswitch_engage_test_command" {
-  description = "Manually ENGAGE the kill switch to test it (pauses non-essential features)."
+  description = "Manually HARD-PAUSE to test the budget tier (kills non-essential AI; no auto-resume)."
   value       = "aws lambda invoke --function-name ${aws_lambda_function.breaker.function_name} --payload '{\"action\":\"engage\",\"reason\":\"manual test\"}' --cli-binary-format raw-in-base64-out /dev/stdout"
+}
+
+output "killswitch_degrade_test_command" {
+  description = "Manually DEGRADE to test the real-time tier (sheds heavy AI, runs Maxi cheap; auto-resumes in ~30 min)."
+  value       = "aws lambda invoke --function-name ${aws_lambda_function.breaker.function_name} --payload '{\"action\":\"degrade\",\"reason\":\"manual test\"}' --cli-binary-format raw-in-base64-out /dev/stdout"
 }

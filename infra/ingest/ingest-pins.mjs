@@ -94,7 +94,7 @@ function pinToPostItem(pin, i = 0) {
 
   return {
     postId: pin.id,
-    feedPk: "all", // recency-feed GSI partition (see infra byFeed index)
+    feedPk: "all", // overwritten by the /seed prep -> feedShardForPost() (sharding-aware); re-run this script after raising feed_shards to re-key. See infra byFeed index.
     author: `pinterest_${(pin.sourceUser || "unknown").toLowerCase()}`,
     createdAt,
     likes: typeof pin.ratingCount === "number" ? Math.min(9999, pin.ratingCount) : Math.floor(Math.random() * 50) + 5,

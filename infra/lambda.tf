@@ -34,6 +34,7 @@ resource "aws_lambda_function" "api" {
       INTERACTIONS_TABLE = aws_dynamodb_table.interactions.name
       KNOWLEDGE_TABLE    = aws_dynamodb_table.knowledge.name
       CONNECTIONS_TABLE  = aws_dynamodb_table.connections.name
+      POOLS_TABLE        = aws_dynamodb_table.pools.name
       EVENTS_TABLE       = aws_dynamodb_table.events.name
       GRAPH_TABLE        = aws_dynamodb_table.graph.name
       CONFIG_TABLE       = aws_dynamodb_table.config.name
@@ -44,8 +45,8 @@ resource "aws_lambda_function" "api" {
       AUTH_ENFORCE     = var.auth_enforce ? "1" : "0"
       ADMIN_API_SECRET = var.admin_api_secret
       CLERK_ISSUER     = var.clerk_issuer
-      VECTOR_BUCKET      = "${local.prefix}-vectors"
-      VECTOR_INDEX       = "pins"
+      VECTOR_BUCKET    = "${local.prefix}-vectors"
+      VECTOR_INDEX     = "pins"
       # Visual search: Titan Multimodal embedding model + vector dimensionality.
       BEDROCK_EMBED_MODEL_ID = "amazon.titan-embed-image-v1"
       VECTOR_DIM             = "1024"
@@ -66,6 +67,11 @@ resource "aws_lambda_function" "api" {
       MAXI_SHOPPING_PRICE_OUT_PER_1M = tostring(var.maxi_price_out_per_1m)
       MAXI_PRICE_IN_PER_1M           = tostring(var.maxi_price_in_per_1m)  # legacy alias
       MAXI_PRICE_OUT_PER_1M          = tostring(var.maxi_price_out_per_1m) # legacy alias
+      # Per-user Maxi rate limit (chats/user/UTC-day) — abuse guard, not a usage cap.
+      MAXI_DAILY_LIMIT = tostring(var.maxi_daily_limit)
+      # byFeed GSI sharding. 1 = single 'all' partition (unchanged). >1 spreads the
+      # global feed across feedPk='all#<n>' shards (write + scatter-gather reads).
+      FEED_SHARDS = tostring(var.feed_shards)
     }
   }
 

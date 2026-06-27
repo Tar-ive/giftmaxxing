@@ -16,8 +16,9 @@ resource "aws_dynamodb_table" "users" {
 
 # ── Posts ────────────────────────────────────────────────────────────────────
 # PK: postId. GSI byAuthor lists a user's finds for the profile grid; GSI byFeed
-# (PK feedPk="all", SK createdAt) is the recency-ordered index the /feed endpoint
-# pages through so it scales past a few hundred posts without a full-table scan.
+# (PK feedPk, SK createdAt) is the recency-ordered global-feed index the /feed
+# endpoint + Maxi's catalog cache page through (no full-table scan); GSI byCategory
+# (PK category, SK createdAt) gives Maxi a deep, recency-ordered pool per category.
 resource "aws_dynamodb_table" "posts" {
   name         = "${local.prefix}-posts"
   billing_mode = "PAY_PER_REQUEST"
@@ -35,11 +36,18 @@ resource "aws_dynamodb_table" "posts" {
     name = "createdAt"
     type = "N"
   }
-  # Constant partition key ("all") for the global feed index. Single hot
-  # partition is fine at this scale; shard into "all#<n>" + scatter-gather if the
-  # feed ever exceeds GSI partition throughput (~3k RCU/s).
+  # Partition key for the global feed index. Defaults to a single "all" partition;
+  # set var.feed_shards > 1 to spread writes across "all#<n>" + scatter-gather
+  # reads once the feed exceeds GSI partition throughput (~3k RCU/s). The key
+  # SCHEMA is unchanged by sharding — only the values written — so no GSI rebuild.
   attribute {
     name = "feedPk"
+    type = "S"
+  }
+  # Category partition key for the byCategory GSI (sparse: only posts that carry a
+  # `category` are indexed). Powers Maxi's per-category find_gifts / find_deals.
+  attribute {
+    name = "category"
     type = "S"
   }
 
@@ -53,6 +61,13 @@ resource "aws_dynamodb_table" "posts" {
   global_secondary_index {
     name            = "byFeed"
     hash_key        = "feedPk"
+    range_key       = "createdAt"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "byCategory"
+    hash_key        = "category"
     range_key       = "createdAt"
     projection_type = "ALL"
   }
@@ -197,6 +212,53 @@ resource "aws_dynamodb_table" "connections" {
   attribute {
     name = "connectionId"
     type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
+
+# ── Pools (group gifts) ───────────────────────────────────────────────────────
+# Backend-backed group-gift pools so contributions + the group chat sync across
+# everyone in the pool (the old localStorage pools were per-device only).
+# Single-table adjacency keyed by the pool:
+#   pk = poolId
+#   sk = "META"                    → the pool record (title/goal/raised/organizer…)
+#        "MEMBER#<userId>"         → a member (memberId, name, joinedAt, role)
+#        "CONTRIB#<ts>#<id>"       → a contribution (userId, name, amount, at)
+#        "MSG#<ts>#<id>"           → a group-chat message (userId, name, text, at)
+# So one Query(pk=poolId) returns the whole pool; a begins_with(sk,"MSG#") query
+# pages just the chat. GSI byMember (sparse: only MEMBER rows carry memberId)
+# lists every pool a given user belongs to for the "my group gifts" list.
+resource "aws_dynamodb_table" "pools" {
+  name         = "${local.prefix}-pools"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "poolId"
+  range_key    = "itemId"
+
+  attribute {
+    name = "poolId"
+    type = "S"
+  }
+  attribute {
+    name = "itemId"
+    type = "S"
+  }
+  attribute {
+    name = "memberId"
+    type = "S"
+  }
+  attribute {
+    name = "joinedAt"
+    type = "N"
+  }
+
+  global_secondary_index {
+    name            = "byMember"
+    hash_key        = "memberId"
+    range_key       = "joinedAt"
+    projection_type = "ALL"
   }
 
   point_in_time_recovery {
