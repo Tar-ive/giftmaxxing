@@ -486,84 +486,182 @@
 
       <!-- ════════════════ SLIDE 8 — ARCHITECTURE ════════════════ -->
       <section data-slide="architecture">
+        <style>
+          /* ── architecture slide styles ─────────────────────── */
+          .arch-diagram{display:flex;flex-direction:column;gap:14px;flex:1;justify-content:center;}
+          .arch-row{display:flex;align-items:center;justify-content:center;gap:0;}
+          .arch-arrow{width:40px;display:flex;align-items:center;justify-content:center;flex:none;}
+          .arch-arrow svg{width:28px;height:16px;}
+          .arch-arrow-down{height:28px;display:flex;align-items:center;justify-content:center;}
+          .arch-arrow-down svg{width:16px;height:22px;}
+          .arch-box{
+            border-radius:14px;padding:10px 16px;font-family:'JetBrains Mono',monospace;
+            font-size:13px;font-weight:600;text-align:center;display:flex;flex-direction:column;
+            align-items:center;gap:4px;min-width:100px;position:relative;
+          }
+          .arch-box .arch-emoji{font-size:22px;line-height:1;}
+          .arch-box .arch-label{line-height:1.2;}
+          .arch-box .arch-sub{font-family:'Hanken Grotesk',sans-serif;font-size:11px;font-weight:500;opacity:0.7;line-height:1.15;}
+          .b-browser{background:#f0eae3;border:1px solid var(--line);color:var(--ink);}
+          .b-clerk{background:linear-gradient(135deg,#e8d5ff,#d0b8ff);border:1px solid #c4a6f5;color:#3d1f6e;}
+          .b-apigw{background:linear-gradient(135deg,#d4ecff,#b0d8ff);border:1px solid #8ec4f4;color:#1a456e;}
+          .b-lambda{background:linear-gradient(135deg,#ffe3c2,#ffcf99);border:1px solid #f0b878;color:#6e3a0a;}
+          .b-dynamo{background:linear-gradient(135deg,#c2e6ff,#78bef5);border:1.5px solid #4a9de0;color:#0a3a6e;box-shadow:0 6px 24px rgba(74,157,224,0.25);}
+          .b-s3v{background:linear-gradient(135deg,#d5f0d0,#a8dca0);border:1px solid #82c47a;color:#1a4e18;}
+          .b-bedrock{background:linear-gradient(135deg,#ffe0d4,#ffbfa8);border:1px solid #f0a080;color:#6e2a0a;}
+          .b-config{background:linear-gradient(135deg,#fff3d0,#ffe8a0);border:1px solid #e0c870;color:#5e4a10;}
+
+          /* table pills inside dynamo */
+          .tbl-grid{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:4px;}
+          .tbl-pill{
+            background:rgba(255,255,255,0.55);border-radius:6px;padding:2px 7px;
+            font-size:10px;font-weight:700;color:#0a3a6e;letter-spacing:0.02em;
+          }
+
+          /* pillar labels row */
+          .arch-pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+          .arch-pillar{
+            background:var(--surface);border:1px solid var(--line);border-radius:16px;
+            padding:16px 18px;box-shadow:var(--shadow-sm);display:flex;gap:12px;align-items:flex-start;
+          }
+          .arch-pillar.accent-border{border-color:rgba(251,111,82,0.5);box-shadow:0 8px 28px rgba(251,111,82,0.12);}
+          .arch-pillar .p-ico{font-size:26px;flex:none;line-height:1;}
+          .arch-pillar .p-body h3{font-size:20px;line-height:1.1;margin:0;}
+          .arch-pillar .p-body p{font-size:13px;color:var(--ink-soft);line-height:1.35;margin-top:4px;}
+
+          /* connector lines from lambda to data stores */
+          .arch-data-row{display:flex;align-items:flex-start;justify-content:center;gap:18px;}
+          .arch-data-col{display:flex;flex-direction:column;align-items:center;gap:4px;}
+        </style>
+
         <div class="wrap">
-          <div class="eyebrow">Architecture</div>
-          <h1 class="display-sm mt-s">DynamoDB at the <span class="coral italic">core</span>.</h1>
-          <p class="lead-sm mt-s">
-            One serverless stack — <span class="strong">Lambda + API Gateway + DynamoDB</span> — scales from zero
-            to peak with no provisioned capacity. DynamoDB powers three layers of the product.
-          </p>
-
-          <div class="grid g3 mt-m">
-            <!-- Pillar 1 -->
-            <div class="card">
-              <div class="ico">🗄️</div>
-              <h3 class="card-h">Data backbone</h3>
-              <p>
-                <b style="color:var(--ink);">8 tables, pay-per-request.</b>
-                Posts, users, interactions, knowledge, events, connections, graph, and config &mdash;
-                each keyed for single-digit-ms access. GSIs (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byFeed</span>,
-                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byAuthor</span>,
-                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byScope</span>,
-                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">byEntity</span>)
-                eliminate full-table scans &mdash; the feed paginates millions of items
-                via one GSI query.
-              </p>
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <div style="flex:1;">
+              <div class="eyebrow">Architecture</div>
+              <h1 class="display-sm mt-s">DynamoDB at the <span class="coral italic">core</span>.</h1>
             </div>
-
-            <!-- Pillar 2 -->
-            <div class="card accent">
-              <div class="ico">🧠</div>
-              <h3 class="card-h">Maxi's memory</h3>
-              <p>
-                <b style="color:var(--ink);">13 AI tools, all DynamoDB-backed.</b>
-                Maxi reads the user's profile, upcoming events, connections, order history,
-                and network graph &mdash; then writes long-term memories and orders back.
-                The <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">graph</span>
-                table does triple duty: network viz, persistent AI memory
-                (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">MEM#</span>),
-                and purchase history
-                (<span style="font-family:'JetBrains Mono',monospace;font-size:13px;">ORDER#</span>)
-                &mdash; one single-table design.
-              </p>
-            </div>
-
-            <!-- Pillar 3 -->
-            <div class="card">
-              <div class="ico">🔐</div>
-              <h3 class="card-h">Auth &amp; identity sync</h3>
-              <p>
-                <b style="color:var(--ink);">Clerk JWT &rarr; Lambda &rarr; DynamoDB.</b>
-                On sign-in, the <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">users</span>
-                table upserts identity without clobbering profile data.
-                Cross-device restore is one GetItem. Anonymous swipe-challenge
-                connections re-key onto the real account via
-                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">/connections/claim</span>.
-              </p>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;padding-top:28px;">
+              <span class="tag" style="font-size:13px;padding:5px 12px;">PAY_PER_REQUEST</span>
+              <span class="tag" style="font-size:13px;padding:5px 12px;">PITR backups</span>
+              <span class="tag" style="font-size:13px;padding:5px 12px;">$1k kill-switch</span>
             </div>
           </div>
 
-          <!-- Architecture flow -->
-          <div class="card mt-m" style="padding:18px 26px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:center;">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">Browser</span>
-            <span style="color:var(--ink-faint);">&rarr;</span>
-            <span class="pill"><span class="dot"></span>Clerk JWT</span>
-            <span style="color:var(--ink-faint);">&rarr;</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">API Gateway</span>
-            <span style="color:var(--ink-faint);">&rarr;</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">Lambda</span>
-            <span style="color:var(--ink-faint);">&rarr;</span>
-            <span class="pill"><span class="dot"></span>DynamoDB (8 tables)</span>
-            <span style="color:var(--ink-faint);">+</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">S3 Vectors</span>
-            <span style="color:var(--ink-faint);">+</span>
-            <span style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--ink);">Bedrock</span>
+          <!-- ── visual diagram ── -->
+          <div class="arch-diagram">
+            <!-- Row 1: Browser → Clerk → API Gateway → Lambda -->
+            <div class="arch-row">
+              <div class="arch-box b-browser">
+                <span class="arch-emoji">🌐</span>
+                <span class="arch-label">Next.js</span>
+                <span class="arch-sub">Vercel</span>
+              </div>
+              <div class="arch-arrow"><svg viewBox="0 0 28 16"><path d="M2 8h20m-6-5l6 5-6 5" fill="none" stroke="#9c9389" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="arch-box b-clerk">
+                <span class="arch-emoji">🔑</span>
+                <span class="arch-label">Clerk</span>
+                <span class="arch-sub">JWT auth</span>
+              </div>
+              <div class="arch-arrow"><svg viewBox="0 0 28 16"><path d="M2 8h20m-6-5l6 5-6 5" fill="none" stroke="#9c9389" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="arch-box b-apigw">
+                <span class="arch-emoji">🚪</span>
+                <span class="arch-label">API Gateway</span>
+                <span class="arch-sub">HTTP API</span>
+              </div>
+              <div class="arch-arrow"><svg viewBox="0 0 28 16"><path d="M2 8h20m-6-5l6 5-6 5" fill="none" stroke="#9c9389" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              <div class="arch-box b-lambda" style="min-width:130px;">
+                <span class="arch-emoji">⚡</span>
+                <span class="arch-label">Lambda</span>
+                <span class="arch-sub">Node 20 &middot; 256 MB</span>
+              </div>
+            </div>
+
+            <!-- Row 2: arrows down from Lambda to data stores -->
+            <div class="arch-row" style="gap:0;">
+              <!-- spacer for left services -->
+              <div style="flex:1;"></div>
+              <!-- three down-arrows from Lambda -->
+              <div style="display:flex;gap:80px;justify-content:center;">
+                <div class="arch-arrow-down"><svg viewBox="0 0 16 22"><path d="M8 2v14m-5-5l5 5 5-5" fill="none" stroke="#4a9de0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="arch-arrow-down"><svg viewBox="0 0 16 22"><path d="M8 2v14m-5-5l5 5 5-5" fill="none" stroke="#82c47a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+                <div class="arch-arrow-down"><svg viewBox="0 0 16 22"><path d="M8 2v14m-5-5l5 5 5-5" fill="none" stroke="#f0a080" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div style="flex:1;"></div>
+            </div>
+
+            <!-- Row 3: DynamoDB (big, with table pills) + S3 Vectors + Bedrock -->
+            <div class="arch-data-row">
+              <div class="arch-data-col" style="flex:1.5;">
+                <div class="arch-box b-dynamo" style="width:100%;padding:12px 14px;">
+                  <span class="arch-emoji" style="font-size:28px;">🗄️</span>
+                  <span class="arch-label" style="font-size:16px;font-weight:800;">DynamoDB</span>
+                  <span class="arch-sub" style="font-size:11px;">8 tables &middot; on-demand &middot; single-digit ms</span>
+                  <div class="tbl-grid">
+                    <span class="tbl-pill">posts</span>
+                    <span class="tbl-pill">users</span>
+                    <span class="tbl-pill">interactions</span>
+                    <span class="tbl-pill">knowledge</span>
+                    <span class="tbl-pill">events</span>
+                    <span class="tbl-pill">connections</span>
+                    <span class="tbl-pill">graph</span>
+                    <span class="tbl-pill">config</span>
+                  </div>
+                  <div class="tbl-grid" style="margin-top:2px;">
+                    <span class="tbl-pill" style="background:rgba(74,157,224,0.18);font-style:italic;">GSI: byFeed</span>
+                    <span class="tbl-pill" style="background:rgba(74,157,224,0.18);font-style:italic;">GSI: byAuthor</span>
+                    <span class="tbl-pill" style="background:rgba(74,157,224,0.18);font-style:italic;">GSI: byScope</span>
+                    <span class="tbl-pill" style="background:rgba(74,157,224,0.18);font-style:italic;">GSI: byEntity</span>
+                  </div>
+                </div>
+              </div>
+              <div class="arch-data-col" style="flex:0.7;">
+                <div class="arch-box b-s3v" style="width:100%;padding:12px 14px;">
+                  <span class="arch-emoji" style="font-size:24px;">🔍</span>
+                  <span class="arch-label">S3 Vectors</span>
+                  <span class="arch-sub">kNN similarity</span>
+                  <span class="arch-sub">visual search</span>
+                </div>
+              </div>
+              <div class="arch-data-col" style="flex:0.7;">
+                <div class="arch-box b-bedrock" style="width:100%;padding:12px 14px;">
+                  <span class="arch-emoji" style="font-size:24px;">🤖</span>
+                  <span class="arch-label">Bedrock</span>
+                  <span class="arch-sub">Titan embeddings</span>
+                  <span class="arch-sub">Maxi (Converse)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Row 4: three pillar callouts -->
+            <div class="arch-pillars">
+              <div class="arch-pillar">
+                <div class="p-ico">📊</div>
+                <div class="p-body">
+                  <h3>Data backbone</h3>
+                  <p>8 on-demand tables with 4 GSIs power the feed, catalog, interactions, and knowledge base &mdash; no scans, just queries.</p>
+                </div>
+              </div>
+              <div class="arch-pillar accent-border">
+                <div class="p-ico">🧠</div>
+                <div class="p-body">
+                  <h3>Maxi's memory</h3>
+                  <p>13 AI tool calls read/write DynamoDB. The <b>graph</b> table stores network, long-term memory, and orders in one single-table design.</p>
+                </div>
+              </div>
+              <div class="arch-pillar">
+                <div class="p-ico">🔐</div>
+                <div class="p-body">
+                  <h3>Auth &amp; identity sync</h3>
+                  <p>Clerk JWT &rarr; Lambda verifies &rarr; DynamoDB upserts identity. Cross-device restore in one GetItem.</p>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="foot">
             <span class="wordmark">Gift<span class="x">maxxing</span></span>
             <span class="sep"></span>
-            <span>all tables PAY_PER_REQUEST &middot; PITR enabled &middot; $1k cost kill-switch</span>
+            <span>zero provisioned capacity &middot; scales from 0 to peak automatically</span>
             <span class="right">Architecture &middot; 08</span>
           </div>
         </div>
