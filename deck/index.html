@@ -187,6 +187,10 @@
     .dl-btn:hover{ transform:scale(1.05); }
     .dl-btn svg{ width:18px; height:18px; }
 
+    @media print{
+      .dl-btn{ display:none !important; }
+    }
+
     /* reveal accents */
     .reveal .progress{ color:var(--coral); height:4px; }
     .reveal .controls{ color:var(--coral); }
@@ -863,7 +867,7 @@
     });
 
     /* ── PPTX download (client-side via PptxGenJS) ── */
-    function downloadPPTX() {
+    async function downloadPPTX() {
       var pptx = new PptxGenJS();
       pptx.author = 'Giftmaxxing';
       pptx.title = 'Giftmaxxing Pitch Deck';
@@ -888,7 +892,7 @@
       }
       function eye(s, text, y) {
         y = y || 0.5;
-        s.addText(text.toUpperCase(),{x:0.6,y:y,w:5,h:0.35,fontSize:11,fontFace:MONO,color:C.inkFaint,letterSpacing:4});
+        s.addText(text.toUpperCase(),{x:0.6,y:y,w:5,h:0.35,fontSize:11,fontFace:MONO,color:C.inkFaint,charSpacing:4});
         s.addShape(pptx.ShapeType.line,{x:0.6,y:y+0.02,w:0.4,h:0,line:{color:C.coral,width:2}});
       }
       function crd(s, x, y, w, h, opts) {
@@ -1076,14 +1080,14 @@
           {text:'.',options:{fontSize:40,fontFace:SERIF,color:C.ink}},
         ],{x:0.6,y:1.0,w:7,h:0.8});
         ['PAY_PER_REQUEST','PITR backups','$1k kill-switch'].forEach(function(t,i){
-          s.addShape(pptx.ShapeType.roundRect,{x:8.2+i*1.8,y:1.15,w:1.6,h:0.35,rectRadius:0.17,fill:{color:C.white},line:{color:C.line,width:1}});
-          s.addText(t,{x:8.2+i*1.8,y:1.15,w:1.6,h:0.35,align:'center',fontSize:9,fontFace:MONO,color:C.inkSoft});
+          s.addShape(pptx.ShapeType.roundRect,{x:8.0+i*1.7,y:1.15,w:1.55,h:0.35,rectRadius:0.17,fill:{color:C.white},line:{color:C.line,width:1}});
+          s.addText(t,{x:8.0+i*1.7,y:1.15,w:1.55,h:0.35,align:'center',fontSize:9,fontFace:MONO,color:C.inkSoft});
         });
         var sY=1.9,sH=0.9;
         [{x:0.8,w:1.6,fill:'F0EAE3',b:C.line,i:'\ud83c\udf10',l:'Next.js',s:'Vercel'},
          {x:3.2,w:1.6,fill:'D9C2FF',b:'C4A6F5',i:'\ud83d\udd11',l:'Clerk',s:'JWT auth'},
          {x:5.6,w:1.8,fill:'BFE3FF',b:'8EC4F4',i:'\ud83d\udeaa',l:'API Gateway',s:'HTTP API'},
-         {x:8.2,w:2.0,fill:'FFE3C2',b:'F0B878',i:'\u26a1',l:'Lambda',s:'Node 20'}
+         {x:8.2,w:2.0,fill:'FFE3C2',b:'F0B878',i:'\u26a1',l:'Lambda',s:'Node 20 \u00b7 256 MB'}
         ].forEach(function(v){
           s.addShape(pptx.ShapeType.roundRect,{x:v.x,y:sY,w:v.w,h:sH,rectRadius:0.12,fill:{color:v.fill},line:{color:v.b,width:1}});
           s.addText(v.i,{x:v.x,y:sY+0.05,w:v.w,h:0.35,align:'center',fontSize:18});
@@ -1196,7 +1200,11 @@
         foot(s,'Competition \u00b7 11');
       })();
 
-      pptx.writeFile({fileName:'Giftmaxxing-Pitch-Deck.pptx'});
+      try {
+        await pptx.writeFile({fileName:'Giftmaxxing-Pitch-Deck.pptx'});
+      } catch(e) {
+        alert('PPTX export failed: ' + e.message);
+      }
     }
   </script>
 </body>

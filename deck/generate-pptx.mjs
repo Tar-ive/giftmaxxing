@@ -32,7 +32,7 @@ const footer = (slide, label) => {
 };
 
 const eyebrow = (slide, text, y = 0.5) => {
-  slide.addText(text.toUpperCase(), { x: 0.6, y, w: 5, h: 0.35, fontSize: 11, fontFace: MONO, color: C.inkFaint, letterSpacing: 4 });
+  slide.addText(text.toUpperCase(), { x: 0.6, y, w: 5, h: 0.35, fontSize: 11, fontFace: MONO, color: C.inkFaint, charSpacing: 4 });
   slide.addShape(pptx.ShapeType.line, { x: 0.6, y: y + 0.02, w: 0.4, h: 0, line: { color: C.coral, width: 2 } });
 };
 
@@ -259,8 +259,8 @@ const card = (slide, x, y, w, h, opts = {}) => {
 
   // Tags
   ["PAY_PER_REQUEST", "PITR backups", "$1k kill-switch"].forEach((t, i) => {
-    s.addShape(pptx.ShapeType.roundRect, { x: 8.2 + i * 1.8, y: 1.15, w: 1.6, h: 0.35, rectRadius: 0.17, fill: { color: C.white }, line: { color: C.line, width: 1 } });
-    s.addText(t, { x: 8.2 + i * 1.8, y: 1.15, w: 1.6, h: 0.35, align: "center", fontSize: 9, fontFace: MONO, color: C.inkSoft });
+    s.addShape(pptx.ShapeType.roundRect, { x: 8.0 + i * 1.7, y: 1.15, w: 1.55, h: 0.35, rectRadius: 0.17, fill: { color: C.white }, line: { color: C.line, width: 1 } });
+    s.addText(t, { x: 8.0 + i * 1.7, y: 1.15, w: 1.55, h: 0.35, align: "center", fontSize: 9, fontFace: MONO, color: C.inkSoft });
   });
 
   // Service boxes — row 1
@@ -468,5 +468,10 @@ const card = (slide, x, y, w, h, opts = {}) => {
 }
 
 // ── Write ────────────────────────────────────────────────────
-await pptx.writeFile({ fileName: OUT });
+try {
+  await pptx.writeFile({ fileName: OUT });
+} catch (e) {
+  console.error("PPTX export failed:", e.message);
+  process.exit(1);
+}
 console.log(`\u2713 wrote ${OUT}`);
