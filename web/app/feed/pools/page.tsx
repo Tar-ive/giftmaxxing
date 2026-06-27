@@ -1,26 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { GRADIENTS } from "@/lib/data";
-import {
-  type Fundraiser,
-  loadFundraisers,
-  saveFundraisers,
-  addContribution,
-  newFundraiser,
-  raisedOf,
-  progressOf,
-  inviteToPool,
-  upsertFundraiser,
-  fundraiserFromInvite,
-  loadPendingPoolJoin,
-  clearPendingPoolJoin,
-} from "@/lib/fundraisers";
-import { USERS } from "@/lib/social";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { GRADIENTS, type Grad } from "@/lib/data";
+import { loadPendingPoolJoin, clearPendingPoolJoin } from "@/lib/fundraisers";
 import { useCurrentUser } from "@/lib/identity";
-import { getMyUserId } from "@/lib/api";
+import { getMyUserId, isApiConfigured } from "@/lib/api";
 import { buildPoolInviteUrl, type PoolInviteSnapshot } from "@/lib/invite";
-import { InvitePeopleSheet } from "@/components/app/invite-people-sheet";
+import {
+  type Pool,
+  type NewPoolInput,
+  fetchMyPools,
+  createPool,
+  contributeToPool,
+  joinPool,
+} from "@/lib/pools";
+import { ShareSheet } from "@/components/app/share-sheet";
 import { PaymentMethodSheet, type PaymentMethod } from "@/components/app/payment-method-sheet";
 import { PaymentConfirmDialog } from "@/components/app/payment-confirm-dialog";
 import { Icons } from "@/components/ui";
@@ -29,35 +25,49 @@ const QUICK = [10, 25, 50, 100];
 
 export default function PoolsPage() {
   const me = useCurrentUser();
-  const myName = me.name !== "You" ? me.name.split(/\s+/)[0] : "you";
-  const [pools, setPools] = useState<Fundraiser[]>([]);
+  const myName = me.name && me.name !== "You" ? me.name : "You";
+  const router = useRouter();
+  const [pools, setPools] = useState<Pool[]>([]);
+  const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const configured = isApiConfigured();
 
-  useEffect(() => {
-    let list = loadFundraisers();
-    // An invited guest who just signed in lands here with a stashed pool — add it
-    // to their list (idempotent), then forget it.
+  const refresh = useCallback(async () => {
+    const uid = getMyUserId();
+    if (!configured || !uid) {
+      setPools([]);
+      setLoading(false);
+      return;
+    }
+    // Arrived from an invite link → auto-join that pool (idempotent) before listing.
     const pending = loadPendingPoolJoin();
-    if (pending) {
-      list = upsertFundraiser(list, fundraiserFromInvite(pending.snapshot, pending.organizer));
-      saveFundraisers(list);
+    if (pending?.snapshot?.id) {
+      await joinPool(pending.snapshot.id, uid, myName);
       clearPendingPoolJoin();
     }
+    const list = await fetchMyPools(uid);
+    setPools(list);
+    setLoading(false);
+  }, [configured, myName]);
+
+  useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPools(list);
-  }, []);
+    void refresh();
+  }, [refresh]);
 
-  const persist = (list: Fundraiser[]) => {
-    setPools(list);
-    saveFundraisers(list);
+  const handleCreate = async (input: NewPoolInput) => {
+    const uid = getMyUserId();
+    if (!uid) return;
+    const created = await createPool(uid, myName, input);
+    setCreating(false);
+    if (created) {
+      setPools((p) => [created, ...p]);
+      router.push(`/feed/pools/${created.poolId}`);
+    }
   };
 
-  const contribute = (id: string, amount: number) => {
-    persist(addContribution(pools, id, myName, amount));
-  };
-
-  const inviteFriend = (id: string, userId: string) => {
-    persist(inviteToPool(pools, id, userId));
+  const handleContributed = (poolId: string, raised: number) => {
+    setPools((list) => list.map((p) => (p.poolId === poolId ? { ...p, raised } : p)));
   };
 
   return (
@@ -65,7 +75,7 @@ export default function PoolsPage() {
       <header className="mb-6 flex items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-extrabold text-ink">Group gifts</h1>
-          <p className="mt-1 text-ink-soft">Pool money toward one gift that actually lands. Everyone chips in, nobody double-buys.</p>
+          <p className="mt-1 text-ink-soft">Pool money toward one gift that actually lands. Everyone chips in, chats it out, nobody double-buys.</p>
         </div>
         <button
           onClick={() => setCreating((c) => !c)}
@@ -75,64 +85,82 @@ export default function PoolsPage() {
         </button>
       </header>
 
-      {creating && <CreatePool onCreate={(f) => { persist([f, ...pools]); setCreating(false); }} organizer={myName} />}
+      {creating && <CreatePool onCreate={handleCreate} />}
 
-      <div className="space-y-5">
-        {pools.map((f) => (
-          <PoolCard
-            key={f.id}
-            f={f}
-            onContribute={contribute}
-            onInviteFriend={inviteFriend}
-            inviterName={me.name !== "You" ? me.name : "A friend"}
-          />
-        ))}
-        {pools.length === 0 && (
-          <p className="py-16 text-center text-sm text-ink-faint">No pools yet. Start the first one ✨</p>
-        )}
-      </div>
+      {!configured ? (
+        <p className="py-16 text-center text-sm text-ink-faint">
+          Group gifts need a live connection. Try again in a moment.
+        </p>
+      ) : loading ? (
+        <p className="py-16 text-center text-sm text-ink-faint">Loading your group gifts…</p>
+      ) : pools.length === 0 ? (
+        <EmptyState onStart={() => setCreating(true)} />
+      ) : (
+        <div className="space-y-5">
+          {pools.map((p) => (
+            <PoolCard key={p.poolId} pool={p} myName={myName} onContributed={handleContributed} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ onStart }: { onStart: () => void }) {
+  return (
+    <div className="rounded-3xl border border-dashed border-line bg-surface px-6 py-14 text-center">
+      <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-coral-soft text-3xl">🎁</div>
+      <h2 className="mt-4 font-display text-xl font-extrabold text-ink">No group gifts yet</h2>
+      <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-soft">
+        Start a pool, share the link, and everyone chips in toward one gift — with a group chat to
+        decide together.
+      </p>
+      <button
+        onClick={onStart}
+        className="mt-5 inline-flex items-center gap-2 rounded-full bg-coral px-6 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
+      >
+        <Icons.gift size={18} /> Start a pool
+      </button>
     </div>
   );
 }
 
 function PoolCard({
-  f,
-  onContribute,
-  onInviteFriend,
-  inviterName,
+  pool,
+  myName,
+  onContributed,
 }: {
-  f: Fundraiser;
-  onContribute: (id: string, amount: number) => void;
-  onInviteFriend: (id: string, userId: string) => void;
-  inviterName: string;
+  pool: Pool;
+  myName: string;
+  onContributed: (poolId: string, raised: number) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [custom, setCustom] = useState("");
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingAmount, setPendingAmount] = useState(0);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
-  const raised = raisedOf(f);
-  const pct = Math.round(progressOf(f) * 100);
-  const recipient = USERS[f.recipient];
-  const funded = raised >= f.goal;
+  const [raised, setRaised] = useState(pool.raised);
+  const pct = pool.goal ? Math.min(100, Math.round((raised / pool.goal) * 100)) : 0;
+  const funded = raised >= pool.goal;
+  const detailHref = `/feed/pools/${pool.poolId}`;
 
-  // Compact pool snapshot for the invite link — it rides along in the code so an
-  // external recipient sees the pool before signing in. Computed client-side.
+  // Compact pool snapshot for the invite link — carries the poolId so an external
+  // recipient sees the pool before signing in, then joins the real backend pool.
   const snapshot: PoolInviteSnapshot = {
-    id: f.id,
-    title: f.title,
-    occasion: f.occasion,
-    goal: f.goal,
-    blurb: f.blurb,
-    emoji: f.emoji,
-    grad: f.grad,
-    image: f.image ?? null,
+    id: pool.poolId,
+    title: pool.title,
+    occasion: pool.occasion,
+    goal: pool.goal,
+    blurb: pool.blurb,
+    emoji: pool.emoji,
+    grad: pool.grad,
+    image: pool.image ?? null,
   };
-  const inviteUrl = buildPoolInviteUrl(inviterName, snapshot, {
+  const inviteUrl = buildPoolInviteUrl(pool.organizerName || myName, snapshot, {
     senderId: getMyUserId() ?? undefined,
   });
+  const shareText = `Chip in with me for "${pool.title}" on Giftmaxxing`;
 
   const startPayment = (amount: number) => {
     if (amount > 0) {
@@ -147,13 +175,19 @@ function PoolCard({
     setConfirmOpen(true);
   };
 
-  const handlePaymentConfirm = () => {
-    onContribute(f.id, pendingAmount);
+  const handlePaymentConfirm = async () => {
+    const uid = getMyUserId();
+    const amount = pendingAmount;
     setConfirmOpen(false);
     setCustom("");
     setOpen(false);
     setPendingAmount(0);
     setSelectedMethod(null);
+    if (!uid || !(amount > 0)) return;
+    const next = await contributeToPool(pool.poolId, uid, myName, amount);
+    const newRaised = next ?? raised + amount;
+    setRaised(newRaised);
+    onContributed(pool.poolId, newRaised);
   };
 
   const handlePaymentBack = () => {
@@ -170,26 +204,26 @@ function PoolCard({
 
   return (
     <div className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
-      <div className="flex gap-4 p-4 sm:p-5">
-        <div className="relative grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl text-4xl" style={{ background: GRADIENTS[f.grad] }}>
-          {f.emoji}
-          {f.image && (
+      <Link href={detailHref} className="flex gap-4 p-4 transition-colors hover:bg-cream/60 sm:p-5">
+        <div className="relative grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl text-4xl" style={{ background: GRADIENTS[pool.grad] }}>
+          {pool.emoji}
+          {pool.image && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={f.image} alt={f.title} loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+            <img src={pool.image} alt={pool.title} loading="lazy" className="absolute inset-0 h-full w-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
           )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-coral-soft px-2 py-0.5 text-[11px] font-bold text-coral-ink">{f.occasion}</span>
-            {f.deadline && <span className="text-[11px] text-ink-faint">⏳ {f.deadline}</span>}
+            <span className="rounded-full bg-coral-soft px-2 py-0.5 text-[11px] font-bold text-coral-ink">{pool.occasion}</span>
+            {pool.deadline && <span className="text-[11px] text-ink-faint">⏳ {pool.deadline}</span>}
           </div>
-          <h3 className="mt-1 font-display text-lg font-extrabold text-ink">{f.title}</h3>
-          <p className="mt-0.5 line-clamp-2 text-sm text-ink-soft">{f.blurb}</p>
-          {recipient && (
-            <p className="mt-1 text-xs text-ink-faint">for {recipient.name} · organized by {f.organizer === "you" ? "you" : USERS[f.organizer]?.name ?? f.organizer}</p>
-          )}
+          <h3 className="mt-1 font-display text-lg font-extrabold text-ink">{pool.title}</h3>
+          <p className="mt-0.5 line-clamp-2 text-sm text-ink-soft">{pool.blurb}</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            organized by {pool.organizerId === getMyUserId() ? "you" : pool.organizerName}
+          </p>
         </div>
-      </div>
+      </Link>
 
       {/* progress */}
       <div className="px-4 pb-4 sm:px-5">
@@ -198,51 +232,33 @@ function PoolCard({
         </div>
         <div className="mt-2 flex items-center justify-between text-sm">
           <span className="font-bold text-ink">
-            ${raised} <span className="font-medium text-ink-faint">of ${f.goal}</span>
+            ${raised} <span className="font-medium text-ink-faint">of ${pool.goal}</span>
           </span>
-          <span className="text-ink-soft">{f.contributions.length} contributor{f.contributions.length === 1 ? "" : "s"} · {pct}%</span>
+          <span className="text-ink-soft">{pool.memberCount} in · {pct}%</span>
         </div>
 
-        {/* contributor + invited avatars */}
-        <div className="mt-3 flex items-center gap-3">
-          <div className="flex -space-x-2">
-            {f.contributions.slice(-5).map((c) => {
-              const cu = USERS[c.name];
-              return (
-                <span key={c.id} title={`${c.name} · $${c.amount}`} className="grid h-7 w-7 place-items-center rounded-full border-2 border-surface text-[11px] font-bold text-white" style={{ background: GRADIENTS[cu?.grad ?? "coral"] }}>
-                  {(cu?.name ?? c.name).charAt(0).toUpperCase()}
-                </span>
-              );
-            })}
-            {/* invited in-app but not yet contributed — shown faded */}
-            {(f.invited ?? [])
-              .filter((uid) => !f.contributions.some((c) => c.name === uid))
-              .slice(0, 3)
-              .map((uid) => {
-                const u = USERS[uid];
-                return (
-                  <span key={`inv-${uid}`} title={`${u?.name ?? uid} · invited`} className="grid h-7 w-7 place-items-center rounded-full border-2 border-dashed border-line bg-cream text-[11px] font-bold text-ink-faint">
-                    {(u?.name ?? uid).charAt(0).toUpperCase()}
-                  </span>
-                );
-              })}
-          </div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              onClick={() => setInviteOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-4 py-2 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
-            >
-              <Icons.users size={16} /> Invite
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <ShareSheet
+            url={inviteUrl}
+            text={shareText}
+            subject={`${pool.organizerName || myName} invited you to chip in`}
+            recipientName={pool.title}
+            triggerLabel="Share to chip in"
+            triggerClassName="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-4 py-2 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
+          />
+          <Link
+            href={detailHref}
+            className="inline-flex items-center gap-1.5 rounded-full border border-line bg-cream px-4 py-2 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
+          >
+            <Icons.message size={16} /> Chat
+          </Link>
+          {funded ? (
+            <span className="ml-auto flex items-center gap-1 text-sm font-bold text-green-600"><Icons.check size={16} /> Funded!</span>
+          ) : (
+            <button onClick={() => setOpen((o) => !o)} className="ml-auto rounded-full bg-ink px-5 py-2 text-sm font-bold text-cream transition-opacity hover:opacity-90">
+              Chip in
             </button>
-            {funded ? (
-              <span className="flex items-center gap-1 text-sm font-bold text-green-600"><Icons.check size={16} /> Funded!</span>
-            ) : (
-              <button onClick={() => setOpen((o) => !o)} className="rounded-full bg-ink px-5 py-2 text-sm font-bold text-cream transition-opacity hover:opacity-90">
-                Chip in
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
         {open && !funded && (
@@ -272,16 +288,6 @@ function PoolCard({
           </div>
         )}
 
-        <InvitePeopleSheet
-          open={inviteOpen}
-          onClose={() => setInviteOpen(false)}
-          url={inviteUrl}
-          poolTitle={f.title}
-          invited={f.invited ?? []}
-          contributorIds={f.contributions.map((c) => c.name)}
-          onInviteFriend={(userId) => onInviteFriend(f.id, userId)}
-        />
-
         <PaymentMethodSheet
           open={paymentOpen}
           amount={pendingAmount}
@@ -294,7 +300,7 @@ function PoolCard({
             open={confirmOpen}
             amount={pendingAmount}
             method={selectedMethod}
-            poolTitle={f.title}
+            poolTitle={pool.title}
             onConfirm={handlePaymentConfirm}
             onBack={handlePaymentBack}
             onClose={closePaymentFlow}
@@ -305,24 +311,25 @@ function PoolCard({
   );
 }
 
-function CreatePool({ onCreate, organizer }: { onCreate: (f: Fundraiser) => void; organizer: string }) {
+function CreatePool({ onCreate }: { onCreate: (input: NewPoolInput) => void | Promise<void> }) {
   const [title, setTitle] = useState("");
   const [occasion, setOccasion] = useState("Birthday");
   const [goal, setGoal] = useState("150");
   const [blurb, setBlurb] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const submit = () => {
-    if (!title.trim()) return;
-    onCreate(
-      newFundraiser({
-        title: title.trim(),
-        occasion,
-        blurb: blurb.trim() || "Let's pool together for something they'll love.",
-        goal: parseInt(goal || "0", 10) || 100,
-        organizer,
-        emoji: OCCASION_EMOJI[occasion] ?? "🎁",
-      })
-    );
+  const submit = async () => {
+    if (!title.trim() || submitting) return;
+    setSubmitting(true);
+    await onCreate({
+      title: title.trim(),
+      occasion,
+      blurb: blurb.trim() || "Let's pool together for something they'll love.",
+      goal: parseInt(goal || "0", 10) || 100,
+      emoji: OCCASIONS[occasion]?.emoji ?? "🎁",
+      grad: OCCASIONS[occasion]?.grad ?? "coral",
+    });
+    setSubmitting(false);
   };
 
   return (
@@ -332,7 +339,7 @@ function CreatePool({ onCreate, organizer }: { onCreate: (f: Fundraiser) => void
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What's the gift? (e.g. Maya's birthday camera)" className="w-full rounded-xl border border-line bg-cream px-4 py-2.5 text-sm text-ink outline-none focus:border-coral" />
         <div className="flex gap-3">
           <select value={occasion} onChange={(e) => setOccasion(e.target.value)} className="flex-1 rounded-xl border border-line bg-cream px-4 py-2.5 text-sm text-ink outline-none focus:border-coral">
-            {Object.keys(OCCASION_EMOJI).map((o) => (
+            {Object.keys(OCCASIONS).map((o) => (
               <option key={o}>{o}</option>
             ))}
           </select>
@@ -342,21 +349,21 @@ function CreatePool({ onCreate, organizer }: { onCreate: (f: Fundraiser) => void
           </div>
         </div>
         <textarea value={blurb} onChange={(e) => setBlurb(e.target.value)} rows={2} placeholder="Add a note for contributors…" className="w-full resize-none rounded-xl border border-line bg-cream px-4 py-2.5 text-sm text-ink outline-none focus:border-coral" />
-        <button onClick={submit} disabled={!title.trim()} className="w-full rounded-full bg-coral py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40">
-          Create pool
+        <button onClick={submit} disabled={!title.trim() || submitting} className="w-full rounded-full bg-coral py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40">
+          {submitting ? "Creating…" : "Create pool"}
         </button>
       </div>
     </div>
   );
 }
 
-const OCCASION_EMOJI: Record<string, string> = {
-  Birthday: "🎂",
-  Graduation: "🎓",
-  Wedding: "💍",
-  Farewell: "🛫",
-  "Baby shower": "🍼",
-  Housewarming: "🏡",
-  Anniversary: "💞",
-  "Group gift": "🎁",
+const OCCASIONS: Record<string, { emoji: string; grad: Grad }> = {
+  Birthday: { emoji: "🎂", grad: "rose" },
+  Graduation: { emoji: "🎓", grad: "lilac" },
+  Wedding: { emoji: "💍", grad: "butter" },
+  Farewell: { emoji: "🛫", grad: "sky" },
+  "Baby shower": { emoji: "🍼", grad: "sage" },
+  Housewarming: { emoji: "🏡", grad: "peach" },
+  Anniversary: { emoji: "💞", grad: "coral" },
+  "Group gift": { emoji: "🎁", grad: "coral" },
 };

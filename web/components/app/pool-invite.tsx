@@ -21,6 +21,8 @@ export function PoolInvite({ invite }: { invite: InvitePayload }) {
   const pool = invite.pool!;
   const grad = (pool.grad as Grad) ?? "coral";
   const organizer = invite.name || "A friend";
+  // Land straight in this specific pool after auth — it auto-joins on open.
+  const poolHref = `/feed/pools/${pool.id}`;
 
   // Stash the pool so /feed/pools can add it the moment auth completes — even if
   // Clerk does a full-page redirect and loses our in-memory state.
@@ -79,7 +81,7 @@ export function PoolInvite({ invite }: { invite: InvitePayload }) {
         </div>
 
         {clerkEnabled ? (
-          <PoolJoinAuth organizer={organizer} />
+          <PoolJoinAuth organizer={organizer} poolHref={poolHref} />
         ) : (
           <div className="mt-8 rounded-3xl border border-coral/30 bg-coral-soft/60 p-6 text-center">
             <h3 className="font-display text-xl font-extrabold text-ink">Join the group gift</h3>
@@ -87,10 +89,10 @@ export function PoolInvite({ invite }: { invite: InvitePayload }) {
               Open Giftmaxxing to chip in toward {organizer}&apos;s gift.
             </p>
             <Link
-              href="/feed/pools"
+              href={poolHref}
               className="mt-5 inline-flex rounded-full bg-coral px-7 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
             >
-              Go to group gifts
+              Go to the group gift
             </Link>
           </div>
         )}
@@ -101,7 +103,7 @@ export function PoolInvite({ invite }: { invite: InvitePayload }) {
 
 // Sign-in gate for the pool invite. Only rendered when Clerk is enabled, so
 // useUser always has a ClerkProvider above it (see app/layout.tsx).
-function PoolJoinAuth({ organizer }: { organizer: string }) {
+function PoolJoinAuth({ organizer, poolHref }: { organizer: string; poolHref: string }) {
   const router = useRouter();
   const { isLoaded, isSignedIn } = useUser();
   const wasSignedOut = useRef(false);
@@ -112,9 +114,10 @@ function PoolJoinAuth({ organizer }: { organizer: string }) {
       wasSignedOut.current = true;
       return;
     }
-    // Authenticated from this screen via the modal (state flips in place) → join.
-    if (wasSignedOut.current) router.push("/feed/pools");
-  }, [isLoaded, isSignedIn, router]);
+    // Authenticated from this screen via the modal (state flips in place) → open
+    // the pool, which auto-joins them on the backend.
+    if (wasSignedOut.current) router.push(poolHref);
+  }, [isLoaded, isSignedIn, router, poolHref]);
 
   if (isSignedIn) {
     return (
@@ -124,7 +127,7 @@ function PoolJoinAuth({ organizer }: { organizer: string }) {
           Join {organizer}&apos;s group gift and chip in your share.
         </p>
         <button
-          onClick={() => router.push("/feed/pools")}
+          onClick={() => router.push(poolHref)}
           className="mt-5 inline-flex items-center gap-2 rounded-full bg-coral px-7 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90"
         >
           <Icons.gift size={18} /> Join &amp; chip in
@@ -141,12 +144,12 @@ function PoolJoinAuth({ organizer }: { organizer: string }) {
         of your own money — Giftmaxxing never takes or holds payment.
       </p>
       <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
-        <SignUpButton mode="modal" forceRedirectUrl="/feed/pools">
+        <SignUpButton mode="modal" forceRedirectUrl={poolHref}>
           <button className="w-full rounded-full bg-coral px-7 py-3 text-sm font-bold text-white shadow-lg shadow-coral/30 transition-opacity hover:opacity-90 sm:w-auto">
             Create my account
           </button>
         </SignUpButton>
-        <SignInButton mode="modal" forceRedirectUrl="/feed/pools">
+        <SignInButton mode="modal" forceRedirectUrl={poolHref}>
           <button className="w-full rounded-full border border-line bg-surface px-7 py-3 text-sm font-bold text-ink transition-colors hover:bg-cream sm:w-auto">
             I already have one
           </button>
