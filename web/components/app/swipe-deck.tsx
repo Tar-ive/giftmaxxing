@@ -24,6 +24,7 @@ import {
   getMyUserId,
   type VectorItem,
 } from "@/lib/api";
+import { type GenderPref, sortByGenderPref } from "@/lib/gender-prefs";
 
 const GOAL = 5; // "yes" swipes before matches unlock
 const THRESHOLD = 90; // px drag distance to commit a swipe
@@ -82,9 +83,11 @@ function vectorToResult(v: VectorItem): ResultItem {
 export function SwipeDeck({
   compact = false,
   onMatchesReady,
+  genderPref,
 }: {
   compact?: boolean;
   onMatchesReady?: () => void;
+  genderPref?: GenderPref;
 }) {
   const [mounted, setMounted] = useState(false);
   const [deck, setDeck] = useState<Pin[]>([]);
@@ -103,10 +106,11 @@ export function SwipeDeck({
   useEffect(() => {
     // SSR-safe: read localStorage only after mount.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDeck(buildDeck());
+    const rawDeck = buildDeck();
+    setDeck(genderPref ? sortByGenderPref(rawDeck, genderPref) : rawDeck);
     setStats(swipeStats());
     setMounted(true);
-  }, []);
+  }, [genderPref]);
 
   const eligible = stats.yes >= GOAL || (mounted && deck.length > 0 && idx >= deck.length);
 

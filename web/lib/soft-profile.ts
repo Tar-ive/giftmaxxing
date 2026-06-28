@@ -16,6 +16,7 @@ export type SoftProfile = {
   vibes: string[];
   seeds: string[];
   birthday?: string;
+  genderPref?: string;
   inviterName: string;
   completedAt: number;
 };

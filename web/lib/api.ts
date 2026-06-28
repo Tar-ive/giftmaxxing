@@ -483,6 +483,7 @@ export type GuestSoftProfile = {
   name: string;
   handle?: string;
   birthday?: string;
+  genderPref?: string;
   vibes?: string[];
   seeds?: string[];
   interests?: string[];
@@ -499,6 +500,7 @@ export type SoftConnection = {
   guestName: string;
   guestHandle?: string;
   birthday?: string;
+  genderPref?: string;
   vibes?: string[];
   seeds?: string[];
   interests?: string[];
