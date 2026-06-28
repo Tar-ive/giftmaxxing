@@ -24,7 +24,7 @@ import { loadLocalConnections, LOCAL_CONN_EVENT } from "@/lib/local-connections"
 import { PINS } from "@/lib/pins";
 import { shortTitle } from "@/lib/feed-builder";
 import { GENDER_PREF_META, type GenderPref } from "@/lib/gender-prefs";
-import { addToCart, loadCart, saveCart } from "@/lib/cart";
+import { useMaxi } from "@/components/app/maxi-provider";
 import type { Pin } from "@/lib/pins";
 
 const QUICK = [10, 25, 50, 100];
@@ -246,6 +246,7 @@ export default function PoolsPage() {
 // Solo gift card — shows Maxi's bundle from a completed swipe challenge
 function SoloGiftCard({ conn }: { conn: SoftConnection }) {
   const router = useRouter();
+  const { addPinToCart } = useMaxi();
   const bundle = buildMaxiBundle(conn);
   const daysLeft = daysUntilDate(conn.birthday);
   const genderLabel = conn.genderPref && conn.genderPref in GENDER_PREF_META
@@ -268,20 +269,14 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
   })();
 
   const handleAddToCart = (pin: Pin) => {
-    const cart = loadCart();
-    const updated = addToCart(cart, pin);
-    saveCart(updated);
+    addPinToCart(pin);
     setAddedIds((prev) => new Set(prev).add(pin.id));
   };
 
   const handleAddAll = () => {
-    let cart = loadCart();
     for (const pin of bundle) {
-      if (!addedIds.has(pin.id)) {
-        cart = addToCart(cart, pin);
-      }
+      if (!addedIds.has(pin.id)) addPinToCart(pin);
     }
-    saveCart(cart);
     setAddedIds(new Set(bundle.map((p) => p.id)));
   };
 
