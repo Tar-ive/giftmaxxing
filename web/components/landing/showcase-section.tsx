@@ -129,10 +129,15 @@ export function ShowcaseSection() {
               <div className="flex flex-col md:flex-row">
                 {/* media */}
                 <div
-                  className="relative grid place-items-center flex-1 min-h-[280px] md:min-h-[440px]"
+                  className="relative flex-1 min-h-[280px] md:min-h-[440px]"
                   style={{ background: GRADIENTS.sky }}
                 >
-                  <span className="text-[120px] drop-shadow-sm">📷</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/showcase-feed.jpg"
+                    alt="Mini Instant Camera"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
                   <div className="absolute bottom-4 left-4 rounded-xl bg-black/55 px-4 py-2.5 text-white backdrop-blur">
                     <p className="text-sm font-bold">Mini Instant Camera</p>
                     <p className="text-xs text-white/80">Halo · $79</p>
