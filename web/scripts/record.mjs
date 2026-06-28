@@ -28,7 +28,7 @@ const ROUTES = [
   "/feed/search",
   "/feed/events",
   "/feed/recommendations",
-  "/feed/drops",
+  "/feed/shop",
   "/feed/pools",
 ];
 

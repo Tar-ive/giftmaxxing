@@ -53,17 +53,14 @@ const ITEMS: Item[] = [
   { label: "Search", href: "/feed/search", icon: "search" },
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
   { label: "Events", href: "/feed/events", icon: "calendar" },
-  { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Shop", href: "/feed/shop", icon: "gift" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
   { label: "Messages", href: "/feed/messages", icon: "message" },
   { label: "Notifications", href: "/feed/activity", icon: "heart" },
-  { label: "Create", href: "/feed/create", icon: "plusSquare" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const me = useCurrentUser();
   const { setCartOpen, cartCount } = useMaxi();
   const unseenActivity = useUnseenActivity();
 
@@ -135,40 +132,6 @@ export function Sidebar() {
           <span className="hidden xl:block">Cart</span>
         </button>
       </nav>
-
-      <Link
-        href="/feed/you"
-        className={`mt-2 flex items-center gap-4 rounded-xl px-3 py-3 transition-colors hover:bg-ink/5 ${
-          pathname === "/feed/you" ? "font-bold" : "font-medium"
-        } text-ink`}
-      >
-        <Avatar grad={me.grad} label={me.name} size={26} />
-        <span className="hidden truncate xl:block">{me.name}</span>
-      </Link>
-
-      {clerkEnabled && (
-        <div className="mt-1 flex items-center gap-4 rounded-xl px-3 py-3">
-          <Show when="signed-in">
-            <UserButton />
-            <span className="hidden text-sm font-medium text-ink-soft xl:block">Account</span>
-          </Show>
-          <Show when="signed-out">
-            <SignInButton mode="modal">
-              <button className="text-sm font-semibold text-coral">Sign in</button>
-            </SignInButton>
-          </Show>
-        </div>
-      )}
-
-      <Link
-        href="/feed/settings"
-        className={`flex items-center gap-4 rounded-xl px-3 py-3 transition-colors hover:bg-ink/5 ${
-          pathname === "/feed/settings" ? "font-bold text-ink" : "font-medium text-ink-soft"
-        }`}
-      >
-        <Icons.menu size={26} />
-        <span className="hidden xl:block">Settings</span>
-      </Link>
     </aside>
   );
 }
@@ -176,8 +139,6 @@ export function Sidebar() {
 /* Items shown in the mobile "More" drawer (not in the bottom tab bar) */
 const DRAWER_ITEMS: Item[] = [
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
-  { label: "Events", href: "/feed/events", icon: "calendar" },
-  { label: "Drops", href: "/feed/drops", icon: "film" },
   { label: "Shop", href: "/feed/shop", icon: "gift" },
   { label: "Group Gifts", href: "/feed/pools", icon: "users" },
   { label: "Cart", href: "/feed/cart", icon: "cart" },
@@ -193,7 +154,7 @@ export function MobileBars() {
   const tabs: Item[] = [
     { label: "Home", href: "/feed", icon: "home", activeIcon: "homeFill" },
     { label: "Search", href: "/feed/search", icon: "search" },
-    { label: "Create", href: "/feed/create", icon: "plusSquare" },
+    { label: "Events", href: "/feed/events", icon: "calendar" },
     { label: "Menu", href: "#menu", icon: "menu" },
     { label: "Profile", href: "/feed/you", icon: "home" },
   ];

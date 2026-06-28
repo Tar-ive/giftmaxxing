@@ -59,6 +59,15 @@ export default function EventsPage() {
   const [profileEvents, setProfileEvents] = useState<{ events: ImportantEvent[]; recipients: Recipient[] }>({ events: [], recipients: [] });
   const [loadingShared, setLoadingShared] = useState(false);
 
+  // Honor a deep-link tab (?tab=shared|personal) from the right-rail Events widget.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "shared" || t === "personal") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTopTab(t);
+    }
+  }, []);
+
   useEffect(() => {
     const stored = loadMilestones();
     // eslint-disable-next-line react-hooks/set-state-in-effect

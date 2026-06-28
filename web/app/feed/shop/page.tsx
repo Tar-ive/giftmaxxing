@@ -7,6 +7,8 @@ import { visualForPick } from "@/lib/affiliate";
 import { BuyOnAmazon, AmazonDisclosure } from "@/components/app/buy-on-amazon";
 import { AmazonPickDetailModal } from "@/components/app/amazon-pick-detail-modal";
 import { LocaleMarketplaceBanner } from "@/components/app/locale-marketplace-banner";
+import { DropCard } from "@/components/app/bundled-deals";
+import { DROPS } from "@/lib/drops";
 import { Icons } from "@/components/ui";
 
 // Real, buyable Amazon affiliate picks (the only surface with real commerce —
@@ -77,8 +79,16 @@ function PickCard({ p, onSelect }: { p: AmazonPick; onSelect: () => void }) {
 
 export default function ShopPage() {
   const picks = AMAZON_PICKS;
-  const groups = groupByCategory(picks);
   const [selectedPick, setSelectedPick] = useState<AmazonPick | null>(null);
+
+  // Interleave bundles with picks: each row pairs 1 bundle with 2 hand-picked
+  // items, alternating which side the bundle sits on. Picks not consumed by a
+  // bundle row fall through to the category grid below (sliced out to avoid dupes).
+  const blocks = DROPS.map((bundle, i) => ({
+    bundle,
+    items: picks.slice(i * 2, i * 2 + 2),
+  }));
+  const restGroups = groupByCategory(picks.slice(Math.min(DROPS.length * 2, picks.length)));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -98,28 +108,65 @@ export default function ShopPage() {
         <LocaleMarketplaceBanner />
       </header>
 
-      {picks.length === 0 ? (
-        <p className="py-20 text-center text-sm text-ink-faint">
-          No picks yet. Add ASINs with the importer to populate the shop.
-        </p>
-      ) : (
-        <div className="space-y-8">
-          {groups.map((g) => (
-            <section key={g.label}>
-              {groups.length > 1 ? (
-                <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-faint">
-                  {g.label}
-                </h2>
-              ) : null}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {g.items.map((p) => (
+      {/* Bundled deals (formerly "Drops") interleaved with hand-picked Amazon
+          gifts: each row is 1 bundle + 2 picks, alternating which side the
+          bundle sits on (lg+). Stacks vertically on small screens. */}
+      <div className="mb-6 flex items-center gap-2">
+        <span className="grid h-8 w-8 place-items-center rounded-xl bg-coral-soft text-coral">
+          <Icons.gift size={18} />
+        </span>
+        <div>
+          <h2 className="font-display text-lg font-extrabold text-ink">Bundled deals</h2>
+          <p className="text-xs text-ink-soft">
+            Curated packages paired with hand-picked Amazon gifts.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        {blocks.map((b, i) => {
+          const bundleLeft = i % 2 === 0;
+          return (
+            <div key={b.bundle.id} className="grid gap-4 lg:grid-cols-2 lg:items-start">
+              <div className={bundleLeft ? "lg:order-1" : "lg:order-2"}>
+                <DropCard drop={b.bundle} />
+              </div>
+              <div
+                className={`grid grid-cols-2 gap-4 ${bundleLeft ? "lg:order-2" : "lg:order-1"}`}
+              >
+                {b.items.map((p) => (
                   <PickCard key={p.asin} p={p} onSelect={() => setSelectedPick(p)} />
                 ))}
               </div>
-            </section>
-          ))}
-        </div>
-      )}
+            </div>
+          );
+        })}
+      </div>
+
+      {restGroups.length > 0 ? (
+        <>
+          <div className="my-8 border-t border-line" />
+          <div className="space-y-8">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-ink-faint">
+              More hand-picked on Amazon
+            </h2>
+            {restGroups.map((g) => (
+              <section key={g.label}>
+                {restGroups.length > 1 ? (
+                  <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-faint">
+                    {g.label}
+                  </h2>
+                ) : null}
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                  {g.items.map((p) => (
+                    <PickCard key={p.asin} p={p} onSelect={() => setSelectedPick(p)} />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : null}
 
       <AmazonPickDetailModal
         pick={selectedPick}

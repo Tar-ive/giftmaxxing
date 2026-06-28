@@ -15,9 +15,9 @@ export function StoriesTray() {
   const { groupChats, openChat } = useStore();
   const { pools } = useMyPools();
   const me = useCurrentUser();
-  // The "Create" tile (newChat placeholder) is pinned to the very front, then the
-  // user's real pools, then their existing chats (pinned first, then the rest).
-  const newChats = groupChats.filter((c) => c.newChat);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The "Create" tile opens a small menu (New post / New group gift); then the
+  // user's real group-gift pools, then their existing group chats (pinned first).
   const otherChats = [
     ...groupChats.filter((c) => !c.newChat && c.pinned),
     ...groupChats.filter((c) => !c.newChat && !c.pinned),
@@ -75,16 +75,38 @@ export function StoriesTray() {
 
   return (
     <div className="rounded-2xl border border-line bg-surface/70 p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <Icons.users size={14} className="text-coral" />
-        <span className="text-[11px] font-bold uppercase tracking-widest text-ink-faint">
-          Group Pitch-ins
-        </span>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Icons.calendar size={14} className="text-coral" />
+          <span className="text-[11px] font-bold uppercase tracking-widest text-ink-faint">
+            Events
+          </span>
+        </div>
+        <Link
+          href="/feed/events"
+          className="text-[11px] font-bold text-ink-soft transition-colors hover:text-ink"
+        >
+          See all
+        </Link>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {/* "Create" (new pitch-in) is pinned first, then the user's real pools,
-            then their existing chats. */}
-        {newChats.map(chatTile)}
+        {/* "Create" opens a menu (New post / New group gift), then the user's real
+            group-gift pools, then their existing group chats. */}
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-expanded={menuOpen}
+          className="flex w-16 shrink-0 flex-col items-center gap-1.5"
+        >
+          <span className="grid place-items-center rounded-full bg-line p-[2.5px]">
+            <span className="grid h-14 w-14 place-items-center rounded-full border-2 border-cream bg-surface">
+              <span className="grid h-full w-full place-items-center rounded-full bg-coral-soft text-coral">
+                <Icons.plusSquare size={24} />
+              </span>
+            </span>
+          </span>
+          <span className="max-w-16 truncate text-[11px] text-ink-soft">Create</span>
+        </button>
 
         {pools.map((p) => (
           <Link
@@ -110,6 +132,25 @@ export function StoriesTray() {
 
         {otherChats.map(chatTile)}
       </div>
+
+      {menuOpen && (
+        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3">
+          <Link
+            href="/feed/create"
+            onClick={() => setMenuOpen(false)}
+            className="flex items-center gap-2 rounded-xl border border-line bg-cream px-3 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
+          >
+            <Icons.plusSquare size={18} className="text-coral" /> New post
+          </Link>
+          <Link
+            href="/feed/pools"
+            onClick={() => setMenuOpen(false)}
+            className="flex items-center gap-2 rounded-xl border border-line bg-cream px-3 py-2.5 text-sm font-bold text-ink transition-colors hover:bg-coral-soft"
+          >
+            <Icons.users size={18} className="text-coral" /> New group gift
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
