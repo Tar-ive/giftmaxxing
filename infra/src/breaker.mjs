@@ -126,6 +126,18 @@ function classifyTrigger(event) {
 }
 
 export const handler = async (event) => {
+  // Catch-all: this is invoked by SNS (budget/alarm) and manual invokes. An
+  // unhandled throw here would just be logged by Lambda and retried by SNS; we
+  // log it ourselves and return a structured error so behavior is predictable.
+  try {
+    return await runBreaker(event);
+  } catch (err) {
+    console.error("breaker handler failed", err);
+    return { ok: false, error: err?.message || "breaker error" };
+  }
+};
+
+async function runBreaker(event) {
   const { action, reason } = classifyTrigger(event);
 
   if (action === "resume") {

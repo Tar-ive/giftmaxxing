@@ -1,0 +1,8 @@
+# Use the image's own `npm ci` instead of the host's node_modules (the host tree
+# omits client-dynamodb/lib-dynamodb, which the Lambda runtime provided).
+node_modules
+npm-debug.log
+# Terraform build artifacts (the Lambda zip) — not part of the container.
+build
+*.zip
+.DS_Store

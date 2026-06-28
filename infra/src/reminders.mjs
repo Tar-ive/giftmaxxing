@@ -33,6 +33,16 @@ function daysUntil(ev, now = new Date()) {
 }
 
 export const handler = async () => {
+  // Catch-all so a single DynamoDB/SNS hiccup can't crash the daily job opaquely.
+  try {
+    return await runReminders();
+  } catch (err) {
+    console.error("reminders job failed", err);
+    return { ok: false, error: err?.message || "reminders error" };
+  }
+};
+
+async function runReminders() {
   if (!USERS) return { ok: false, error: "USERS_TABLE not set" };
 
   const due = [];
@@ -68,16 +78,21 @@ export const handler = async () => {
     const when = r.days === 0 ? "today" : `in ${r.days} day${r.days === 1 ? "" : "s"}`;
     const message = `Hi ${r.name} — ${r.event.type} for ${who} is ${when} (${r.event.date}). Open Giftmaxxing to find the perfect gift.`;
     if (TOPIC_ARN) {
-      await sns.send(
-        new PublishCommand({
-          TopicArn: TOPIC_ARN,
-          Subject: "Giftmaxxing gift reminder",
-          Message: message,
-          MessageAttributes: {
-            userId: { DataType: "String", StringValue: String(r.userId) },
-          },
-        })
-      );
+      // Per-item guard: one failed publish shouldn't abort the rest of the batch.
+      try {
+        await sns.send(
+          new PublishCommand({
+            TopicArn: TOPIC_ARN,
+            Subject: "Giftmaxxing gift reminder",
+            Message: message,
+            MessageAttributes: {
+              userId: { DataType: "String", StringValue: String(r.userId) },
+            },
+          })
+        );
+      } catch (err) {
+        console.error("reminder publish failed for", r.userId, err?.message);
+      }
     } else {
       console.log("[reminder]", message);
     }

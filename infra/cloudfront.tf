@@ -1,13 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Edge cache (CloudFront) in front of the API Gateway HTTP API.
+# Edge cache (CloudFront) in front of the App Runner API service.
 #
-# WHY: the dev account's Lambda "Concurrent executions" quota is tiny (10), so the
-# public, repeatable feed reads (GET /feed, /pins, /recommendations, /ideas) were
-# saturating the pool and 503-throttling everything — including real-time routes.
-# Caching those GETs at the edge means repeated/identical requests are served by
-# CloudFront and NEVER invoke the Lambda, freeing the whole concurrency pool for
-# the real-time routes (/maxi, /interactions, /me, /pools, ...), which bypass the
-# cache via the default behavior.
+# WHY: the public, repeatable feed reads (GET /feed, /pins, /recommendations,
+# /ideas) are identical across users, so caching them at the edge serves repeats
+# straight from CloudFront and never even hits the origin — cutting cost + origin
+# load + latency. The origin is now the App Runner container service (which has NO
+# Lambda concurrency cap); the real-time routes (/maxi, /interactions, /me,
+# /pools, ...) bypass the cache via the default behavior and go straight to App
+# Runner -> DynamoDB / Bedrock.
 #
 # After `terraform apply`, point the frontend at the CloudFront URL:
 #   NEXT_PUBLIC_API_URL = <output cloudfront_api_url>   (Vercel + web/.env.local)
@@ -16,11 +16,13 @@
 
 locals {
   # Public, cacheable GET routes. Everything else falls through to the default
-  # (no-cache) behavior and reaches the Lambda directly.
+  # (no-cache) behavior and reaches App Runner directly.
   cached_api_routes = ["/feed", "/pins", "/recommendations", "/ideas"]
 
-  # Bare host of the API Gateway endpoint (CloudFront origin wants host, no scheme).
-  api_origin_host = replace(aws_apigatewayv2_api.http.api_endpoint, "https://", "")
+  # Bare host of the App Runner service (CloudFront origin wants host, no scheme).
+  # Repointed API Gateway -> App Runner so the edge cache fronts the uncapped
+  # container backend. service_url is already scheme-less (e.g. xxxx.awsapprunner.com).
+  api_origin_host = aws_apprunner_service.api.service_url
 }
 
 # Managed policies for the default (real-time) behavior: never cache, forward
@@ -94,7 +96,7 @@ resource "aws_cloudfront_distribution" "api" {
 
   origin {
     domain_name = local.api_origin_host
-    origin_id   = "apigw"
+    origin_id   = "apprunner"
 
     custom_origin_config {
       http_port              = 80
@@ -106,9 +108,9 @@ resource "aws_cloudfront_distribution" "api" {
 
   # Default: real-time routes (/maxi, /interactions, /me, /pools, /visual-search,
   # /connections, /graph, /events, /seed, all POST/PUT). Never cached — straight
-  # to the Lambda with full auth + body forwarded.
+  # to App Runner with full auth + body forwarded (incl. the Maxi -> Bedrock path).
   default_cache_behavior {
-    target_origin_id       = "apigw"
+    target_origin_id       = "apprunner"
     viewer_protocol_policy = "redirect-to-https"
     allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods         = ["GET", "HEAD"]
@@ -123,7 +125,7 @@ resource "aws_cloudfront_distribution" "api" {
     for_each = local.cached_api_routes
     content {
       path_pattern           = ordered_cache_behavior.value
-      target_origin_id       = "apigw"
+      target_origin_id       = "apprunner"
       viewer_protocol_policy = "redirect-to-https"
       allowed_methods        = ["GET", "HEAD", "OPTIONS"]
       cached_methods         = ["GET", "HEAD"]

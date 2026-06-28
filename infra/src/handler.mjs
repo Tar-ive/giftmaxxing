@@ -1700,7 +1700,15 @@ export const handler = async (event) => {
   // so downstream routes (e.g. /maxi rate limiting) can use the verified identity.
   let auth = null;
   if (AUTH_ENFORCE && !isPublicRoute(method, path)) {
-    auth = await authorizeRequest(event, method, path);
+    // authorizeRequest is the only awaited call before the main try/catch below,
+    // so guard it too — a JWKS/network hiccup must return a clean 500, never an
+    // unhandled rejection (which API Gateway would surface as an opaque 500).
+    try {
+      auth = await authorizeRequest(event, method, path);
+    } catch (err) {
+      console.error("authorization check threw", err);
+      return json(500, { error: "internal error" });
+    }
     if (!auth.ok) {
       return json(401, {
         error: "unauthorized",

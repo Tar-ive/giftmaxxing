@@ -295,6 +295,68 @@ resource "aws_cloudwatch_dashboard" "overview" {
           ]
         }
       },
+
+      # ── App Runner — containerized API (replaces the Lambda concurrency funnel) ──
+      {
+        type   = "metric"
+        x      = 0
+        y      = 33
+        width  = 8
+        height = 6
+        properties = {
+          title   = "App Runner — requests & status"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.region
+          period  = 300
+          metrics = [
+            ["AWS/AppRunner", "Requests", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Sum", label = "Requests" }],
+            ["AWS/AppRunner", "2xxStatusResponses", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Sum", label = "2xx", color = "#2ca02c" }],
+            ["AWS/AppRunner", "4xxStatusResponses", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Sum", label = "4xx", color = "#ff7f0e" }],
+            ["AWS/AppRunner", "5xxStatusResponses", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Sum", label = "5xx", color = "#d62728" }],
+          ]
+        }
+      },
+
+      {
+        type   = "metric"
+        x      = 8
+        y      = 33
+        width  = 8
+        height = 6
+        properties = {
+          title   = "App Runner — request latency (ms)"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.region
+          period  = 300
+          metrics = [
+            ["AWS/AppRunner", "RequestLatency", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Average", label = "Latency avg" }],
+            ["AWS/AppRunner", "RequestLatency", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "p99", label = "Latency p99" }],
+          ]
+        }
+      },
+
+      {
+        type   = "metric"
+        x      = 16
+        y      = 33
+        width  = 8
+        height = 6
+        properties = {
+          title   = "App Runner — instances & utilization"
+          view    = "timeSeries"
+          stacked = false
+          region  = var.region
+          period  = 300
+          metrics = [
+            ["AWS/AppRunner", "ActiveInstances", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Maximum", label = "Active instances" }],
+            ["AWS/AppRunner", "Concurrency", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Average", label = "Concurrency" }],
+            ["AWS/AppRunner", "CPUUtilization", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Average", label = "CPU %", yAxis = "right" }],
+            ["AWS/AppRunner", "MemoryUtilization", "ServiceName", aws_apprunner_service.api.service_name, "ServiceID", aws_apprunner_service.api.service_id, { stat = "Average", label = "Memory %", yAxis = "right" }],
+          ]
+        }
+      },
     ]
   })
 }

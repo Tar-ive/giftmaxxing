@@ -3,11 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Giftmaxxing API Lambda. DynamoDB + lib-dynamodb come from the nodejs20.x runtime; @aws-sdk/client-s3vectors and @aws-sdk/client-bedrock-runtime are bundled (not in the runtime SDK).",
+  "description": "Giftmaxxing API. Runs on Lambda (handler.handler) AND as a container on App Runner (server.mjs -> handler). The nodejs20.x Lambda runtime provides client-dynamodb + lib-dynamodb, but a plain Node container does NOT, so they are listed here too; harmless on Lambda (bundled copy used).",
+  "scripts": {
+    "start": "node server.mjs"
+  },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.700.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
     "@aws-sdk/client-s3vectors": "^3.700.0",
     "@aws-sdk/client-sns": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
     "jose": "^5.10.0"
   }
 }
