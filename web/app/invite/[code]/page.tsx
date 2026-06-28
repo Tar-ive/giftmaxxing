@@ -284,6 +284,7 @@ export default function InvitePage() {
                 <button
                   key={key}
                   onClick={() => setGenderPref(key)}
+                  aria-pressed={selected}
                   className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
                     selected
                       ? "border-coral bg-coral-soft"

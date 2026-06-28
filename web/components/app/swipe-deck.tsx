@@ -105,10 +105,12 @@ export function SwipeDeck({
 
   useEffect(() => {
     // SSR-safe: read localStorage only after mount.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     const rawDeck = buildDeck();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDeck(genderPref ? sortByGenderPref(rawDeck, genderPref) : rawDeck);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStats(swipeStats());
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, [genderPref]);
 
@@ -218,14 +220,15 @@ export function SwipeDeck({
 
   const startOver = useCallback(() => {
     clearSwipes();
-    setDeck(buildDeck());
+    const rawDeck = buildDeck();
+    setDeck(genderPref ? sortByGenderPref(rawDeck, genderPref) : rawDeck);
     setIdx(0);
     setDrag({ dx: 0, dy: 0 });
     setFly(null);
     setStats({ yes: 0, no: 0, total: 0 });
     setResults(null);
     setPhase("swipe");
-  }, []);
+  }, [genderPref]);
 
   if (!mounted) {
     return <div className="mx-auto h-[460px] w-full max-w-sm animate-pulse rounded-3xl bg-line" />;

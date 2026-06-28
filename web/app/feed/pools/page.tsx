@@ -24,6 +24,8 @@ import { loadLocalConnections, LOCAL_CONN_EVENT } from "@/lib/local-connections"
 import { PINS } from "@/lib/pins";
 import { shortTitle } from "@/lib/feed-builder";
 import { GENDER_PREF_META, type GenderPref } from "@/lib/gender-prefs";
+import { addToCart, loadCart, saveCart } from "@/lib/cart";
+import type { Pin } from "@/lib/pins";
 
 const QUICK = [10, 25, 50, 100];
 
@@ -248,6 +250,25 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
   const genderLabel = conn.genderPref && conn.genderPref in GENDER_PREF_META
     ? GENDER_PREF_META[conn.genderPref as GenderPref].label
     : null;
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+
+  const handleAddToCart = (pin: Pin) => {
+    const cart = loadCart();
+    const updated = addToCart(cart, pin);
+    saveCart(updated);
+    setAddedIds((prev) => new Set(prev).add(pin.id));
+  };
+
+  const handleAddAll = () => {
+    let cart = loadCart();
+    for (const pin of bundle) {
+      if (!addedIds.has(pin.id)) {
+        cart = addToCart(cart, pin);
+      }
+    }
+    saveCart(cart);
+    setAddedIds(new Set(bundle.map((p) => p.id)));
+  };
 
   return (
     <div className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
@@ -313,6 +334,13 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
                       <span className="text-[10px] font-bold text-ink">${pin.price}</span>
                       <span className="text-[9px] text-ink-faint">{deliveryDays}d ship</span>
                     </div>
+                    <button
+                      onClick={() => handleAddToCart(pin)}
+                      disabled={addedIds.has(pin.id)}
+                      className="mt-1 w-full rounded-md bg-coral px-1 py-0.5 text-[9px] font-bold text-white transition-opacity hover:opacity-90 disabled:bg-ink-faint disabled:opacity-60"
+                    >
+                      {addedIds.has(pin.id) ? "Added" : "+ Cart"}
+                    </button>
                   </div>
                 </div>
               );
@@ -323,8 +351,12 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
               📦 Items marked ship within the {conn.birthday} deadline. Ones marked &ldquo;Late&rdquo; may not arrive in time.
             </p>
           )}
-          <button className="mt-3 w-full rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-cream transition-opacity hover:opacity-90">
-            One-click checkout bundle
+          <button
+            onClick={handleAddAll}
+            disabled={addedIds.size === bundle.length}
+            className="mt-3 w-full rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-cream transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {addedIds.size === bundle.length ? "All added to cart ✓" : "Add entire bundle to cart"}
           </button>
         </div>
       )}

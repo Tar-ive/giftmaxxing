@@ -2320,6 +2320,11 @@ export const handler = async (event) => {
       const userId = qs.userId;
       const connectionId = qs.connectionId;
       if (!userId || !connectionId) return json(400, { error: "userId and connectionId required" });
+      // Authorization: only the owner (or admin) can read their bundles
+      const auth = await authorizeRequest(event, method, path);
+      if (!(auth.via === "admin" || auth.sub === userId)) {
+        return json(403, { error: "forbidden" });
+      }
       // Fetch the connection record
       const connOut = await ddb.send(
         new GetCommand({ TableName: CONNECTIONS, Key: { userId, connectionId } })
@@ -2334,10 +2339,8 @@ export const handler = async (event) => {
       if (seeds.length > 0) {
         // Look up seed pins from the posts table
         for (const seed of seeds.slice(0, 8)) {
-          try {
-            const out = await ddb.send(new GetCommand({ TableName: POSTS, Key: { postId: seed } }));
-            if (out.Item) bundleItems.push(out.Item);
-          } catch { /* skip missing */ }
+          const out = await ddb.send(new GetCommand({ TableName: POSTS, Key: { postId: seed } }));
+          if (out.Item) bundleItems.push(out.Item);
         }
       }
       // Compute delivery estimates for each item
@@ -2350,15 +2353,15 @@ export const handler = async (event) => {
         deadlineDays = Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
       }
       const bundle = bundleItems.map((item) => {
-        const price = Number(item.price) || 50;
+        const price = Number(item.price ?? item.product?.price) || 50;
         const deliveryDays = price > 200 ? 7 : price > 100 ? 5 : 3;
         const canDeliverByDeadline = deadlineDays === null || deliveryDays <= deadlineDays;
         return {
           postId: item.postId,
-          title: item.title,
-          image: item.image,
+          title: item.caption ?? item.product?.name ?? item.title ?? "",
+          image: item.product?.image ?? item.image ?? "",
           price,
-          category: item.category,
+          category: item.category ?? item.product?.category,
           deliveryDays,
           canDeliverByDeadline,
         };
