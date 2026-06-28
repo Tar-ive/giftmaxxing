@@ -54,7 +54,7 @@ const ITEMS: Item[] = [
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
   { label: "Events", href: "/feed/events", icon: "calendar" },
   { label: "Shop", href: "/feed/shop", icon: "gift" },
-  { label: "Group Gifts", href: "/feed/pools", icon: "users" },
+  { label: "Gifts", href: "/feed/pools", icon: "users" },
   { label: "Messages", href: "/feed/messages", icon: "message" },
   { label: "Notifications", href: "/feed/activity", icon: "heart" },
 ];
@@ -140,7 +140,7 @@ export function Sidebar() {
 const DRAWER_ITEMS: Item[] = [
   { label: "Swipe", href: "/feed/swipe", icon: "cards" },
   { label: "Shop", href: "/feed/shop", icon: "gift" },
-  { label: "Group Gifts", href: "/feed/pools", icon: "users" },
+  { label: "Gifts", href: "/feed/pools", icon: "users" },
   { label: "Cart", href: "/feed/cart", icon: "cart" },
 ];
 

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { GRADIENTS, type Grad } from "@/lib/data";
 import { loadPendingPoolJoin, clearPendingPoolJoin } from "@/lib/fundraisers";
 import { useCurrentUser } from "@/lib/identity";
-import { getMyUserId, isApiConfigured } from "@/lib/api";
+import { getMyUserId, isApiConfigured, fetchConnections, type SoftConnection } from "@/lib/api";
 import { buildPoolInviteUrl, type PoolInviteSnapshot } from "@/lib/invite";
 import {
   type Pool,
@@ -19,9 +19,47 @@ import {
 import { ShareSheet } from "@/components/app/share-sheet";
 import { PaymentMethodSheet, type PaymentMethod } from "@/components/app/payment-method-sheet";
 import { PaymentConfirmDialog } from "@/components/app/payment-confirm-dialog";
-import { Icons } from "@/components/ui";
+import { Icons, Maxi } from "@/components/ui";
+import { loadLocalConnections, LOCAL_CONN_EVENT } from "@/lib/local-connections";
+import { PINS } from "@/lib/pins";
+import { shortTitle } from "@/lib/feed-builder";
+import { GENDER_PREF_META, type GenderPref } from "@/lib/gender-prefs";
+import { addToCart, loadCart, saveCart } from "@/lib/cart";
+import type { Pin } from "@/lib/pins";
 
 const QUICK = [10, 25, 50, 100];
+
+// Build a Maxi gift bundle from seeds stored in a connection's soft profile
+function buildMaxiBundle(conn: SoftConnection) {
+  const seeds = conn.seeds ?? [];
+  if (!seeds.length) return [] as typeof PINS;
+  const pinMap = new Map(PINS.map((p) => [p.id, p]));
+  const bundle = seeds.map((s) => pinMap.get(s)).filter((p): p is (typeof PINS)[number] => !!p);
+  if (bundle.length) return bundle.slice(0, 6);
+  // Fallback: pick items based on vibes/category matching
+  const vibes = conn.vibes ?? [];
+  return PINS.filter((p) => vibes.some((v) => p.category === v || p.title.toLowerCase().includes(v)))
+    .slice(0, 6);
+}
+
+// Estimated delivery days based on price tier
+function estimatedDeliveryDays(price: number): number {
+  if (price > 200) return 7;
+  if (price > 100) return 5;
+  return 3;
+}
+
+function daysUntilDate(dateStr?: string): number | null {
+  if (!dateStr) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return null;
+  const target = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
+}
+
+type Tab = "solo" | "group";
 
 export default function PoolsPage() {
   const me = useCurrentUser();
@@ -31,7 +69,43 @@ export default function PoolsPage() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("solo");
+  const [soloGifts, setSoloGifts] = useState<SoftConnection[]>([]);
   const configured = isApiConfigured();
+
+  // Load solo gifts (completed challenge connections)
+  useEffect(() => {
+    const uid = getMyUserId();
+    let cancelled = false;
+
+    const load = async () => {
+      let apiConns: SoftConnection[] = [];
+      if (uid && configured) {
+        try {
+          const { items } = await fetchConnections(uid);
+          apiConns = items;
+        } catch {
+          // backend not available
+        }
+      }
+      const localConns = loadLocalConnections();
+      const apiIds = new Set(apiConns.map((c) => c.connectionId));
+      const merged = [
+        ...apiConns,
+        ...localConns.filter((c) => !apiIds.has(c.connectionId)),
+      ].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+
+      if (!cancelled) setSoloGifts(merged);
+    };
+
+    void load();
+    const onLocal = () => void load();
+    window.addEventListener(LOCAL_CONN_EVENT, onLocal);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LOCAL_CONN_EVENT, onLocal);
+    };
+  }, [configured]);
 
   const refresh = useCallback(async () => {
     const uid = getMyUserId();
@@ -40,7 +114,6 @@ export default function PoolsPage() {
       setLoading(false);
       return;
     }
-    // Arrived from an invite link → auto-join that pool (idempotent) before listing.
     const pending = loadPendingPoolJoin();
     if (pending?.snapshot?.id) {
       await joinPool(pending.snapshot.id, uid, myName);
@@ -69,8 +142,6 @@ export default function PoolsPage() {
       setPools((p) => [created, ...p]);
       router.push(`/feed/pools/${created.poolId}`);
     } else {
-      // The create failed even after apiFetch's throttle retries — keep the form
-      // open with the user's input and tell them, instead of silently no-op'ing.
       setError("Couldn't save your group gift just now — the server was busy. Please try again.");
     }
   };
@@ -83,8 +154,8 @@ export default function PoolsPage() {
     <div className="mx-auto max-w-3xl px-4 py-8">
       <header className="mb-6 flex items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-3xl font-extrabold text-ink">Group gifts</h1>
-          <p className="mt-1 text-ink-soft">Pool money toward one gift that actually lands. Everyone chips in, chats it out, nobody double-buys.</p>
+          <h1 className="font-display text-3xl font-extrabold text-ink">Gifts</h1>
+          <p className="mt-1 text-ink-soft">Your gift ideas from completed challenges and group pools.</p>
         </div>
         <button
           onClick={() => setCreating((c) => !c)}
@@ -93,6 +164,26 @@ export default function PoolsPage() {
           {creating ? "Close" : "Start a pool"}
         </button>
       </header>
+
+      {/* Tab switcher */}
+      <div className="mb-6 flex gap-1 rounded-2xl border border-line bg-cream p-1">
+        <button
+          onClick={() => setTab("solo")}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
+            tab === "solo" ? "bg-surface text-ink shadow-sm" : "text-ink-soft hover:text-ink"
+          }`}
+        >
+          Solo Gifts {soloGifts.length > 0 && <span className="ml-1 rounded-full bg-coral px-1.5 py-0.5 text-[10px] text-white">{soloGifts.length}</span>}
+        </button>
+        <button
+          onClick={() => setTab("group")}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
+            tab === "group" ? "bg-surface text-ink shadow-sm" : "text-ink-soft hover:text-ink"
+          }`}
+        >
+          Group Gifts {pools.length > 0 && <span className="ml-1 rounded-full bg-coral px-1.5 py-0.5 text-[10px] text-white">{pools.length}</span>}
+        </button>
+      </div>
 
       {error && (
         <div className="mb-4 flex items-start gap-2 rounded-2xl border border-coral/40 bg-coral-soft/60 px-4 py-3 text-sm text-coral-ink">
@@ -103,19 +194,212 @@ export default function PoolsPage() {
 
       {creating && <CreatePool onCreate={handleCreate} />}
 
-      {!configured ? (
-        <p className="py-16 text-center text-sm text-ink-faint">
-          Group gifts need a live connection. Try again in a moment.
-        </p>
-      ) : loading ? (
-        <p className="py-16 text-center text-sm text-ink-faint">Loading your group gifts…</p>
-      ) : pools.length === 0 ? (
-        <EmptyState onStart={() => setCreating(true)} />
-      ) : (
+      {/* Solo gifts tab */}
+      {tab === "solo" && (
         <div className="space-y-5">
-          {pools.map((p) => (
-            <PoolCard key={p.poolId} pool={p} myName={myName} onContributed={handleContributed} />
-          ))}
+          {soloGifts.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-line bg-surface px-6 py-14 text-center">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-coral-soft text-3xl">🎁</div>
+              <h2 className="mt-4 font-display text-xl font-extrabold text-ink">No solo gifts yet</h2>
+              <p className="mx-auto mt-1.5 max-w-sm text-sm text-ink-soft">
+                Share a swipe challenge with someone. When they finish, Maxi builds a gift bundle here.
+              </p>
+              <Link
+                href="/challenge"
+                className="mt-5 inline-flex items-center gap-2 rounded-full bg-coral px-6 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
+              >
+                <Icons.share size={18} /> Share a challenge
+              </Link>
+            </div>
+          ) : (
+            soloGifts.map((conn) => (
+              <SoloGiftCard key={conn.connectionId} conn={conn} />
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Group gifts tab */}
+      {tab === "group" && (
+        <>
+          {!configured ? (
+            <p className="py-16 text-center text-sm text-ink-faint">
+              Group gifts need a live connection. Try again in a moment.
+            </p>
+          ) : loading ? (
+            <p className="py-16 text-center text-sm text-ink-faint">Loading your group gifts…</p>
+          ) : pools.length === 0 ? (
+            <EmptyState onStart={() => setCreating(true)} />
+          ) : (
+            <div className="space-y-5">
+              {pools.map((p) => (
+                <PoolCard key={p.poolId} pool={p} myName={myName} onContributed={handleContributed} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// Solo gift card — shows Maxi's bundle from a completed swipe challenge
+function SoloGiftCard({ conn }: { conn: SoftConnection }) {
+  const router = useRouter();
+  const bundle = buildMaxiBundle(conn);
+  const daysLeft = daysUntilDate(conn.birthday);
+  const genderLabel = conn.genderPref && conn.genderPref in GENDER_PREF_META
+    ? GENDER_PREF_META[conn.genderPref as GenderPref].label
+    : null;
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+
+  // Derive top category from bundle for "Browse similar" navigation
+  const topCategory = (() => {
+    const counts = new Map<string, number>();
+    for (const p of bundle) {
+      if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    }
+    let best = "";
+    let max = 0;
+    for (const [cat, n] of counts) {
+      if (n > max) { best = cat; max = n; }
+    }
+    return best;
+  })();
+
+  const handleAddToCart = (pin: Pin) => {
+    const cart = loadCart();
+    const updated = addToCart(cart, pin);
+    saveCart(updated);
+    setAddedIds((prev) => new Set(prev).add(pin.id));
+  };
+
+  const handleAddAll = () => {
+    let cart = loadCart();
+    for (const pin of bundle) {
+      if (!addedIds.has(pin.id)) {
+        cart = addToCart(cart, pin);
+      }
+    }
+    saveCart(cart);
+    setAddedIds(new Set(bundle.map((p) => p.id)));
+  };
+
+  return (
+    <div className="overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
+      <div className="flex items-start gap-3 p-4 sm:p-5">
+        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-coral text-lg text-white">
+          🎁
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-display text-lg font-extrabold text-ink">{conn.guestName}</h3>
+            {genderLabel && (
+              <span className="rounded-full bg-cream px-2 py-0.5 text-[11px] font-semibold text-ink-soft">{genderLabel}</span>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-ink-soft">
+            Completed swipe challenge · {conn.yesCount ?? 0} likes across {conn.totalSwipes ?? 0} swipes
+          </p>
+          {conn.birthday && (
+            <p className="mt-1 text-xs text-ink-faint">
+              🎂 {conn.birthday}
+              {daysLeft !== null && daysLeft > 0 && (
+                <span className="ml-1 font-semibold text-coral"> · {daysLeft} days away</span>
+              )}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Maxi bundle suggestion */}
+      {bundle.length > 0 && (
+        <div className="border-t border-line px-4 py-4 sm:px-5">
+          <div className="mb-3 flex items-center gap-2">
+            <Maxi size={20} />
+            <p className="text-xs font-bold text-ink">
+              Maxi&apos;s picks based on {conn.guestName}&apos;s swipes
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {bundle.map((pin) => {
+              const deliveryDays = estimatedDeliveryDays(pin.price);
+              const canDeliver = daysLeft === null || deliveryDays <= daysLeft;
+              return (
+                <div
+                key={pin.id}
+                className="group relative cursor-pointer overflow-hidden rounded-xl border border-line bg-cream transition-shadow hover:shadow-md"
+                onClick={() => { if (pin.url) window.open(pin.url, "_blank", "noopener"); }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && pin.url) window.open(pin.url, "_blank", "noopener"); }}
+              >
+                  <div className="relative aspect-square w-full" style={{ background: GRADIENTS[pin.grad] }}>
+                    <span className="absolute inset-0 grid place-items-center text-2xl">{pin.emoji}</span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pin.image}
+                      alt={pin.title}
+                      loading="lazy"
+                      className="absolute inset-0 h-full w-full object-cover"
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                    {!canDeliver && (
+                      <span className="absolute right-1 top-1 rounded bg-red-500/90 px-1 py-0.5 text-[9px] font-bold text-white">
+                        Late
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-1.5">
+                    <p className="line-clamp-1 text-[10px] font-semibold text-ink">{shortTitle(pin.title)}</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-ink">${pin.price}</span>
+                      <span className="text-[9px] text-ink-faint">{deliveryDays}d ship</span>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleAddToCart(pin); }}
+                      disabled={addedIds.has(pin.id)}
+                      className="mt-1 w-full rounded-md bg-coral px-1 py-0.5 text-[9px] font-bold text-white transition-opacity hover:opacity-90 disabled:bg-ink-faint disabled:opacity-60"
+                    >
+                      {addedIds.has(pin.id) ? "Added" : "+ Cart"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {daysLeft !== null && daysLeft > 0 && (
+            <p className="mt-2 text-[11px] text-ink-faint">
+              📦 Items marked ship within the {conn.birthday} deadline. Ones marked &ldquo;Late&rdquo; may not arrive in time.
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={handleAddAll}
+              disabled={addedIds.size === bundle.length}
+              className="flex-1 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-cream transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {addedIds.size === bundle.length ? "All added to cart ✓" : "Add all to cart"}
+            </button>
+            <button
+              onClick={() => router.push(`/feed/shop${topCategory ? `?category=${encodeURIComponent(topCategory)}` : ""}`)}
+              className="flex-1 rounded-full border border-line bg-surface px-5 py-2.5 text-sm font-bold text-ink transition-opacity hover:opacity-90"
+            >
+              Browse similar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Vibes tags */}
+      {(conn.vibes?.length ?? 0) > 0 && (
+        <div className="border-t border-line px-4 py-3 sm:px-5">
+          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-faint">Gift vibes</p>
+          <div className="flex flex-wrap gap-1.5">
+            {conn.vibes?.map((v) => (
+              <span key={v} className="rounded-full bg-coral-soft px-2.5 py-1 text-[11px] font-semibold text-coral-ink capitalize">{v}</span>
+            ))}
+          </div>
         </div>
       )}
     </div>

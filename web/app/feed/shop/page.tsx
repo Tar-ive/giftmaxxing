@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { AMAZON_PICKS, type AmazonPick } from "@/lib/amazon-picks";
 import { GRADIENTS } from "@/lib/data";
 import { visualForPick } from "@/lib/affiliate";
@@ -78,8 +79,22 @@ function PickCard({ p, onSelect }: { p: AmazonPick; onSelect: () => void }) {
 }
 
 export default function ShopPage() {
+  const searchParams = useSearchParams();
+  const categoryFilter = searchParams.get("category");
   const picks = AMAZON_PICKS;
   const [selectedPick, setSelectedPick] = useState<AmazonPick | null>(null);
+  const [scrolledToCategory, setScrolledToCategory] = useState(false);
+
+  // Auto-scroll to matching category section when navigated from "Browse similar"
+  useEffect(() => {
+    if (!categoryFilter || scrolledToCategory) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`shop-category-${categoryFilter}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setScrolledToCategory(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [categoryFilter, scrolledToCategory]);
 
   // Interleave bundles with picks: each row pairs 1 bundle with 2 hand-picked
   // items, alternating which side the bundle sits on. Picks not consumed by a
@@ -148,12 +163,20 @@ export default function ShopPage() {
           <div className="my-8 border-t border-line" />
           <div className="space-y-8">
             <h2 className="text-sm font-bold uppercase tracking-wide text-ink-faint">
-              More hand-picked on Amazon
+              {categoryFilter ? `Showing similar items: ${categoryFilter}` : "More hand-picked on Amazon"}
             </h2>
-            {restGroups.map((g) => (
-              <section key={g.label}>
+            {restGroups
+              .sort((a, b) => {
+                // Boost the filtered category to the top
+                if (!categoryFilter) return 0;
+                const aMatch = a.label.toLowerCase() === categoryFilter.toLowerCase() ? -1 : 0;
+                const bMatch = b.label.toLowerCase() === categoryFilter.toLowerCase() ? -1 : 0;
+                return aMatch - bMatch;
+              })
+              .map((g) => (
+              <section key={g.label} id={`shop-category-${g.label}`}>
                 {restGroups.length > 1 ? (
-                  <h2 className="mb-3 text-sm font-bold uppercase tracking-wide text-ink-faint">
+                  <h2 className={`mb-3 text-sm font-bold uppercase tracking-wide ${categoryFilter && g.label.toLowerCase() === categoryFilter.toLowerCase() ? "text-coral" : "text-ink-faint"}`}>
                     {g.label}
                   </h2>
                 ) : null}

@@ -2174,8 +2174,8 @@ export const handler = async (event) => {
     }
 
     // ── Soft profiles (viral swipe challenge) ────────────────────────────────
-    // POST /connections  { senderId, guest:{ name, handle?, birthday?, vibes?,
-    //   seeds?, interests?, yesCount?, totalSwipes? } }
+    // POST /connections  { senderId, guest:{ name, handle?, birthday?, genderPref?,
+    //   vibes?, seeds?, interests?, yesCount?, totalSwipes? } }
     // Created when an invited guest finishes the swipe challenge. The sender
     // (senderId, embedded in the invite link) "owns" the resulting soft profile;
     // consent is implied by the guest completing a link the sender shared.
@@ -2192,6 +2192,18 @@ export const handler = async (event) => {
         typeof guest.birthday === "string" && /^\d{4}-\d{2}-\d{2}$/.test(guest.birthday)
           ? guest.birthday
           : undefined;
+      const VALID_GENDER_PREFS = ["he", "she", "they"];
+      const genderPref =
+        typeof guest.genderPref === "string" && VALID_GENDER_PREFS.includes(guest.genderPref)
+          ? guest.genderPref
+          : undefined;
+      // Parse dwell timing signals (how long the guest spent on each card)
+      const dwellSignals = Array.isArray(guest.dwellSignals)
+        ? guest.dwellSignals
+            .slice(0, 100)
+            .filter((s) => s && typeof s.id === "string" && typeof s.dwellMs === "number")
+            .map((s) => ({ id: String(s.id), dir: String(s.dir), dwellMs: Math.round(Number(s.dwellMs)) }))
+        : undefined;
       const item = {
         userId: senderId,
         connectionId: `conn_${rid}`,
@@ -2200,11 +2212,13 @@ export const handler = async (event) => {
         guestName: String(guest.name).trim().slice(0, 80),
         guestHandle: guest.handle ? String(guest.handle).slice(0, 40) : undefined,
         birthday,
+        genderPref,
         vibes: Array.isArray(guest.vibes) ? guest.vibes.slice(0, 12).map(String) : [],
         seeds: Array.isArray(guest.seeds) ? guest.seeds.slice(0, 20).map(String) : [],
         interests: Array.isArray(guest.interests) ? guest.interests.slice(0, 12).map(String) : [],
         yesCount: Number(guest.yesCount) || 0,
         totalSwipes: Number(guest.totalSwipes) || 0,
+        dwellSignals,
         seen: false,
         createdAt: Date.now(),
       };
@@ -2304,6 +2318,71 @@ export const handler = async (event) => {
         claimed++;
       }
       return json(200, { ok: true, claimed });
+    }
+
+    // ── Gift bundles (Maxi's picks from a completed challenge) ─────────────────
+    // GET /bundles?connectionId=&userId=  — generate a gift bundle from a
+    // completed swipe challenge. Uses the connection's seeds + genderPref to rank
+    // items and compute estimated delivery dates relative to the birthday/date.
+    if (method === "GET" && path === "/bundles") {
+      const userId = qs.userId;
+      const connectionId = qs.connectionId;
+      if (!userId || !connectionId) return json(400, { error: "userId and connectionId required" });
+      // Authorization: only the owner (or admin) can read their bundles
+      const auth = await authorizeRequest(event, method, path);
+      if (!(auth.via === "admin" || auth.sub === userId)) {
+        return json(403, { error: "forbidden" });
+      }
+      // Fetch the connection record
+      const connOut = await ddb.send(
+        new GetCommand({ TableName: CONNECTIONS, Key: { userId, connectionId } })
+      );
+      const conn = connOut.Item;
+      if (!conn) return json(404, { error: "connection not found" });
+      // Build a bundle from the seeds — query the posts table for matching items
+      const seeds = conn.seeds ?? [];
+      const genderPref = conn.genderPref; // "he" | "she" | "they" | undefined
+      const deadline = conn.birthday; // "YYYY-MM-DD" or undefined
+      let bundleItems = [];
+      if (seeds.length > 0) {
+        // Look up seed pins from the posts table
+        for (const seed of seeds.slice(0, 8)) {
+          const out = await ddb.send(new GetCommand({ TableName: POSTS, Key: { postId: seed } }));
+          if (out.Item) bundleItems.push(out.Item);
+        }
+      }
+      // Compute delivery estimates for each item
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      let deadlineDays = null;
+      if (deadline && /^\d{4}-\d{2}-\d{2}$/.test(deadline)) {
+        const [y, m, d] = deadline.split("-").map(Number);
+        const target = new Date(y, m - 1, d);
+        deadlineDays = Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
+      }
+      const bundle = bundleItems.map((item) => {
+        const price = Number(item.price ?? item.product?.price) || 50;
+        const deliveryDays = price > 200 ? 7 : price > 100 ? 5 : 3;
+        const canDeliverByDeadline = deadlineDays === null || deliveryDays <= deadlineDays;
+        return {
+          postId: item.postId,
+          title: item.caption ?? item.product?.name ?? item.title ?? "",
+          image: item.product?.image ?? item.image ?? "",
+          price,
+          category: item.category ?? item.product?.category,
+          deliveryDays,
+          canDeliverByDeadline,
+        };
+      });
+      return json(200, {
+        connectionId,
+        guestName: conn.guestName,
+        genderPref,
+        deadline,
+        deadlineDays,
+        bundle,
+        bundleTotal: bundle.reduce((sum, i) => sum + i.price, 0),
+      });
     }
 
     // ── Group gifts (pools) ──────────────────────────────────────────────────

@@ -483,11 +483,13 @@ export type GuestSoftProfile = {
   name: string;
   handle?: string;
   birthday?: string;
+  genderPref?: string;
   vibes?: string[];
   seeds?: string[];
   interests?: string[];
   yesCount?: number;
   totalSwipes?: number;
+  dwellSignals?: { id: string; dir: string; dwellMs: number }[];
 };
 
 // A soft profile as stored under the sender (GET /connections).
@@ -499,6 +501,7 @@ export type SoftConnection = {
   guestName: string;
   guestHandle?: string;
   birthday?: string;
+  genderPref?: string;
   vibes?: string[];
   seeds?: string[];
   interests?: string[];
