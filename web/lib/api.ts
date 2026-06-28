@@ -489,6 +489,7 @@ export type GuestSoftProfile = {
   interests?: string[];
   yesCount?: number;
   totalSwipes?: number;
+  dwellSignals?: { id: string; dir: string; dwellMs: number }[];
 };
 
 // A soft profile as stored under the sender (GET /connections).

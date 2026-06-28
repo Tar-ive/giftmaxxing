@@ -102,16 +102,17 @@ export function SwipeDeck({
   const [loadingResults, setLoadingResults] = useState(false);
 
   const startRef = useRef<{ x: number; y: number } | null>(null);
+  // Track when the current card was first shown (for dwell time measurement)
+  const cardShownAtRef = useRef<number>(0);
 
   useEffect(() => {
     // SSR-safe: read localStorage only after mount.
     const rawDeck = buildDeck();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDeck(genderPref ? sortByGenderPref(rawDeck, genderPref) : rawDeck);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setStats(swipeStats());
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
+    cardShownAtRef.current = Date.now();
   }, [genderPref]);
 
   const eligible = stats.yes >= GOAL || (mounted && deck.length > 0 && idx >= deck.length);
@@ -121,7 +122,9 @@ export function SwipeDeck({
       const pin = deck[idx];
       if (!pin || fly) return;
       setFly(dir);
-      recordSwipe(pin.id, dir);
+      // Calculate dwell time: how long the user looked at this card before swiping
+      const dwellMs = Date.now() - cardShownAtRef.current;
+      recordSwipe(pin.id, dir, dwellMs);
       // Persist the swipe to the DynamoDB interactions table (fire-and-forget,
       // no-ops when the API isn't configured). A "yes" is a positive taste
       // signal -> `like` (seeds the vector recommender + excludes from feed);
@@ -133,6 +136,8 @@ export function SwipeDeck({
         setIdx((i) => i + 1);
         setDrag({ dx: 0, dy: 0 });
         setFly(null);
+        // Reset dwell timer for next card
+        cardShownAtRef.current = Date.now();
       }, 230);
     },
     [deck, idx, fly]

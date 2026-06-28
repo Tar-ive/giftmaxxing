@@ -16,7 +16,7 @@
 import { PINS, type Pin } from "@/lib/pins";
 
 export type SwipeDir = "yes" | "no";
-export type Swipe = { id: string; dir: SwipeDir; at: number };
+export type Swipe = { id: string; dir: SwipeDir; at: number; dwellMs?: number };
 
 const KEY = "giftmaxxing_swipes";
 export const SWIPES_EVENT = "giftmaxxing:swipes";
@@ -54,11 +54,19 @@ function persist(list: Swipe[]): void {
 }
 
 // Record a swipe; the latest decision for a given pin wins. Returns the new list.
-export function recordSwipe(id: string, dir: SwipeDir): Swipe[] {
+// dwellMs is the time in milliseconds the user spent looking at the card before swiping.
+export function recordSwipe(id: string, dir: SwipeDir, dwellMs?: number): Swipe[] {
   const list = loadSwipes().filter((s) => s.id !== id);
-  list.unshift({ id, dir, at: Date.now() });
+  list.unshift({ id, dir, at: Date.now(), dwellMs });
   persist(list);
   return list;
+}
+
+// Get timing signals for all swipes (for sending to backend).
+export function swipeTimingSignals(list: Swipe[] = loadSwipes()): { id: string; dir: SwipeDir; dwellMs: number }[] {
+  return list
+    .filter((s): s is Swipe & { dwellMs: number } => typeof s.dwellMs === "number" && s.dwellMs > 0)
+    .map((s) => ({ id: s.id, dir: s.dir, dwellMs: s.dwellMs }));
 }
 
 export function clearSwipes(): void {

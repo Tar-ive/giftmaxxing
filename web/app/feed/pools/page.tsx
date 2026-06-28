@@ -245,12 +245,27 @@ export default function PoolsPage() {
 
 // Solo gift card — shows Maxi's bundle from a completed swipe challenge
 function SoloGiftCard({ conn }: { conn: SoftConnection }) {
+  const router = useRouter();
   const bundle = buildMaxiBundle(conn);
   const daysLeft = daysUntilDate(conn.birthday);
   const genderLabel = conn.genderPref && conn.genderPref in GENDER_PREF_META
     ? GENDER_PREF_META[conn.genderPref as GenderPref].label
     : null;
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+
+  // Derive top category from bundle for "Browse similar" navigation
+  const topCategory = (() => {
+    const counts = new Map<string, number>();
+    for (const p of bundle) {
+      if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    }
+    let best = "";
+    let max = 0;
+    for (const [cat, n] of counts) {
+      if (n > max) { best = cat; max = n; }
+    }
+    return best;
+  })();
 
   const handleAddToCart = (pin: Pin) => {
     const cart = loadCart();
@@ -311,7 +326,14 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
               const deliveryDays = estimatedDeliveryDays(pin.price);
               const canDeliver = daysLeft === null || deliveryDays <= daysLeft;
               return (
-                <div key={pin.id} className="group relative overflow-hidden rounded-xl border border-line bg-cream">
+                <div
+                key={pin.id}
+                className="group relative cursor-pointer overflow-hidden rounded-xl border border-line bg-cream transition-shadow hover:shadow-md"
+                onClick={() => { if (pin.url) window.open(pin.url, "_blank", "noopener"); }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && pin.url) window.open(pin.url, "_blank", "noopener"); }}
+              >
                   <div className="relative aspect-square w-full" style={{ background: GRADIENTS[pin.grad] }}>
                     <span className="absolute inset-0 grid place-items-center text-2xl">{pin.emoji}</span>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -335,7 +357,7 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
                       <span className="text-[9px] text-ink-faint">{deliveryDays}d ship</span>
                     </div>
                     <button
-                      onClick={() => handleAddToCart(pin)}
+                      onClick={(e) => { e.stopPropagation(); handleAddToCart(pin); }}
                       disabled={addedIds.has(pin.id)}
                       className="mt-1 w-full rounded-md bg-coral px-1 py-0.5 text-[9px] font-bold text-white transition-opacity hover:opacity-90 disabled:bg-ink-faint disabled:opacity-60"
                     >
@@ -351,13 +373,21 @@ function SoloGiftCard({ conn }: { conn: SoftConnection }) {
               📦 Items marked ship within the {conn.birthday} deadline. Ones marked &ldquo;Late&rdquo; may not arrive in time.
             </p>
           )}
-          <button
-            onClick={handleAddAll}
-            disabled={addedIds.size === bundle.length}
-            className="mt-3 w-full rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-cream transition-opacity hover:opacity-90 disabled:opacity-60"
-          >
-            {addedIds.size === bundle.length ? "All added to cart ✓" : "Add entire bundle to cart"}
-          </button>
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={handleAddAll}
+              disabled={addedIds.size === bundle.length}
+              className="flex-1 rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-cream transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              {addedIds.size === bundle.length ? "All added to cart ✓" : "Add all to cart"}
+            </button>
+            <button
+              onClick={() => router.push(`/feed/shop${topCategory ? `?category=${encodeURIComponent(topCategory)}` : ""}`)}
+              className="flex-1 rounded-full border border-line bg-surface px-5 py-2.5 text-sm font-bold text-ink transition-opacity hover:opacity-90"
+            >
+              Browse similar
+            </button>
+          </div>
         </div>
       )}
 

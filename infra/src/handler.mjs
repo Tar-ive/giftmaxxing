@@ -2197,6 +2197,13 @@ export const handler = async (event) => {
         typeof guest.genderPref === "string" && VALID_GENDER_PREFS.includes(guest.genderPref)
           ? guest.genderPref
           : undefined;
+      // Parse dwell timing signals (how long the guest spent on each card)
+      const dwellSignals = Array.isArray(guest.dwellSignals)
+        ? guest.dwellSignals
+            .slice(0, 100)
+            .filter((s) => s && typeof s.id === "string" && typeof s.dwellMs === "number")
+            .map((s) => ({ id: String(s.id), dir: String(s.dir), dwellMs: Math.round(Number(s.dwellMs)) }))
+        : undefined;
       const item = {
         userId: senderId,
         connectionId: `conn_${rid}`,
@@ -2211,6 +2218,7 @@ export const handler = async (event) => {
         interests: Array.isArray(guest.interests) ? guest.interests.slice(0, 12).map(String) : [],
         yesCount: Number(guest.yesCount) || 0,
         totalSwipes: Number(guest.totalSwipes) || 0,
+        dwellSignals,
         seen: false,
         createdAt: Date.now(),
       };

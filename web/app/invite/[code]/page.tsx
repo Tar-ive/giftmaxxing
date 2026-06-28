@@ -7,7 +7,7 @@ import { Maxi, Icons } from "@/components/ui";
 import { SwipeDeck } from "@/components/app/swipe-deck";
 import { decodeInvite, saveInviteSession, clearInviteSession } from "@/lib/invite";
 import { createConnection } from "@/lib/api";
-import { swipeVibes, seedKeysFromSwipes, loadSwipes, localMatchesFromSwipes } from "@/lib/swipes";
+import { swipeVibes, seedKeysFromSwipes, loadSwipes, localMatchesFromSwipes, swipeTimingSignals } from "@/lib/swipes";
 import { GRADIENTS } from "@/lib/data";
 import { shortTitle } from "@/lib/feed-builder";
 import { type Pin } from "@/lib/pins";
@@ -100,6 +100,7 @@ export default function InvitePage() {
         genderPref: genderPref ?? undefined,
         yesCount: swipes.filter((s) => s.dir === "yes").length,
         totalSwipes: swipes.length,
+        dwellSignals: swipeTimingSignals(swipes),
       });
     }
 
