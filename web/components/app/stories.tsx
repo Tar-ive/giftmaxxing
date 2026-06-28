@@ -15,12 +15,64 @@ export function StoriesTray() {
   const { groupChats, openChat } = useStore();
   const { pools } = useMyPools();
   const me = useCurrentUser();
-  // Pinned chats first, then the rest (excluding "new chat" placeholder which is always first)
-  const sorted = [
-    ...groupChats.filter((c) => c.newChat),
+  // The "Create" tile (newChat placeholder) is pinned to the very front, then the
+  // user's real pools, then their existing chats (pinned first, then the rest).
+  const newChats = groupChats.filter((c) => c.newChat);
+  const otherChats = [
     ...groupChats.filter((c) => !c.newChat && c.pinned),
     ...groupChats.filter((c) => !c.newChat && !c.pinned),
   ];
+
+  const chatTile = (gc: (typeof groupChats)[number]) => {
+    const u = gc.forUser === "you" ? me : USERS[gc.forUser];
+    if (!u) return null;
+    return (
+      <button
+        key={gc.id}
+        onClick={() => openChat(gc.id)}
+        className="flex w-16 shrink-0 flex-col items-center gap-1.5"
+      >
+        <span
+          className={`grid place-items-center rounded-full p-[2.5px] ${
+            gc.newChat
+              ? "bg-line"
+              : gc.pinned
+              ? "bg-gradient-to-tr from-coral via-rose-2 to-butter-2"
+              : "bg-gradient-to-tr from-coral to-lilac-2"
+          }`}
+        >
+          <span className="relative grid h-14 w-14 place-items-center rounded-full border-2 border-cream bg-surface">
+            {gc.newChat ? (
+              <span className="grid h-full w-full place-items-center rounded-full bg-coral-soft text-coral">
+                <Icons.plusSquare size={24} />
+              </span>
+            ) : (
+              <span
+                className="grid h-full w-full place-items-center rounded-full text-lg font-bold text-white"
+                style={{ background: GRADIENTS[u.grad] }}
+              >
+                {u.name.charAt(0)}
+              </span>
+            )}
+            {gc.pinned && !gc.newChat && (
+              <span className="absolute -top-1 -right-1 grid h-4 w-4 place-items-center rounded-full bg-coral text-white">
+                <PinIcon size={10} />
+              </span>
+            )}
+            {gc.countdown && (
+              <span className="absolute -bottom-1 rounded-full bg-ink px-1.5 py-0.5 text-[9px] font-bold text-cream">
+                {gc.countdown}
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="max-w-16 truncate text-[11px] text-ink-soft">
+          {gc.newChat ? "Create" : u.name.split(" ")[0]}
+        </span>
+      </button>
+    );
+  };
+
   return (
     <div className="rounded-2xl border border-line bg-surface/70 p-4">
       <div className="mb-2 flex items-center gap-2">
@@ -30,7 +82,10 @@ export function StoriesTray() {
         </span>
       </div>
       <div className="flex gap-4 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {/* Real backend group-gift pools the user created or joined, first. */}
+        {/* "Create" (new pitch-in) is pinned first, then the user's real pools,
+            then their existing chats. */}
+        {newChats.map(chatTile)}
+
         {pools.map((p) => (
           <Link
             key={p.poolId}
@@ -53,54 +108,7 @@ export function StoriesTray() {
           </Link>
         ))}
 
-        {sorted.map((gc) => {
-          const u = gc.forUser === "you" ? me : USERS[gc.forUser];
-          if (!u) return null;
-          return (
-            <button
-              key={gc.id}
-              onClick={() => openChat(gc.id)}
-              className="flex w-16 shrink-0 flex-col items-center gap-1.5"
-            >
-              <span
-                className={`grid place-items-center rounded-full p-[2.5px] ${
-                  gc.newChat
-                    ? "bg-line"
-                    : gc.pinned
-                    ? "bg-gradient-to-tr from-coral via-rose-2 to-butter-2"
-                    : "bg-gradient-to-tr from-coral to-lilac-2"
-                }`}
-              >
-                <span className="relative grid h-14 w-14 place-items-center rounded-full border-2 border-cream bg-surface">
-                  <span
-                    className="grid h-full w-full place-items-center rounded-full text-lg font-bold text-white"
-                    style={{ background: GRADIENTS[u.grad] }}
-                  >
-                    {u.name.charAt(0)}
-                  </span>
-                  {gc.newChat && (
-                    <span className="absolute -bottom-0.5 -right-0.5 grid h-5 w-5 place-items-center rounded-full border-2 border-cream bg-coral text-white">
-                      <Icons.plusSquare size={12} />
-                    </span>
-                  )}
-                  {gc.pinned && !gc.newChat && (
-                    <span className="absolute -top-1 -right-1 grid h-4 w-4 place-items-center rounded-full bg-coral text-white">
-                      <PinIcon size={10} />
-                    </span>
-                  )}
-                  {gc.countdown && (
-                    <span className="absolute -bottom-1 rounded-full bg-ink px-1.5 py-0.5 text-[9px] font-bold text-cream">
-                      {gc.countdown}
-                    </span>
-                  )}
-                </span>
-              </span>
-              <span className="max-w-16 truncate text-[11px] text-ink-soft">
-                {gc.newChat ? "New chat" : u.name.split(" ")[0]}
-              </span>
-            </button>
-          );
-        })}
+        {otherChats.map(chatTile)}
       </div>
     </div>
   );

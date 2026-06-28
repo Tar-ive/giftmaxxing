@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
 import { GRADIENTS, type Grad } from "@/lib/data";
@@ -736,9 +737,9 @@ function MessageBubble({ m, onAdd, onChip }: { m: Msg; onAdd: (p: Pin) => void; 
               <img src={m.imageUrl} alt="Uploaded photo" className="max-h-48 w-full object-cover" />
             </div>
           )}
-          {m.text}
+          {mine ? m.text : <MaxiText text={m.text} />}
           {m.source && !mine && (
-            <span className="ml-1.5 align-middle text-[10px] font-bold uppercase tracking-wide text-coral">· {m.source}</span>
+            <span className="mt-1 inline-block text-[10px] font-bold uppercase tracking-wide text-coral">· {m.source}</span>
           )}
         </div>
         {dealProducts && (
@@ -794,6 +795,112 @@ function MessageBubble({ m, onAdd, onChip }: { m: Msg; onAdd: (p: Pin) => void; 
       </div>
     </div>
   );
+}
+
+// Lightweight markdown renderer for Maxi's replies. The agent (Bedrock) emits
+// **bold**, [label](url) links, and bullet / numbered lists; rendering them as
+// real elements (instead of dumping raw markdown text) keeps the chat readable.
+// Intentionally tiny + dependency-free.
+const INLINE_RE = /(\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|`[^`]+`)/g;
+
+function renderInline(text: string, kp: string): ReactNode[] {
+  return text
+    .split(INLINE_RE)
+    .filter(Boolean)
+    .map((part, i) => {
+      const key = `${kp}-${i}`;
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return (
+          <strong key={key} className="font-semibold">
+            {part.slice(2, -2)}
+          </strong>
+        );
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return (
+          <code key={key} className="rounded bg-cream px-1 py-0.5 text-[12px]">
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+      const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
+      if (link) {
+        const [, label, href] = link;
+        if (/^https?:\/\//i.test(href)) {
+          return (
+            <a
+              key={key}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-coral underline underline-offset-2 hover:opacity-80"
+            >
+              {label}
+            </a>
+          );
+        }
+        return <span key={key}>{label}</span>;
+      }
+      return <span key={key}>{part}</span>;
+    });
+}
+
+function MaxiText({ text }: { text: string }) {
+  let src = text.replace(/\r\n/g, "\n").trim();
+  // Some replies pack bullets inline (". - **X** … - **Y**") with no line breaks;
+  // split before each " - **" so they render as a real list rather than a wall.
+  if (!src.includes("\n") && (src.match(/\s-\s+\*\*/g)?.length ?? 0) >= 2) {
+    src = src.replace(/\s-\s+(?=\*\*)/g, "\n- ");
+  }
+  const blocks: ReactNode[] = [];
+  let items: string[] = [];
+  let ordered = false;
+  let k = 0;
+  const flush = () => {
+    if (!items.length) return;
+    const list = items;
+    blocks.push(
+      ordered ? (
+        <ol key={`k${k++}`} className="my-1 list-decimal space-y-1 pl-5 marker:font-semibold marker:text-coral">
+          {list.map((it, i) => (
+            <li key={i} className="pl-0.5">{renderInline(it, `o${k}-${i}`)}</li>
+          ))}
+        </ol>
+      ) : (
+        <ul key={`k${k++}`} className="my-1 list-disc space-y-1 pl-5 marker:text-coral">
+          {list.map((it, i) => (
+            <li key={i} className="pl-0.5">{renderInline(it, `u${k}-${i}`)}</li>
+          ))}
+        </ul>
+      )
+    );
+    items = [];
+  };
+  for (const raw of src.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      flush();
+      continue;
+    }
+    const bullet = /^[-*]\s+(.*)$/.exec(line);
+    const num = /^\d+\.\s+(.*)$/.exec(line);
+    if (bullet) {
+      if (items.length && ordered) flush();
+      ordered = false;
+      items.push(bullet[1]);
+      continue;
+    }
+    if (num) {
+      if (items.length && !ordered) flush();
+      ordered = true;
+      items.push(num[1]);
+      continue;
+    }
+    flush();
+    blocks.push(<p key={`k${k++}`}>{renderInline(line, `p${k}`)}</p>);
+  }
+  flush();
+  return <div className="space-y-1.5">{blocks}</div>;
 }
 
 // Alexa-style deal card: image + rating/bought + price w/ strikethrough list
