@@ -29,9 +29,9 @@ programmatically) and what the model reads. This means it applies to data
 | Bedrock embed requests | `InvokeModelCommand` body | No (API contract, not LLM input) |
 | Ingest scripts | JSON manifests | No (offline, not LLM) |
 
-**The entire TOON migration is scoped to one place: the Maxi Converse loop in
-`handler.mjs:2755–2896`, specifically the `toolResult.content` objects fed back
-to the model after each tool execution.**
+**The entire TOON migration is scoped to one place: the Maxi Converse loop
+(search for `MAXI_TOON_ENABLED` in `handler.mjs`), specifically the
+`toolResult.content` objects fed back to the model after each tool execution.**
 
 ---
 
@@ -39,7 +39,7 @@ to the model after each tool execution.**
 
 ### How the loop works today
 
-```
+```text
 POST /maxi → Lambda handler
   for step 0..4:
     ConverseCommand(system, messages, toolConfig) → Bedrock
@@ -76,7 +76,7 @@ These tools return **uniform arrays of objects** — TOON's sweet spot:
 ```
 
 **TOON equivalent (~290 tokens, ~40% savings):**
-```
+```text
 count: 6
 items[6]{postId,title,price,brand,image,category}:
   pin-155303888285817876,Handmade Ceramic Coffee Mug,24.99,CeramicCo,https://i.pinimg.com/...,kitchen
@@ -98,7 +98,7 @@ listPrice, discountPct, rating, reviews, boughtPastMonth, delivery, onDeal`.
 Repeating 13 keys × 8 rows = 104 key repetitions eliminated by TOON.
 
 **TOON equivalent (~500 tokens, ~44% savings):**
-```
+```text
 count: 8
 groups[2]:
   - category: kitchen
@@ -140,7 +140,7 @@ products[5]{postId,title,brand,price,listPrice,discountPct,rating,reviews,bought
 ```
 
 **TOON equivalent (~200 tokens, ~43% savings):**
-```
+```text
 orderCount: 4
 seeded: false
 topCategories[3]{category,label,count}:
@@ -165,7 +165,7 @@ restockables[2]{postId,title,category,timesOrdered,lastOrdered}:
 ```
 
 **TOON equivalent (~200 tokens, ~38% savings):**
-```
+```text
 note: These are the user's FRIENDS/CONNECTIONS (other people), not the user. friendName is the friend's name.
 items[5]:
   - friendName: Maya
@@ -182,7 +182,7 @@ and removing braces/quotes.)
 #### 2.5 `upcoming_events`
 
 **TOON tabular form is a perfect fit:**
-```
+```text
 items[4]{type,date,daysUntil,recipient}:
   birthday,2026-07-15,16,Maya
   anniversary,2026-08-03,35,null
@@ -192,7 +192,7 @@ items[4]{type,date,daysUntil,recipient}:
 
 #### 2.6 `gift_ideas`
 
-```
+```text
 ideas[4]{item,count}:
   matcha tea set,47
   yoga mat,38
@@ -205,7 +205,7 @@ bundles[2]:
 
 #### 2.7 `list_recipients`
 
-```
+```text
 items[8]{recipient,label,postCount}:
   mom,Mom,42
   dad,Dad,38
@@ -313,17 +313,19 @@ understand field names, then read rows as comma-separated values.
 Encode with TOON only for tools whose results contain uniform arrays:
 
 ```js
-const TOON_TOOLS = new Set([
+const MAXI_TOON_ENABLED = process.env.MAXI_TOON_ENABLED !== "0";
+const MAXI_TOON_TOOLS = new Set([
   'find_gifts', 'find_deals', 'order_history',
   'list_connections', 'upcoming_events', 'gift_ideas',
   'list_recipients',
 ]);
 
 // In the loop:
-const toolOut = scrubPII(out);
-const content = TOON_TOOLS.has(tu.name)
-  ? [{ text: toonEncode(toolOut) }]
-  : [{ json: toolOut }];
+const scrubbed = scrubPII(out);
+const useToon = MAXI_TOON_ENABLED && MAXI_TOON_TOOLS.has(tu.name) && !scrubbed?.error;
+const content = useToon
+  ? [{ text: toonEncode(scrubbed) }]
+  : [{ json: scrubbed }];
 ```
 
 This keeps small/non-uniform results (get_profile, save_event, checkout) as
@@ -335,7 +337,7 @@ The `memBlock` injected into the system prompt is currently a bullet list of
 strings. If memory entries grow to structured data (preference objects, tagged
 facts), encode them as TOON:
 
-```
+```text
 memories[5]{kind,text}:
   preference,usually spends $30-50 on gifts
   preference,dislikes scented candles
@@ -349,11 +351,11 @@ memories[5]{kind,text}:
 For agent-to-agent scenarios where another LLM agent is calling `/maxi`, the
 response body itself could optionally be TOON-encoded:
 
-```
+```text
 Accept: text/toon
 ```
 
-```
+```text
 say: Here are some deals in your top restock categories!
 pins[5]{postId,title,price,listPrice,discountPct,category}:
   pin-001,Ceramic Mug Set,24.99,39.99,38,kitchen
