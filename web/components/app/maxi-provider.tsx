@@ -223,7 +223,16 @@ export function MaxiProvider({ children }: { children: React.ReactNode }) {
         if (agent) {
           agentSteps = agent.steps?.length ? agent.steps : undefined;
           agentProducts = agent.pins?.length ? agent.pins : undefined;
-          const pins = agent.pins.map(agentPinToPin);
+          let pins = agent.pins.map(agentPinToPin);
+          if (!pins.length) {
+            const fb = await respond(clean, {
+              lastShown: lastShownRef.current,
+              vibes: profileRef.current.vibes,
+              cart,
+              name: profileRef.current.name,
+            }).catch(() => null);
+            if (fb?.pins?.length) pins = fb.pins;
+          }
           const byId = new Map(pins.map((p) => [p.id, p]));
           const addPins = agent.actions
             .filter((a) => a.type === "add_to_cart")
@@ -461,6 +470,46 @@ function ImageIcon({ size = 22, className }: { size?: number; className?: string
   );
 }
 
+const THINKING_STEPS = [
+  "Understanding your request",
+  "Scanning your taste profile",
+  "Searching the gift catalog",
+  "Ranking by value & delivery",
+];
+
+function ThinkingSteps() {
+  const [active, setActive] = useState(0);
+  useEffect(() => {
+    const t = setInterval(
+      () => setActive((i) => Math.min(i + 1, THINKING_STEPS.length - 1)),
+      750
+    );
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="space-y-1.5 rounded-xl border border-line bg-cream/60 px-3 py-2.5">
+      {THINKING_STEPS.map((label, i) => {
+        const done = i < active;
+        const isActive = i === active;
+        return (
+          <div key={label} className="flex items-center gap-2 text-[12px]">
+            {done ? (
+              <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full text-green-600">✓</span>
+            ) : isActive ? (
+              <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-ink-faint/30 border-t-coral" />
+            ) : (
+              <span className="mx-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-faint/40" />
+            )}
+            <span className={done ? "text-ink-soft" : isActive ? "font-semibold text-ink" : "text-ink-faint"}>
+              {label}{isActive ? "…" : ""}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Reusable chat surface — used by the dock AND the full-page /feed/maxi ─────
 export function MaxiChatSurface({ variant = "dock" }: { variant?: "dock" | "page" }) {
   const { open, setOpen, messages, sending, send, searchByImage, cart, cartCount, cartTotal, addPinToCart, removeItem } = useMaxi();
@@ -632,10 +681,10 @@ export function MaxiChatSurface({ variant = "dock" }: { variant?: "dock" | "page
               <MessageBubble key={m.id} m={m} onAdd={addPinToCart} onChip={submit} />
             ))}
             {sending && (
-              <div className="flex items-center gap-1.5 px-1 text-ink-faint">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-ink-faint [animation-delay:-0.2s]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-ink-faint [animation-delay:-0.1s]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-ink-faint" />
+              <div className="flex justify-start">
+                <div className="w-full max-w-[88%]">
+                  <ThinkingSteps />
+                </div>
               </div>
             )}
           </div>
