@@ -18,6 +18,7 @@ import {
   ListVectorsCommand,
 } from "@aws-sdk/client-s3vectors";
 import { BedrockRuntimeClient, InvokeModelCommand, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import { encode as toonEncode } from "@toon-format/toon";
 import { classifyPin } from "./quality.mjs";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
@@ -714,6 +715,15 @@ const MAXI_MAX_STEPS = Number(process.env.MAXI_MAX_STEPS || 5);
 const MAXI_MONTHLY_BUDGET_USD = Number(process.env.MAXI_MONTHLY_BUDGET_USD || 25);
 // Per-user daily chat cap (abuse guard, not a usage cap). 0 = unlimited.
 const MAXI_DAILY_LIMIT = Number(process.env.MAXI_DAILY_LIMIT || 50);
+// TOON (Token-Oriented Object Notation) encoding for tool results fed back to
+// Bedrock Converse. Uniform arrays of objects compress ~40% vs JSON. Enabled by
+// default; set MAXI_TOON_ENABLED=0 to revert to JSON tool results.
+const MAXI_TOON_ENABLED = process.env.MAXI_TOON_ENABLED !== "0";
+const MAXI_TOON_TOOLS = new Set([
+  "find_gifts", "find_deals", "order_history",
+  "list_connections", "upcoming_events", "gift_ideas",
+  "list_recipients",
+]);
 // Per-tier Bedrock prices (USD per 1M tokens) so the monthly $ budget stays
 // accurate even when one interaction spans both models. BASE defaults to Amazon
 // Nova Lite; SHOPPING falls back to the legacy MAXI_PRICE_* (Haiku) numbers.
@@ -828,7 +838,9 @@ Use tools, don't guess:
 - When the user states a durable fact (a budget, a like/dislike, who they shop for), call remember_fact. When they give a concrete dated occasion, call save_event so reminders fire.
 - add_to_cart and checkout are SIMULATED — say so honestly; never imply a real charge or shipment.
 
-After find_gifts or gift_ideas, briefly say what you found; the products render automatically, so don't recite every price in prose. Ground all product claims in tool results — never invent prices, brands, or links. If a tool returns nothing, say so and offer an alternative.`;
+After find_gifts or gift_ideas, briefly say what you found; the products render automatically, so don't recite every price in prose. Ground all product claims in tool results — never invent prices, brands, or links. If a tool returns nothing, say so and offer an alternative.
+
+Tool results may use TOON (Token-Oriented Object Notation) — a compact tabular encoding. Arrays declare their length and field names once in a header line (e.g. items[6]{id,name,price}:), then each row lists comma-separated values. Read the header to know field names, then read rows positionally.`;
 
 async function recallMemories(userId, limit = 8) {
   if (!GRAPH || !userId) return [];
@@ -2851,11 +2863,16 @@ export const handler = async (event) => {
                 out = { error: e.message };
               }
               tctx.steps.push(maxiStepLabel(tu.name, tu.input, out));
+              const scrubbed = scrubPII(out);
+              const useToon = MAXI_TOON_ENABLED && MAXI_TOON_TOOLS.has(tu.name) && !scrubbed?.error;
+              const content = useToon
+                ? [{ text: toonEncode(scrubbed) }]
+                : [{ json: scrubbed }];
               results.push({
                 toolResult: {
                   toolUseId: tu.toolUseId,
-                  content: [{ json: scrubPII(out) }],
-                  status: out && out.error ? "error" : "success",
+                  content,
+                  status: scrubbed && scrubbed.error ? "error" : "success",
                 },
               });
             }
