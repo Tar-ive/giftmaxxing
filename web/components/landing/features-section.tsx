@@ -91,7 +91,12 @@ function FeatureBlock({ feature, index }: { feature: Feature; index: number }) {
 
   useEffect(() => {
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
       { threshold: 0.15 }
     );
     if (ref.current) observer.observe(ref.current);
