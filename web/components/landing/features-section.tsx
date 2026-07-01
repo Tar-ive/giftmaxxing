@@ -1,242 +1,210 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Search, Heart, Gift, Users, Sparkles, ArrowRight } from "lucide-react";
 
-const features = [
+interface Feature {
+  tag: string;
+  icon: typeof Search;
+  headline: string;
+  headlineAccent: string;
+  description: string;
+  cta: { text: string; href: string };
+  bullets: { title: string; description: string }[];
+  alternatives?: string[];
+}
+
+const FEATURES: Feature[] = [
   {
-    number: "01",
-    title: "Meet Maxi",
-    description:
-      "Your AI gift companion reads a person's taste from their Pinterest, Spotify and saved finds — then suggests gifts they'll actually love, inside your budget.",
-    stats: { value: "94%", label: "match to their taste" },
+    tag: "Discover",
+    icon: Search,
+    headline: "A feed of finds",
+    headlineAccent: "not a search box.",
+    description: "See what friends are saving, gifting and unwrapping. Gift ideas surface naturally from people whose taste you trust.",
+    cta: { text: "Open the feed", href: "/feed" },
+    bullets: [
+      { title: "Taste-matched recommendations", description: "Every item is scored against the recipient's real interests." },
+      { title: "Friend-powered discovery", description: "See saves and shares from your circle before generic ads." },
+      { title: "No doom-scrolling", description: "Curated, finite feed designed around intent, not engagement." },
+    ],
+    alternatives: ["Amazon wish lists", "Google Shopping", "Pinterest boards"],
   },
   {
-    number: "02",
-    title: "A feed of finds",
-    description:
-      "See what friends are saving, gifting and unwrapping. Discovery that feels like your favorite feed — not a search box.",
-    stats: { value: "12k+", label: "finds shared" },
+    tag: "Swipe",
+    icon: Heart,
+    headline: "Swipe to learn",
+    headlineAccent: "their taste.",
+    description: "In 60 seconds, Maxi understands what they love. Share a challenge link and let recipients reveal their own style — no guessing required.",
+    cta: { text: "Try a challenge", href: "/challenge" },
+    bullets: [
+      { title: "60-second taste quiz", description: "Swipe on curated items to build a taste profile fast." },
+      { title: "Shareable challenge links", description: "Send a link — they swipe, you see what they actually want." },
+      { title: "Pinterest & Spotify import", description: "Already have saves? Maxi reads them automatically." },
+    ],
   },
   {
-    number: "03",
-    title: "Shared wishlists",
-    description:
-      "Wishlists the whole group can see, so nobody double-buys and everyone gets something they actually wanted.",
-    stats: { value: "0", label: "awkward re-gifts" },
+    tag: "Gift",
+    icon: Gift,
+    headline: "Claim it",
+    headlineAccent: "before someone else does.",
+    description: "Shared wishlists the whole group can see. Claim an item so nobody double-buys, and everyone gets something they actually wanted.",
+    cta: { text: "Browse wishlists", href: "/feed/shop" },
+    bullets: [
+      { title: "Claim to prevent double-buys", description: "Lock an item so the group knows it's handled." },
+      { title: "Budget-aware suggestions", description: "Maxi filters by your budget — not the store's." },
+      { title: "One-tap purchase", description: "Buy directly through affiliate links, no middleman." },
+    ],
   },
   {
-    number: "04",
-    title: "Group gifting",
-    description:
-      "Pool money for the big one. Split it, track it, and ship it together in a few taps.",
-    stats: { value: "3 taps", label: "to chip in" },
+    tag: "Pool",
+    icon: Users,
+    headline: "Go in together",
+    headlineAccent: "on the big one.",
+    description: "Pool money for the gift nobody could afford solo. Split it, track it, and ship it together in a few taps.",
+    cta: { text: "Start a pool", href: "/feed/pools" },
+    bullets: [
+      { title: "Transparent tracking", description: "Everyone sees who chipped in and how much is left." },
+      { title: "Flexible splits", description: "Equal, custom, or pay-what-you-can — you set the rules." },
+    ],
+  },
+  {
+    tag: "Maxi",
+    icon: Sparkles,
+    headline: "Your AI gift companion",
+    headlineAccent: "who actually gets it.",
+    description: "Maxi reads their Pinterest, Spotify and saved finds — then suggests gifts they'll love, inside your budget. Not a search engine. A companion.",
+    cta: { text: "Ask Maxi", href: "/feed/maxi" },
+    bullets: [
+      { title: "Taste-aware matching", description: "94% accuracy against real recipient preferences." },
+      { title: "Budget-locked", description: "Never suggests above what you can spend." },
+      { title: "Context from every signal", description: "Combines social saves, past gifts, and trend data." },
+    ],
   },
 ];
 
-// Floating dot particles visualization
-function ParticleVisualization() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const frameRef = useRef(0);
-  const mouseRef = useRef({ x: 0.5, y: 0.5 });
+const FEATURE_COLORS = ["#ffc2d1", "#d9c2ff", "#cde6c5", "#bfe3ff", "#ffe7a0"];
+
+function FeatureBlock({ feature, index }: { feature: Feature; index: number }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      ctx.scale(dpr, dpr);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      mouseRef.current = {
-        x: (e.clientX - rect.left) / rect.width,
-        y: (e.clientY - rect.top) / rect.height,
-      };
-    };
-    canvas.addEventListener("mousemove", handleMouseMove);
-
-    // Generate stable particle positions
-    const COUNT = 70;
-    const particles = Array.from({ length: COUNT }, (_, i) => {
-      const seed = i * 1.618;
-      return {
-        bx: ((seed * 127.1) % 1),
-        by: ((seed * 311.7) % 1),
-        phase: seed * Math.PI * 2,
-        speed: 0.4 + (seed % 0.4),
-        radius: 1.2 + (seed % 2.2),
-      };
-    });
-
-    let time = 0;
-    const render = () => {
-      const rect = canvas.getBoundingClientRect();
-      const w = rect.width;
-      const h = rect.height;
-
-      ctx.clearRect(0, 0, w, h);
-
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-
-      particles.forEach((p) => {
-        const flowX = Math.sin(time * p.speed * 0.4 + p.phase) * 38;
-        const flowY = Math.cos(time * p.speed * 0.3 + p.phase * 0.7) * 24;
-
-        const bx = p.bx * w;
-        const by = p.by * h;
-        const dx = p.bx - mx;
-        const dy = p.by - my;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const influence = Math.max(0, 1 - dist * 2.8);
-
-        const x = bx + flowX + influence * Math.cos(time + p.phase) * 36;
-        const y = by + flowY + influence * Math.sin(time + p.phase) * 36;
-
-        const pulse = Math.sin(time * p.speed + p.phase) * 0.5 + 0.5;
-        const alpha = 0.08 + pulse * 0.18 + influence * 0.3;
-
-        ctx.beginPath();
-        ctx.arc(x, y, p.radius + pulse * 0.8, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(251, 111, 82, ${alpha})`;
-        ctx.fill();
-      });
-
-      time += 0.016;
-      frameRef.current = requestAnimationFrame(render);
-    };
-    render();
-
-    return () => {
-      window.removeEventListener("resize", resize);
-      canvas.removeEventListener("mousemove", handleMouseMove);
-      cancelAnimationFrame(frameRef.current);
-    };
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setIsVisible(true); },
+      { threshold: 0.15 }
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
   }, []);
 
+  const Icon = feature.icon;
+  const accentColor = FEATURE_COLORS[index % FEATURE_COLORS.length];
+
   return (
-    <canvas
-      ref={canvasRef}
-      className="absolute inset-0 pointer-events-auto"
-      style={{ width: "100%", height: "100%" }}
-    />
+    <div ref={ref} className="relative">
+      {/* Vertical connector line (skip on first) */}
+      {index > 0 && (
+        <div className="absolute left-6 lg:left-12 -top-16 w-px h-16 bg-gradient-to-b from-transparent to-foreground/10" />
+      )}
+
+      <div className={`grid lg:grid-cols-2 gap-8 lg:gap-16 items-start transition-all duration-1000 ${
+        isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
+      }`}>
+        {/* Text column */}
+        <div className={index % 2 === 1 ? "lg:order-2" : ""}>
+          {/* Tag */}
+          <div className="flex items-center gap-3 mb-6">
+            <div
+              className="w-8 h-8 rounded-lg grid place-items-center"
+              style={{ backgroundColor: `${accentColor}40` }}
+            >
+              <Icon size={16} style={{ color: "#fb6f52" }} />
+            </div>
+            <span className="text-sm font-mono text-muted-foreground">{feature.tag}</span>
+          </div>
+
+          {/* Headline */}
+          <h3 className="text-4xl lg:text-5xl font-display tracking-tight leading-[0.95] mb-4">
+            {feature.headline}
+            <br />
+            <span className="text-muted-foreground">{feature.headlineAccent}</span>
+          </h3>
+
+          <p className="text-lg text-muted-foreground leading-relaxed mb-8 max-w-lg">
+            {feature.description}
+          </p>
+
+          <Link
+            href={feature.cta.href}
+            className="inline-flex items-center gap-2 text-[#fb6f52] font-semibold text-sm hover:gap-3 transition-all"
+          >
+            {feature.cta.text}
+            <ArrowRight size={14} />
+          </Link>
+        </div>
+
+        {/* Bullet cards */}
+        <div className={`space-y-3 ${index % 2 === 1 ? "lg:order-1" : ""}`}>
+          {feature.bullets.map((b, i) => (
+            <div
+              key={i}
+              className={`rounded-xl border border-foreground/10 bg-card p-5 hover-lift transition-all duration-700 ${
+                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"
+              }`}
+              style={{ transitionDelay: `${(i + 1) * 100}ms` }}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-1.5 h-1.5 rounded-full mt-2 shrink-0"
+                  style={{ backgroundColor: accentColor }}
+                />
+                <div>
+                  <p className="font-semibold text-foreground text-sm">{b.title}</p>
+                  <p className="text-muted-foreground text-sm mt-1 leading-relaxed">{b.description}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* "Alternative to" badges */}
+          {feature.alternatives && (
+            <div className="flex items-center gap-3 pt-2 px-1">
+              <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Alternative to</span>
+              {feature.alternatives.map((alt) => (
+                <span key={alt} className="text-[10px] text-muted-foreground border border-foreground/10 rounded-full px-2.5 py-0.5">
+                  {alt}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function FeaturesSection() {
-  const [isVisible, setIsVisible] = useState(false);
-  const sectionRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) setIsVisible(true);
-      },
-      { threshold: 0.1 }
-    );
-
-    if (sectionRef.current) observer.observe(sectionRef.current);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <section
-      id="features"
-      ref={sectionRef}
-      className="relative py-24 lg:py-32 overflow-hidden"
-    >
+    <section id="features" className="relative py-24 lg:py-32 overflow-hidden">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
-        {/* Header - Full width with diagonal layout */}
-        <div className="relative mb-24 lg:mb-32">
-          <div className="grid lg:grid-cols-12 gap-8 items-end">
-            <div className="lg:col-span-7">
-              <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-6">
-                <span className="w-12 h-px bg-foreground/30" />
-                What you get
-              </span>
-              <h2
-                className={`text-6xl md:text-7xl lg:text-[120px] font-display tracking-tight leading-[0.9] transition-all duration-1000 ${
-                  isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
-                }`}
-              >
-                Thoughtful,
-                <br />
-                <span className="text-muted-foreground">on autopilot.</span>
-              </h2>
-            </div>
-            <div className="lg:col-span-5 lg:pb-4">
-              <p className={`text-xl text-muted-foreground leading-relaxed transition-all duration-1000 delay-200 ${
-                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-              }`}>
-                Everything you need to give a gift they&apos;ll remember — discovery, taste, and a companion that does the thinking.
-              </p>
-            </div>
-          </div>
+        {/* Section header */}
+        <div className="mb-20 lg:mb-28">
+          <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground mb-6">
+            <span className="w-12 h-px bg-foreground/30" />
+            Everything you need
+          </span>
+          <h2 className="text-6xl md:text-7xl lg:text-[100px] font-display tracking-tight leading-[0.9]">
+            From idea
+            <br />
+            <span className="text-muted-foreground">to unwrap.</span>
+          </h2>
         </div>
 
-        {/* Bento grid */}
-        <div className="grid lg:grid-cols-12 gap-4 lg:gap-6">
-          {/* Large Maxi card */}
-          <div
-            id="maxi"
-            className={`lg:col-span-12 relative bg-[#fbf7f1] border border-foreground/10 rounded-3xl min-h-[460px] overflow-hidden group transition-all duration-700 flex ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
-            }`}
-          >
-            <div className="relative flex-1 p-8 lg:p-12 bg-transparent">
-              <ParticleVisualization />
-              <div className="relative z-10 pointer-events-none">
-                <span className="font-mono text-sm text-muted-foreground">{features[0].number}</span>
-                <h3 className="text-3xl lg:text-4xl font-display mt-4 mb-6 text-foreground">{features[0].title}</h3>
-                <p className="text-lg text-muted-foreground leading-relaxed max-w-md mb-8">{features[0].description}</p>
-                <div>
-                  <span className="text-5xl lg:text-6xl font-display word-gradient">{features[0].stats.value}</span>
-                  <span className="block text-sm text-muted-foreground font-mono mt-2">{features[0].stats.label}</span>
-                </div>
-              </div>
-            </div>
-            <div className="hidden lg:block relative w-[42%] shrink-0 overflow-hidden">
-              <img
-                src="https://cdn.midjourney.com/d8570a74-ac9b-4d04-9038-78c9bfb6fce8/0_0.jpeg"
-                alt=""
-                aria-hidden="true"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                }}
-                className="absolute inset-0 w-full h-full object-cover object-center"
-              />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#fbf7f1] via-[#fbf7f1]/40 to-transparent" />
-            </div>
-          </div>
-
-          {/* Three smaller cards */}
-          {features.slice(1).map((f, i) => (
-            <div
-              key={f.number}
-              className={`lg:col-span-4 relative bg-card border border-foreground/10 rounded-2xl p-8 min-h-[280px] flex flex-col justify-between hover-lift transition-all duration-700 ${
-                isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
-              }`}
-              style={{ transitionDelay: `${(i + 1) * 120}ms` }}
-            >
-              <div>
-                <span className="font-mono text-sm text-muted-foreground">{f.number}</span>
-                <h3 className="text-2xl font-display mt-4 mb-3">{f.title}</h3>
-                <p className="text-muted-foreground leading-relaxed">{f.description}</p>
-              </div>
-              <div className="mt-6">
-                <span className="text-4xl font-display">{f.stats.value}</span>
-                <span className="block text-xs text-muted-foreground font-mono mt-1">{f.stats.label}</span>
-              </div>
-            </div>
+        {/* Feature blocks */}
+        <div className="space-y-24 lg:space-y-32">
+          {FEATURES.map((feature, i) => (
+            <FeatureBlock key={feature.tag} feature={feature} index={i} />
           ))}
         </div>
       </div>
